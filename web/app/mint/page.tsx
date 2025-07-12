@@ -13,10 +13,9 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
-import { Loader2, Upload, Brain, Sparkles } from 'lucide-react'
+import { Loader2, Brain, Sparkles } from 'lucide-react'
 import { uploadToStorage } from '@/lib/storage/client'
 import { INFT_ABI } from '@/lib/contracts/abis'
-import { uploadToStorage, uploadImage } from '@/lib/storage/client'
 const formSchema = z.object({
   name: z.string().min(1, 'Name is required').max(50),
   description: z.string().min(10, 'Description must be at least 10 characters'),
@@ -78,10 +77,6 @@ export default function MintPage() {
       reader.readAsDataURL(file)
     }
   }
-
-  
-      description: 'Encrypting and uploadiconst onSubmit = async (data: FormData) => {
-  // Обновите функцию onSubmit в app/mint/page.tsx:
 
 const onSubmit = async (data: FormData) => {
   if (!isConnected || !address) {
@@ -214,45 +209,6 @@ const { isLoading: isMinting } = useWaitForTransaction({
     })
   }
 })
-    setIsUploading(true)
-    try {
-      // Prepare agent metadata
-      const metadata = {
-        name: data.name,
-        description: data.description,
-        model: data.model,
-        capabilities: data.capabilities.split(',').map(c => c.trim()),
-        parameters: data.parameters ? JSON.parse(data.parameters) : {},
-        image: null as string | null,
-        createdAt: Date.now(),
-        version: '1.0',
-      }
-
-      // Upload image if provided
-      if (data.image && imagePreview) {
-        // In production, upload to IPFS/0G Storage
-        // For now, we'll use the preview
-        metadata.image = imagePreview
-      }
-
-      // Upload to 0G Storage and get encrypted URI
-      const { encryptedURI, metadataHash } = await uploadToStorage(metadata, address)
-
-      // Mint the INFT
-      mintINFT({
-        args: [address, encryptedURI, metadataHash],
-      })
-    } catch (error) {
-      console.error('Minting error:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to mint AI agent',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsUploading(false)
-    }
-  }
 
   if (!isConnected) {
     return (

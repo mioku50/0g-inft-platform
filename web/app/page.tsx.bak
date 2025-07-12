@@ -1,0 +1,170 @@
+‘use client’
+
+import { useEffect, useState } from ‘react’
+import { useRouter } from ‘next/navigation’
+import { ConnectButton } from ‘@rainbow-me/rainbowkit’
+import { useAccount } from ‘wagmi’
+import { Button } from ‘@/components/ui/button’
+import { Card } from ‘@/components/ui/card’
+import { Brain, Zap, Shield, ArrowRight } from ‘lucide-react’
+
+export default function HomePage() {
+const router = useRouter()
+const { isConnected } = useAccount()
+const [mounted, setMounted] = useState(false)
+
+useEffect(() => {
+setMounted(true)
+// Mount the connect button in the navbar
+const container = document.getElementById(‘connect-button-container’)
+if (container) {
+const root = document.createElement(‘div’)
+container.appendChild(root)
+const ConnectButtonWrapper = () => <ConnectButton />
+const { createRoot } = require(‘react-dom/client’)
+createRoot(root).render(<ConnectButtonWrapper />)
+}
+}, [])
+
+const features = [
+{
+icon: Brain,
+title: ‘AI-Powered Agents’,
+description: ‘Create intelligent NFTs with embedded AI models that can interact and evolve’,
+},
+{
+icon: Shield,
+title: ‘Secure Transfers’,
+description: ‘Transfer ownership with automatic re-encryption of agent data’,
+},
+{
+icon: Zap,
+title: ‘0G Integration’,
+description: ‘Leverage 0G Storage and Compute for decentralized AI execution’,
+},
+]
+
+if (!mounted) return null
+
+return (
+<div className="relative">
+{/* Hero Section */}
+<section className="relative overflow-hidden py-20">
+<div className="absolute inset-0 bg-gradient-to-br from-purple-600/20 via-transparent to-pink-600/20 blur-3xl" />
+<div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<div className="text-center">
+<h1 className="text-5xl md:text-7xl font-bold text-white mb-6">
+The Future of
+<span className="block bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+AI Agent NFTs
+</span>
+</h1>
+<p className="text-xl text-gray-300 mb-8 max-w-3xl mx-auto">
+Create, own, and trade intelligent NFTs powered by AI models.
+Built on 0G Network for secure, decentralized AI computation.
+</p>
+{isConnected ? (
+<div className="flex gap-4 justify-center">
+<Button
+size=“lg”
+onClick={() => router.push(’/mint’)}
+className=“bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600”
+>
+Create AI Agent
+<ArrowRight className="ml-2 h-5 w-5" />
+</Button>
+<Button
+size=“lg”
+variant=“outline”
+onClick={() => router.push(’/marketplace’)}
+className=“border-gray-700 hover:bg-gray-800”
+>
+Explore Marketplace
+</Button>
+</div>
+) : (
+<div className="inline-flex flex-col items-center gap-4">
+<p className="text-gray-400">Connect your wallet to get started</p>
+<ConnectButton />
+</div>
+)}
+</div>
+</div>
+</section>
+
+```
+  {/* Features Section */}
+  <section className="py-20 relative">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <h2 className="text-3xl font-bold text-white text-center mb-12">
+        Why Choose 0G INFT Platform?
+      </h2>
+      <div className="grid md:grid-cols-3 gap-8">
+        {features.map((feature, index) => (
+          <Card
+            key={index}
+            className="bg-gray-800/50 border-gray-700 backdrop-blur-sm hover:bg-gray-800/70 transition-all duration-300 p-6"
+          >
+            <feature.icon className="h-12 w-12 text-purple-400 mb-4" />
+            <h3 className="text-xl font-semibold text-white mb-2">
+              {feature.title}
+            </h3>
+            <p className="text-gray-400">{feature.description}</p>
+          </Card>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {/* Stats Section */}
+  <section className="py-20 bg-gray-900/50">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="grid md:grid-cols-4 gap-8 text-center">
+        <div>
+          <div className="text-4xl font-bold text-purple-400">0+</div>
+          <div className="text-gray-400 mt-2">AI Agents Created</div>
+        </div>
+        <div>
+          <div className="text-4xl font-bold text-pink-400">0+</div>
+          <div className="text-gray-400 mt-2">Active Users</div>
+        </div>
+        <div>
+          <div className="text-4xl font-bold text-purple-400">0</div>
+          <div className="text-gray-400 mt-2">Total Volume</div>
+        </div>
+        <div>
+          <div className="text-4xl font-bold text-pink-400">∞</div>
+          <div className="text-gray-400 mt-2">Possibilities</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* CTA Section */}
+  <section className="py-20">
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      <h2 className="text-3xl font-bold text-white mb-4">
+        Ready to Create Your First AI Agent?
+      </h2>
+      <p className="text-gray-400 mb-8">
+        Join the revolution of intelligent NFTs on 0G Network
+      </p>
+      {isConnected ? (
+        <Button
+          size="lg"
+          onClick={() => router.push('/mint')}
+          className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+        >
+          Start Creating
+          <ArrowRight className="ml-2 h-5 w-5" />
+        </Button>
+      ) : (
+        <ConnectButton />
+      )}
+    </div>
+  </section>
+</div>
+```
+
+)
+}

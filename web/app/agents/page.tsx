@@ -1,384 +1,738 @@
+// web/app/agents/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAccount, useContractRead } from 'wagmi'
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
+import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import Link from 'next/link'
+import { INFT_ABI, AGENT_MARKETPLACE_ABI } from '@/lib/contracts/abis'
+import { toast } from '@/components/ui/use-toast'
+import { parseEther, formatEther } from 'viem'
 import { 
-  Bot, 
-  MessageSquare, 
-  Share2, 
   ShoppingCart, 
-  Search,
-  Filter,
-  Grid3X3,
-  List,
-  Plus
+  MessageCircle, 
+  Loader2, 
+  Plus, 
+  RefreshCw, 
+  Send,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  Sparkles,
+  Ban
 } from 'lucide-react'
 
 interface Agent {
-  tokenId: string
-  name: string
-  description: string
-  model: string
-  capabilities: string[]
-  image: string
-  isListed: boolean
+  tokenId: number
+  metadataHash: string
+  metadata: any
+  status?: 'owned' | 'pending_purchase' | 'pending_transfer' | 'listed'
+  pendingInfo?: any
+  listingInfo?: any
 }
 
 export default function AgentsPage() {
-  const router = useRouter()
   const { address, isConnected } = useAccount()
+  const publicClient = usePublicClient()
+  const { data: walletClient } = useWalletClient()
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [refreshing, setRefreshing] = useState(false)
+  const [selectedAgent, setSelectedAgent] = useState<any>(null)
+  const [listingPrice, setListingPrice] = useState('')
+  const [isListing, setIsListing] = useState(false)
+  const [transferAgent, setTransferAgent] = useState<any>(null)
+  const [transferAddress, setTransferAddress] = useState('')
+  const [isTransferring, setIsTransferring] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [cancellingListingId, setCancellingListingId] = useState<number | null>(null)
 
-  // In production, fetch user's agents from contract events
+  const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
+  const marketplaceAddress = process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS as `0x${string}`
+
+  // Fix hydration error
   useEffect(() => {
-    const fetchAgents = async () => {
-      if (!address) return
+    setMounted(true)
+  }, [])
 
-      try {
-        // Mock data for demo
-        const mockAgents: Agent[] = [
-          {
-            tokenId: '1',
-            name: 'Code Assistant Pro',
-            description: 'Advanced AI for code generation and debugging',
-            model: 'GPT-4',
-            capabilities: ['code generation', 'debugging', 'refactoring'],
-            image: 'https://api.dicebear.com/7.x/bottts/svg?seed=1',
-            isListed: false
-          },
-          {
-            tokenId: '2',
-            name: 'Creative Writer',
-            description: 'AI specialized in creative writing and storytelling',
-            model: 'Claude 3',
-            capabilities: ['creative writing', 'storytelling', 'editing'],
-            image: 'https://api.dicebear.com/7.x/bottts/svg?seed=2',
-            isListed: true
-          },
-          {
-            tokenId: '3',
-            name: 'Data Analyst',
-            description: 'Expert in data analysis and visualization',
-            model: 'Custom Model',
-            capabilities: ['data analysis', 'visualization', 'reporting'],
-            image: 'https://api.dicebear.com/7.x/bottts/svg?seed=3',
-            isListed: false
-          }
-        ]
-        
-        setAgents(mockAgents)
-      } catch (error) {
-        console.error('Failed to fetch agents:', error)
-      } finally {
-        setLoading(false)
-      }
+  const loadAgents = async () => {
+    if (!address || !publicClient || !mounted) {
+      setLoading(false)
+      return
     }
 
-    fetchAgents()
-  }, [address])
+    try {
+      console.log('Loading agents for:', address)
+      
+      const totalSupply = await publicClient.readContract({
+        address: contractAddress,
+        abi: INFT_ABI,
+        functionName: 'totalSupply',
+      })
+      
+      const userAgents: Agent[] = []
+      // Fix for hydration error - only access localStorage on client
+      const pendingPurchases = typeof window !== 'undefined' 
+        ? JSON.parse(localStorage.getItem('pendingTransfers') || '{}')
+        : {}
+      
+      console.log('Pending purchases:', pendingPurchases)
+      
+      // Проверяем все токены
+      for (let i = 1; i <= Number(totalSupply); i++) {
+        try {
+          const owner = await publicClient.readContract({
+            address: contractAddress,
+            abi: INFT_ABI,
+            functionName: 'ownerOf',
+            args: [BigInt(i)]
+          })
+          
+          console.log(`Token ${i} owner:`, owner)
+          
+          // Если я владелец
+          if (owner.toLowerCase() === address.toLowerCase()) {
+            const metadataHash = await publicClient.readContract({
+              address: contractAddress,
+              abi: INFT_ABI,
+              functionName: 'getMetadataHash',
+              args: [BigInt(i)]
+            })
+            
+            let metadata = null
+            try {
+              const response = await fetch('/api/storage/retrieve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rootHash: metadataHash })
+              })
+              
+              if (response.ok) {
+                const data = await response.json()
+                metadata = JSON.parse(data.content)
+              }
+            } catch (error) {
+              console.error(`Failed to load metadata for token ${i}`)
+            }
+            
+            // Проверяем, выставлен ли на продажу
+            let isListed = false
+            let listingInfo = null
+            try {
+              const listing = await publicClient.readContract({
+                address: marketplaceAddress,
+                abi: AGENT_MARKETPLACE_ABI,
+                functionName: 'getListing',
+                args: [BigInt(i)]
+              })
+              
+              if (listing && listing.isActive && listing.seller.toLowerCase() === address.toLowerCase()) {
+                isListed = true
+                listingInfo = {
+                  price: listing.price,
+                  listedAt: listing.listedAt
+                }
+              }
+            } catch (error) {
+              console.log(`No listing for token ${i}`)
+            }
+            
+            // Проверяем, есть ли запросы на покупку этого токена
+            const purchaseRequests = Object.values(pendingPurchases).filter(
+              (p: any) => p.tokenId === i.toString() && p.seller.toLowerCase() === address.toLowerCase()
+            )
+            
+            console.log(`Token ${i} - listed: ${isListed}, purchase requests:`, purchaseRequests)
+            
+            userAgents.push({
+              tokenId: i,
+              metadataHash,
+              metadata: metadata || {
+                name: `Agent #${i}`,
+                description: 'Loading metadata...',
+                model: 'Unknown'
+              },
+              status: isListed ? 'listed' : (purchaseRequests.length > 0 ? 'pending_transfer' : 'owned'),
+              pendingInfo: purchaseRequests[0],
+              listingInfo: listingInfo
+            })
+          }
+          // Если есть ожидающая покупка от меня
+          else if (pendingPurchases[i.toString()]) {
+            const purchase = pendingPurchases[i.toString()]
+            if (purchase.buyer.toLowerCase() === address.toLowerCase()) {
+              console.log(`Token ${i} - pending purchase for me`)
+              userAgents.push({
+                tokenId: i,
+                metadataHash: '',
+                metadata: {
+                  name: `Agent #${i}`,
+                  description: 'Transfer pending...',
+                  model: 'Unknown'
+                },
+                status: 'pending_purchase',
+                pendingInfo: purchase
+              })
+            }
+          }
+        } catch (error) {
+          console.error(`Error checking token ${i}:`, error)
+        }
+      }
+      
+      console.log('Final agents:', userAgents)
+      setAgents(userAgents)
+    } catch (error) {
+      console.error('Error loading agents:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to load agents',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
 
-  const filteredAgents = agents.filter(agent =>
-    agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    agent.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    agent.capabilities.some(cap => cap.toLowerCase().includes(searchTerm.toLowerCase()))
-  )
+  useEffect(() => {
+    if (mounted) {
+      loadAgents()
+      
+      // Обновляем каждые 15 секунд
+      const interval = setInterval(loadAgents, 15000)
+      return () => clearInterval(interval)
+    }
+  }, [address, publicClient, mounted])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await loadAgents()
+  }
+
+  const listAgentForSale = async () => {
+    if (!selectedAgent || !listingPrice || !walletClient) return
+    
+    setIsListing(true)
+    try {
+      // 1. Approve
+      const approveTx = await walletClient.writeContract({
+        address: contractAddress,
+        abi: INFT_ABI,
+        functionName: 'approve',
+        args: [marketplaceAddress, BigInt(selectedAgent.tokenId)]
+      })
+      
+      await publicClient.waitForTransactionReceipt({ hash: approveTx })
+      
+      toast({
+        title: 'Step 1/2: Approved',
+        description: 'Now listing on marketplace...'
+      })
+      
+      // 2. List
+      const priceInWei = parseEther(listingPrice)
+      const listTx = await walletClient.writeContract({
+        address: marketplaceAddress,
+        abi: AGENT_MARKETPLACE_ABI,
+        functionName: 'listItem',
+        args: [
+          contractAddress,
+          BigInt(selectedAgent.tokenId),
+          priceInWei
+        ]
+      })
+      
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: listTx })
+      
+      if (receipt.status === 'success') {
+        toast({
+          title: 'Success!',
+          description: `${selectedAgent.metadata.name} listed for ${listingPrice} OG`
+        })
+        
+        setSelectedAgent(null)
+        setListingPrice('')
+        setTimeout(loadAgents, 2000)
+      }
+    } catch (error: any) {
+      console.error('Listing error:', error)
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to list agent',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsListing(false)
+    }
+  }
+
+  const cancelListing = async (agent: Agent) => {
+    if (!walletClient) return
+    
+    setCancellingListingId(agent.tokenId)
+    try {
+      const tx = await walletClient.writeContract({
+        address: marketplaceAddress,
+        abi: AGENT_MARKETPLACE_ABI,
+        functionName: 'cancelListing',
+        args: [
+          contractAddress,
+          BigInt(agent.tokenId)
+        ]
+      })
+      
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
+      
+      if (receipt.status === 'success') {
+        toast({
+          title: 'Success!',
+          description: 'Listing cancelled successfully'
+        })
+        
+        setTimeout(loadAgents, 2000)
+      }
+    } catch (error: any) {
+      console.error('Cancel listing error:', error)
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to cancel listing',
+        variant: 'destructive'
+      })
+    } finally {
+      setCancellingListingId(null)
+    }
+  }
+
+  const transferNFT = async () => {
+    if (!transferAgent || !transferAddress || !walletClient) return
+    
+    setIsTransferring(true)
+    try {
+      const tx = await walletClient.writeContract({
+        address: contractAddress,
+        abi: INFT_ABI,
+        functionName: 'transferFrom',
+        args: [
+          address as `0x${string}`,
+          transferAddress as `0x${string}`,
+          BigInt(transferAgent.tokenId)
+        ]
+      })
+      
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
+      
+      if (receipt.status === 'success') {
+        // Удаляем из pending transfers
+        if (typeof window !== 'undefined') {
+          const pendingPurchases = JSON.parse(localStorage.getItem('pendingTransfers') || '{}')
+          delete pendingPurchases[transferAgent.tokenId.toString()]
+          localStorage.setItem('pendingTransfers', JSON.stringify(pendingPurchases))
+        }
+        
+        toast({
+          title: 'Success!',
+          description: 'NFT transferred successfully!'
+        })
+        
+        setTransferAgent(null)
+        setTransferAddress('')
+        setTimeout(loadAgents, 2000)
+      }
+    } catch (error: any) {
+      console.error('Transfer error:', error)
+      toast({
+        title: 'Error',
+        description: error.message || 'Transfer failed',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsTransferring(false)
+    }
+  }
+
+  // Don't render until mounted to avoid hydration errors
+  if (!mounted) {
+    return null
+  }
 
   if (!isConnected) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-20 text-center">
-        <Bot className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-        <h1 className="text-3xl font-bold text-white mb-4">Connect Your Wallet</h1>
-        <p className="text-gray-400 mb-8">Please connect your wallet to view your AI agents</p>
-        <Button
-          onClick={() => router.push('/')}
-          variant="outline"
-          className="border-gray-600"
-        >
-          Go to Home
-        </Button>
+      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-32 h-32 mx-auto mb-6 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center">
+            <Sparkles className="w-16 h-16 text-purple-400" />
+          </div>
+          <h1 className="text-4xl font-bold text-white mb-4">Connect Your Wallet</h1>
+          <p className="text-gray-300">Please connect your wallet to view your AI agents</p>
+        </div>
       </div>
     )
   }
 
-  if (loading) {
+  if (loading && agents.length === 0) {
     return (
-      <div className="max-w-7xl mx-auto px-4 py-10">
-        <div className="mb-8">
-          <Skeleton className="h-10 w-48 mb-2" />
-          <Skeleton className="h-5 w-64" />
-        </div>
-        <div className="grid md:grid-cols-3 gap-6">
-          {[1, 2, 3].map((i) => (
-            <Card key={i} className="bg-gray-800/50 border-gray-700">
-              <CardHeader>
-                <Skeleton className="h-20 w-20 rounded-full mx-auto mb-4" />
-                <Skeleton className="h-6 w-32 mx-auto mb-2" />
-                <Skeleton className="h-4 w-full" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-4 w-full mb-2" />
-                <Skeleton className="h-4 w-3/4" />
-              </CardContent>
-              <CardFooter>
-                <Skeleton className="h-10 w-full" />
-              </CardFooter>
-            </Card>
-          ))}
+      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-white mx-auto mb-4" />
+          <p className="text-white">Loading your AI agents...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-10">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex justify-between items-start mb-6">
-          <div>
-            <h1 className="text-4xl font-bold text-white mb-2">My AI Agents</h1>
-            <p className="text-gray-400">
-              Manage and interact with your intelligent NFTs
-            </p>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
+      <div className="container mx-auto py-10 px-4">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-5xl font-bold text-white">My AI Agents</h1>
+            <div className="flex gap-3">
+              <Button 
+                onClick={handleRefresh} 
+                variant="outline"
+                disabled={refreshing}
+                className="bg-white/10 backdrop-blur-sm border-white/20 text-white hover:bg-white/20"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+              <Link href="/mint">
+                <Button className="bg-gradient-to-r from-purple-500 to-pink-500 hover:opacity-90">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create New Agent
+                </Button>
+              </Link>
+            </div>
           </div>
-          <Button
-            onClick={() => router.push('/mint')}
-            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Create New Agent
-          </Button>
+          <p className="text-gray-300">
+            Connected as: {address?.slice(0, 6)}...{address?.slice(-4)}
+          </p>
         </div>
 
-        {/* Search and Filter */}
-        <div className="flex gap-4 items-center">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
-              placeholder="Search agents..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 bg-gray-900/50 border-gray-700"
-            />
+        {/* Agents Grid */}
+        {agents.length === 0 ? (
+          <div className="text-center py-20">
+            <div className="max-w-md mx-auto bg-white/10 backdrop-blur-md rounded-3xl p-12 border border-white/20">
+              <img 
+                src="https://api.dicebear.com/7.x/bottts/svg?seed=empty" 
+                alt="No agents"
+                className="w-32 h-32 mx-auto mb-6 opacity-70"
+              />
+              <h2 className="text-2xl font-bold text-white mb-4">No agents found</h2>
+              <p className="text-gray-300 mb-8">
+                Create your first AI agent or wait for pending transfers to complete.
+              </p>
+              <Link href="/mint">
+                <Button size="lg" className="bg-gradient-to-r from-purple-500 to-pink-500">
+                  <Plus className="mr-2 h-5 w-5" />
+                  Create Your First Agent
+                </Button>
+              </Link>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setViewMode('grid')}
-              className={viewMode === 'grid' ? 'bg-gray-800' : ''}
-            >
-              <Grid3X3 className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setViewMode('list')}
-              className={viewMode === 'list' ? 'bg-gray-800' : ''}
-            >
-              <List className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* No Agents State */}
-      {agents.length === 0 ? (
-        <Card className="bg-gray-800/50 border-gray-700 text-center py-20">
-          <CardContent>
-            <Bot className="w-20 h-20 text-gray-600 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-white mb-2">
-              No AI Agents Yet
-            </h3>
-            <p className="text-gray-400 mb-6">
-              Create your first AI agent to get started
-            </p>
-            <Button
-              onClick={() => router.push('/mint')}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create AI Agent
-            </Button>
-          </CardContent>
-        </Card>
-      ) : filteredAgents.length === 0 ? (
-        <Card className="bg-gray-800/50 border-gray-700 text-center py-20">
-          <CardContent>
-            <Search className="w-20 h-20 text-gray-600 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-white mb-2">
-              No agents found
-            </h3>
-            <p className="text-gray-400">
-              Try adjusting your search criteria
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        /* Agents Grid/List */
-        <div className={viewMode === 'grid' ? 'grid md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
-          {filteredAgents.map((agent) => (
-            <Card
-              key={agent.tokenId}
-              className="bg-gray-800/50 border-gray-700 hover:bg-gray-800/70 transition-all duration-300 overflow-hidden"
-            >
-              {viewMode === 'grid' ? (
-                <>
-                  <CardHeader className="text-center">
-                    <div className="relative">
-                      <img
-                        src={agent.image}
-                        alt={agent.name}
-                        className="w-24 h-24 mx-auto mb-4 rounded-full bg-gray-700 p-2"
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {agents.map((agent) => (
+              <Card 
+                key={`${agent.tokenId}-${agent.status}`}
+                className={`
+                  bg-white/10 backdrop-blur-md border-white/20 hover:bg-white/15 transition-all
+                  ${agent.status === 'pending_purchase' ? 'border-yellow-500/50' : ''}
+                  ${agent.status === 'pending_transfer' ? 'border-green-500/50' : ''}
+                  ${agent.status === 'listed' ? 'border-purple-500/50' : ''}
+                `}
+              >
+                <CardHeader>
+                  <div className="relative">
+                    <div className="h-48 bg-gradient-to-br from-purple-600/30 to-pink-600/30 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
+                      <img 
+                        src={agent.metadata?.image || `https://api.dicebear.com/7.x/bottts/svg?seed=${agent.tokenId}`}
+                        alt={agent.metadata?.name}
+                        className="w-32 h-32 object-contain"
                       />
-                      {agent.isListed && (
-                        <Badge className="absolute top-0 right-1/4 bg-green-600">
-                          Listed
-                        </Badge>
-                      )}
                     </div>
-                    <h3 className="text-lg font-semibold text-white">{agent.name}</h3>
-                    <Badge variant="secondary" className="mt-2">
-                      {agent.model}
+                    
+                    {/* Status Badge */}
+                    {agent.status === 'pending_purchase' && (
+                      <Badge className="absolute top-2 right-2 bg-yellow-500/80">
+                        <Clock className="w-3 h-3 mr-1" />
+                        Pending Purchase
+                      </Badge>
+                    )}
+                    {agent.status === 'pending_transfer' && (
+                      <Badge className="absolute top-2 right-2 bg-green-500/80">
+                        <AlertCircle className="w-3 h-3 mr-1" />
+                        Transfer Needed
+                      </Badge>
+                    )}
+                    {agent.status === 'listed' && (
+                      <Badge className="absolute top-2 right-2 bg-purple-500/80">
+                        <ShoppingCart className="w-3 h-3 mr-1" />
+                        Listed
+                      </Badge>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <CardTitle className="text-xl text-white">
+                        {agent.metadata?.name || `Agent #${agent.tokenId}`}
+                      </CardTitle>
+                      <Badge variant="secondary" className="mt-1 bg-white/20">
+                        Token #{agent.tokenId}
+                      </Badge>
+                    </div>
+                    <Badge variant="outline" className="border-white/30 text-white">
+                      {agent.metadata?.model || 'Unknown'}
                     </Badge>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-gray-400 text-sm mb-4">{agent.description}</p>
-                    <div className="flex flex-wrap gap-1">
-                      {agent.capabilities.slice(0, 3).map((cap, i) => (
-                        <Badge key={i} variant="outline" className="text-xs">
-                          {cap}
-                        </Badge>
-                      ))}
-                      {agent.capabilities.length > 3 && (
-                        <Badge variant="outline" className="text-xs">
-                          +{agent.capabilities.length - 3}
-                        </Badge>
+                  </div>
+                </CardHeader>
+                
+                <CardContent>
+                  <p className="text-sm text-gray-300 mb-4 line-clamp-2">
+                    {agent.metadata?.description || 'No description available'}
+                  </p>
+                  
+                  {/* Listing info */}
+                  {agent.status === 'listed' && agent.listingInfo && (
+                    <div className="mb-4 p-3 bg-purple-900/30 rounded-lg text-xs">
+                      <div className="space-y-1 text-purple-300">
+                        <p>Listed for sale</p>
+                        <p className="text-white font-semibold">
+                          Price: {formatEther(agent.listingInfo.price)} OG
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Pending info */}
+                  {agent.pendingInfo && (
+                    <div className="mb-4 p-3 bg-black/30 rounded-lg text-xs">
+                      {agent.status === 'pending_purchase' ? (
+                        <div className="space-y-1 text-yellow-300">
+                          <p>Waiting for transfer from:</p>
+                          <p className="font-mono break-all">{agent.pendingInfo.seller}</p>
+                          <p className="text-gray-400">
+                            Paid: {formatEther(BigInt(agent.pendingInfo.price))} OG
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1 text-green-300">
+                          <p>Transfer requested by:</p>
+                          <p className="font-mono break-all">{agent.pendingInfo.buyer}</p>
+                          <p className="text-gray-400">
+                            Amount: {formatEther(BigInt(agent.pendingInfo.price))} OG
+                          </p>
+                        </div>
                       )}
                     </div>
-                  </CardContent>
-                  <CardFooter className="flex gap-2">
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => router.push(`/chat/${agent.tokenId}`)}
-                    >
-                      <MessageSquare className="w-4 h-4 mr-1" />
-                      Chat
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => router.push(`/agents/${agent.tokenId}/manage`)}
-                    >
-                      <Share2 className="w-4 h-4" />
-                    </Button>
-                    {!agent.isListed && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => router.push(`/agents/${agent.tokenId}/list`)}
+                  )}
+                  
+                  {/* Actions */}
+                  <div className="flex gap-2">
+                    {agent.status === 'owned' && (
+                      <>
+                        <Link href={`/agent/${agent.tokenId}/chat`} className="flex-1">
+                          <Button variant="outline" className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20">
+                            <MessageCircle className="h-4 w-4 mr-2" />
+                            Chat
+                          </Button>
+                        </Link>
+                        <Button 
+                          onClick={() => setSelectedAgent(agent)}
+                          className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500"
+                        >
+                          <ShoppingCart className="h-4 w-4 mr-2" />
+                          Sell
+                        </Button>
+                      </>
+                    )}
+                    
+                    {agent.status === 'listed' && (
+                      <>
+                        <Link href={`/agent/${agent.tokenId}/chat`} className="flex-1">
+                          <Button variant="outline" className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20">
+                            <MessageCircle className="h-4 w-4 mr-2" />
+                            Chat
+                          </Button>
+                        </Link>
+                        <Button 
+                          onClick={() => cancelListing(agent)}
+                          disabled={cancellingListingId === agent.tokenId}
+                          className="flex-1 bg-gradient-to-r from-red-500 to-orange-500"
+                        >
+                          {cancellingListingId === agent.tokenId ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Cancelling...
+                            </>
+                          ) : (
+                            <>
+                              <Ban className="h-4 w-4 mr-2" />
+                              Cancel
+                            </>
+                          )}
+                        </Button>
+                      </>
+                    )}
+                    
+                    {agent.status === 'pending_transfer' && agent.pendingInfo && (
+                      <Button 
+                        onClick={() => {
+                          console.log('Setting transfer agent:', agent)
+                          setTransferAgent(agent)
+                          setTransferAddress(agent.pendingInfo.buyer)
+                        }}
+                        className="w-full bg-gradient-to-r from-green-500 to-emerald-500"
                       >
-                        <ShoppingCart className="w-4 h-4" />
+                        <Send className="h-4 w-4 mr-2" />
+                        Transfer to Buyer
                       </Button>
                     )}
-                  </CardFooter>
+                    
+                    {agent.status === 'pending_purchase' && (
+                      <Button disabled className="w-full opacity-50">
+                        <Clock className="h-4 w-4 mr-2" />
+                        Waiting for Transfer
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* List for Sale Dialog */}
+      <Dialog open={!!selectedAgent} onOpenChange={() => setSelectedAgent(null)}>
+        <DialogContent className="bg-gray-900 border-gray-700 text-white">
+          <DialogHeader>
+            <DialogTitle>List {selectedAgent?.metadata?.name} for Sale</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Set your price in OG tokens. The agent will be listed on the marketplace.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 mt-4">
+            <div className="bg-gray-800 p-4 rounded-lg">
+              <p className="text-sm font-medium">{selectedAgent?.metadata?.name}</p>
+              <p className="text-xs text-gray-400 mt-1">{selectedAgent?.metadata?.description}</p>
+              <div className="flex gap-2 mt-2">
+                <Badge variant="outline" className="text-xs">Token #{selectedAgent?.tokenId}</Badge>
+                <Badge variant="outline" className="text-xs">{selectedAgent?.metadata?.model}</Badge>
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="price">Price (OG)</Label>
+              <Input
+                id="price"
+                type="number"
+                step="0.001"
+                value={listingPrice}
+                onChange={(e) => setListingPrice(e.target.value)}
+                placeholder="0.001"
+                className="mt-1 bg-gray-800 border-gray-700"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Minimum price: 0.001 OG
+              </p>
+            </div>
+            
+            <Button
+              onClick={listAgentForSale}
+              disabled={isListing || !listingPrice || parseFloat(listingPrice) < 0.001}
+              className="w-full bg-gradient-to-r from-purple-500 to-pink-500"
+            >
+              {isListing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Listing...
                 </>
               ) : (
-                /* List View */
-                <div className="flex items-center p-6 gap-6">
-                  <img
-                    src={agent.image}
-                    alt={agent.name}
-                    className="w-16 h-16 rounded-full bg-gray-700 p-1"
-                  />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-lg font-semibold text-white">{agent.name}</h3>
-                      <Badge variant="secondary" className="text-xs">
-                        {agent.model}
-                      </Badge>
-                      {agent.isListed && (
-                        <Badge className="bg-green-600 text-xs">Listed</Badge>
-                      )}
-                    </div>
-                    <p className="text-gray-400 text-sm mb-2">{agent.description}</p>
-                    <div className="flex flex-wrap gap-1">
-                      {agent.capabilities.map((cap, i) => (
-                        <Badge key={i} variant="outline" className="text-xs">
-                          {cap}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => router.push(`/chat/${agent.tokenId}`)}
-                      className="bg-purple-600 hover:bg-purple-700"
-                    >
-                      <MessageSquare className="w-4 h-4 mr-1" />
-                      Chat
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => router.push(`/agents/${agent.tokenId}/manage`)}
-                    >
-                      Manage
-                    </Button>
-                  </div>
-                </div>
+                'List for Sale'
               )}
-            </Card>
-          ))}
-        </div>
-      )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-      {/* Stats */}
-      {agents.length > 0 && (
-        <div className="mt-12 grid md:grid-cols-4 gap-4">
-          <Card className="bg-gray-800/50 border-gray-700 p-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-purple-400">{agents.length}</div>
-              <div className="text-sm text-gray-400">Total Agents</div>
+      {/* Transfer Dialog */}
+      <Dialog open={!!transferAgent} onOpenChange={() => setTransferAgent(null)}>
+        <DialogContent className="bg-gray-900 border-gray-700 text-white">
+          <DialogHeader>
+            <DialogTitle>Transfer NFT to Buyer</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              The buyer has sent payment. Complete the transfer to finish the sale.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 mt-4">
+            <div className="bg-green-900/30 border border-green-500/30 p-4 rounded-lg">
+              <p className="text-sm text-green-300 mb-2">Payment Received!</p>
+              <p className="text-xs text-gray-400">
+                Amount: {transferAgent?.pendingInfo && formatEther(BigInt(transferAgent.pendingInfo.price))} OG
+              </p>
+              <p className="text-xs text-gray-400 break-all">
+                Transaction: {transferAgent?.pendingInfo?.txHash.slice(0, 10)}...
+              </p>
             </div>
-          </Card>
-          <Card className="bg-gray-800/50 border-gray-700 p-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-400">
-                {agents.filter(a => a.isListed).length}
-              </div>
-              <div className="text-sm text-gray-400">Listed</div>
+            
+            <div>
+              <Label htmlFor="buyerAddress">Buyer Address</Label>
+              <Input
+                id="buyerAddress"
+                value={transferAddress}
+                onChange={(e) => setTransferAddress(e.target.value)}
+                className="mt-1 bg-gray-800 border-gray-700 font-mono text-sm"
+                readOnly
+              />
             </div>
-          </Card>
-          <Card className="bg-gray-800/50 border-gray-700 p-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-blue-400">
-                {agents.filter(a => !a.isListed).length}
-              </div>
-              <div className="text-sm text-gray-400">Private</div>
+            
+            <div className="bg-yellow-900/30 border border-yellow-500/30 p-3 rounded-lg">
+              <p className="text-xs text-yellow-300">
+                ⚠️ This action is irreversible. Make sure the payment transaction is confirmed.
+              </p>
             </div>
-          </Card>
-          <Card className="bg-gray-800/50 border-gray-700 p-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-pink-400">
-                {[...new Set(agents.map(a => a.model))].length}
-              </div>
-              <div className="text-sm text-gray-400">Models Used</div>
-            </div>
-          </Card>
-        </div>
-      )}
+            
+            <DialogFooter className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setTransferAgent(null)}
+                className="flex-1 bg-gray-800 border-gray-700"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={transferNFT}
+                disabled={isTransferring || !transferAddress}
+                className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500"
+              >
+                {isTransferring ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Transferring...
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-4 w-4" />
+                    Transfer NFT
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

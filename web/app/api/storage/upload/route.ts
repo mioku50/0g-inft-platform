@@ -1,171 +1,106 @@
-// app/api/storage/upload/route.ts
+// web/app/api/storage/upload/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { uploadToStorage } from '@/lib/storage/client'
+import { uploadToStorage, StorageError } from '@/lib/storage/client-server'
 
 export async function POST(request: NextRequest) {
-  try {
-    const { data, owner } = await request.json()
+  console.log('=== Storage Upload API Debug ===')
+  console.log('Current directory:', process.cwd())
+  
+  const privateKey = process.env.OG_STORAGE_PRIVATE_KEY
+  console.log('Environment check:', {
+    NODE_ENV: process.env.NODE_ENV,
+    hasStorageKey: !!privateKey,
+    keyLength: privateKey?.length || 0,
+    keyPrefix: privateKey ? privateKey.substring(0, 6) + '...' : 'not set'
+  })
 
-    if (!data || !owner) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
-    }
-
-    const privateKey = process.env.OG_STORAGE_PRIVATE_KEY
-    if (!privateKey) {
-      throw new Error('OG_STORAGE_PRIVATE_KEY not configured')
-    }
-
-    // Используем реальный 0G Storage
-    const result = await uploadToStorage(data, owner, privateKey)
-
-    return NextResponse.json({
-      ...result,
-      success: true
-    })
-  } catch (error: any) {
-    console.error('Storage upload error:', error)
+  if (!privateKey) {
     return NextResponse.json(
-      { error: error.message || 'Failed to upload to storage' },
+      { error: 'Storage key not configured' },
       { status: 500 }
     )
   }
-}
 
-// ===================================
-// app/api/compute/chat/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { getComputeClient } from '@/lib/compute/client'
+  console.log('Using storage key:', privateKey.substring(0, 6) + '...')
 
-export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { tokenId, messages, stream } = body
-
-    if (!tokenId || !messages) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      )
-    }
-
-    const compute = await getComputeClient()
-
-    // Для streaming ответов
-    if (stream) {
-      const encoder = new TextEncoder()
-      const stream = new ReadableStream({
-        async start(controller) {
-          try {
-            for await (const chunk of compute.streamChat({ tokenId, messages })) {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ content: chunk })}\n\n`)
-              )
-            }
-            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-            controller.close()
-          } catch (error) {
-            controller.error(error)
-          }
-        }
-      })
-
-      return new Response(stream, {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
-      })
-    }
-
-    // Обычный запрос
-    const response = await compute.chat({ tokenId, messages })
-    return NextResponse.json(response)
-  } catch (error: any) {
-    console.error('Compute chat error:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to process chat request' },
-      { status: 500 }
-    )
-  }
-}
-
-// ===================================
-// app/api/compute/services/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { getComputeClient } from '@/lib/compute/client'
-
-export async function GET(request: NextRequest) {
-  try {
-    const compute = await getComputeClient()
-    const services = await compute.listServices()
+    // Проверяем Content-Type
+    const contentType = request.headers.get('content-type') || ''
     
-    return NextResponse.json({
-      success: true,
-      services
-    })
-  } catch (error: any) {
-    console.error('Failed to list services:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to list services' },
-      { status: 500 }
-    )
-  }
-}
+    let file: File | null = null
+    let metadata: any = null
 
-// ===================================
-// app/api/compute/account/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { getComputeClient } from '@/lib/compute/client'
-
-export async function GET(request: NextRequest) {
-  try {
-    const compute = await getComputeClient()
-    const accountInfo = await compute.getAccountInfo()
-    
-    return NextResponse.json({
-      success: true,
-      accountInfo
-    })
-  } catch (error: any) {
-    console.error('Failed to get account info:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to get account info' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const { action, amount } = await request.json()
-    const compute = await getComputeClient()
-    
-    if (action === 'deposit') {
-      await compute.deposit(amount)
-      return NextResponse.json({
-        success: true,
-        message: `Deposited ${amount} ETH to ledger`
-      })
-    } else if (action === 'refund') {
-      await compute.refund(amount)
-      return NextResponse.json({
-        success: true,
-        message: `Requested refund of ${amount} ETH`
-      })
+    if (contentType.includes('multipart/form-data')) {
+      // Обработка FormData
+      const formData = await request.formData()
+      file = formData.get('file') as File
+      const metadataStr = formData.get('metadata') as string
+      if (metadataStr) {
+        metadata = JSON.parse(metadataStr)
+      }
+    } else if (contentType.includes('application/json')) {
+      // Обработка JSON
+      const body = await request.json()
+      metadata = body.metadata
+      
+      // Если есть данные файла в base64
+      if (body.fileData && body.fileName) {
+        const buffer = Buffer.from(body.fileData, 'base64')
+        const blob = new Blob([buffer], { type: body.fileType || 'application/octet-stream' })
+        file = new File([blob], body.fileName, { type: body.fileType || 'application/octet-stream' })
+      } else if (metadata) {
+        // Создаем файл из метаданных
+        const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' })
+        file = new File([metadataBlob], 'metadata.json', { type: 'application/json' })
+      }
     } else {
       return NextResponse.json(
-        { error: 'Invalid action' },
+        { error: 'Invalid content type. Expected multipart/form-data or application/json' },
         { status: 400 }
       )
     }
-  } catch (error: any) {
-    console.error('Account action error:', error)
+
+    if (!file) {
+      return NextResponse.json(
+        { error: 'No file or metadata provided' },
+        { status: 400 }
+      )
+    }
+
+    console.log('File info:', {
+      name: file.name,
+      size: file.size,
+      type: file.type
+    })
+
+    // Upload to 0G Storage
+    const result = await uploadToStorage(file, file.name)
+    
+    console.log('Upload successful:', {
+      rootHash: result.rootHash,
+      txHash: result.txHash,
+      size: result.size
+    })
+
+    return NextResponse.json({
+      success: true,
+      rootHash: result.rootHash,
+      txHash: result.txHash,
+      size: result.size,
+      segments: result.segments
+    })
+  } catch (error) {
+    console.error('Storage upload error:', error)
+    
+    if (error instanceof StorageError) {
+      return NextResponse.json(
+        { error: error.message, details: error.details },
+        { status: 500 }
+      )
+    }
+    
     return NextResponse.json(
-      { error: error.message || 'Failed to perform account action' },
+      { error: 'Failed to upload to storage' },
       { status: 500 }
     )
   }

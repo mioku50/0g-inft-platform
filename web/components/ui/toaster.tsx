@@ -1,4 +1,3 @@
-// src/components/ui/toaster.tsx
 "use client"
 
 import {
@@ -34,5 +33,3 @@ export function Toaster() {
     </ToastProvider>
   )
 }
-
-

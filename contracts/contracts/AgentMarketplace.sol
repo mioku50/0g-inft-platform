@@ -1,90 +1,75 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IINFT is IERC721 {
-    function secureTransfer(
+    function transferWithMetadata(
         address from,
         address to,
         uint256 tokenId,
         bytes calldata sealedKey,
         bytes calldata proof
     ) external;
-    
-    function getEncryptedURI(uint256 tokenId) external view returns (string memory);
-}
-
-interface IOracle {
-    function processTransferForMarketplace(
-        uint256 tokenId,
-        address from,
-        address to,
-        bytes calldata buyerPublicKey
-    ) external returns (bytes memory sealedKey, bytes memory proof);
 }
 
 /**
  * @title AgentMarketplace
- * @notice Marketplace for buying and selling AI Agent INFTs
+ * @dev Marketplace for buying and selling AI Agent NFTs with secure metadata transfer
  */
-contract AgentMarketplace is ReentrancyGuard, Ownable {
+contract AgentMarketplace is ReentrancyGuard, Pausable, Ownable {
+    // Struct for listings
     struct Listing {
         address seller;
         uint256 price;
         bool isActive;
+        string description;
         uint256 listedAt;
     }
     
     // State variables
     IINFT public inftContract;
-    IOracle public oracle;
-    uint256 public marketplaceFee = 250; // 2.5% fee (250 / 10000)
-    uint256 public constant FEE_DENOMINATOR = 10000;
+    uint256 public platformFeePercentage = 250; // 2.5%
+    uint256 public constant MAX_FEE = 1000; // 10%
     
+    // Mappings
     mapping(uint256 => Listing) public listings;
     mapping(address => uint256) public pendingWithdrawals;
     
     // Events
-    event AgentListed(
-        uint256 indexed tokenId,
-        address indexed seller,
-        uint256 price
-    );
+    event AgentListed(uint256 indexed tokenId, address indexed seller, uint256 price);
+    event AgentDelisted(uint256 indexed tokenId, address indexed seller);
+    event AgentSold(uint256 indexed tokenId, address indexed seller, address indexed buyer, uint256 price);
+    event PlatformFeeUpdated(uint256 newFee);
+    event FundsWithdrawn(address indexed user, uint256 amount);
     
-    event AgentSold(
-        uint256 indexed tokenId,
-        address indexed seller,
-        address indexed buyer,
-        uint256 price
-    );
-    
-    event ListingCancelled(uint256 indexed tokenId, address indexed seller);
-    event ListingUpdated(uint256 indexed tokenId, uint256 newPrice);
-    event FeeUpdated(uint256 newFee);
-    event Withdrawal(address indexed user, uint256 amount);
-    
-    constructor(address _inftContract, address _oracle) {
+    constructor(address _inftContract) {
+        require(_inftContract != address(0), "Invalid INFT contract");
         inftContract = IINFT(_inftContract);
-        oracle = IOracle(_oracle);
     }
     
     /**
-     * @notice List an AI agent for sale
-     * @param tokenId The INFT token ID
-     * @param price The sale price in wei
+     * @dev List an AI agent for sale
+     * @param tokenId Token ID to list
+     * @param price Sale price in wei
+     * @param description Description of the agent
      */
-    function listAgent(uint256 tokenId, uint256 price) external nonReentrant {
+    function listAgent(
+        uint256 tokenId,
+        uint256 price,
+        string calldata description
+    ) external whenNotPaused {
         require(price > 0, "Price must be greater than 0");
         require(inftContract.ownerOf(tokenId) == msg.sender, "Not the owner");
         require(!listings[tokenId].isActive, "Already listed");
         
-        // Check marketplace has approval
+        // Check if marketplace is approved
         require(
-            inftContract.getApproved(tokenId) == address(this) ||
-            inftContract.isApprovedForAll(msg.sender, address(this)),
+            inftContract.isApprovedForAll(msg.sender, address(this)) ||
+            inftContract.getApproved(tokenId) == address(this),
             "Marketplace not approved"
         );
         
@@ -92,6 +77,7 @@ contract AgentMarketplace is ReentrancyGuard, Ownable {
             seller: msg.sender,
             price: price,
             isActive: true,
+            description: description,
             listedAt: block.timestamp
         });
         
@@ -99,67 +85,55 @@ contract AgentMarketplace is ReentrancyGuard, Ownable {
     }
     
     /**
-     * @notice Update listing price
-     * @param tokenId The INFT token ID
-     * @param newPrice The new price in wei
+     * @dev Update listing price
+     * @param tokenId Token ID
+     * @param newPrice New price in wei
      */
-    function updateListing(uint256 tokenId, uint256 newPrice) external {
-        require(newPrice > 0, "Price must be greater than 0");
+    function updatePrice(uint256 tokenId, uint256 newPrice) external {
         require(listings[tokenId].isActive, "Not listed");
         require(listings[tokenId].seller == msg.sender, "Not the seller");
+        require(newPrice > 0, "Price must be greater than 0");
         
         listings[tokenId].price = newPrice;
-        
-        emit ListingUpdated(tokenId, newPrice);
     }
     
     /**
-     * @notice Cancel a listing
-     * @param tokenId The INFT token ID
+     * @dev Delist an agent
+     * @param tokenId Token ID to delist
      */
-    function cancelListing(uint256 tokenId) external {
+    function delistAgent(uint256 tokenId) external {
         require(listings[tokenId].isActive, "Not listed");
         require(listings[tokenId].seller == msg.sender, "Not the seller");
         
         delete listings[tokenId];
-        
-        emit ListingCancelled(tokenId, msg.sender);
+        emit AgentDelisted(tokenId, msg.sender);
     }
     
     /**
-     * @notice Purchase an AI agent
-     * @param tokenId The INFT token ID
-     * @param buyerPublicKey Optional public key for secure transfer
+     * @dev Purchase an agent with metadata transfer
+     * @param tokenId Token ID to purchase
+     * @param sealedKey Sealed encryption key for buyer
+     * @param proof Oracle proof for metadata transfer
      */
     function purchaseAgent(
         uint256 tokenId,
-        bytes calldata buyerPublicKey
-    ) external payable nonReentrant {
+        bytes calldata sealedKey,
+        bytes calldata proof
+    ) external payable whenNotPaused nonReentrant {
         Listing memory listing = listings[tokenId];
-        require(listing.isActive, "Not listed");
+        require(listing.isActive, "Not for sale");
         require(msg.value >= listing.price, "Insufficient payment");
         require(msg.sender != listing.seller, "Cannot buy own listing");
         
-        // Verify seller still owns the token
-        require(inftContract.ownerOf(tokenId) == listing.seller, "Seller no longer owns token");
-        
         // Calculate fees
-        uint256 fee = (listing.price * marketplaceFee) / FEE_DENOMINATOR;
-        uint256 sellerProceeds = listing.price - fee;
+        uint256 platformFee = (listing.price * platformFeePercentage) / 10000;
+        uint256 sellerProceeds = listing.price - platformFee;
         
-        // Remove listing
+        // Delete listing before transfer
         delete listings[tokenId];
         
-        // Process secure transfer through oracle
-        (bytes memory sealedKey, bytes memory proof) = oracle.processTransferForMarketplace(
-            tokenId,
-            listing.seller,
-            msg.sender,
-            buyerPublicKey
-        );
-        
-        // Execute the transfer
-        inftContract.secureTransfer(
+        // Transfer the NFT with metadata
+        inftContract.transferWithMetadata(
             listing.seller,
             msg.sender,
             tokenId,
@@ -169,132 +143,70 @@ contract AgentMarketplace is ReentrancyGuard, Ownable {
         
         // Handle payments
         pendingWithdrawals[listing.seller] += sellerProceeds;
-        pendingWithdrawals[owner()] += fee;
+        pendingWithdrawals[owner()] += platformFee;
         
         // Refund excess payment
         if (msg.value > listing.price) {
-            payable(msg.sender).transfer(msg.value - listing.price);
+            pendingWithdrawals[msg.sender] += msg.value - listing.price;
         }
         
         emit AgentSold(tokenId, listing.seller, msg.sender, listing.price);
     }
     
     /**
-     * @notice Withdraw pending funds
+     * @dev Withdraw pending funds
      */
     function withdraw() external nonReentrant {
         uint256 amount = pendingWithdrawals[msg.sender];
-        require(amount > 0, "No funds to withdraw");
+        require(amount > 0, "Nothing to withdraw");
         
         pendingWithdrawals[msg.sender] = 0;
-        payable(msg.sender).transfer(amount);
         
-        emit Withdrawal(msg.sender, amount);
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "Transfer failed");
+        
+        emit FundsWithdrawn(msg.sender, amount);
     }
     
     /**
-     * @notice Get listing details
-     * @param tokenId The INFT token ID
+     * @dev Update platform fee (owner only)
+     * @param newFee New fee percentage (basis points)
      */
-    function getListing(uint256 tokenId) external view returns (
-        address seller,
-        uint256 price,
-        bool isActive,
-        uint256 listedAt
-    ) {
-        Listing memory listing = listings[tokenId];
-        return (listing.seller, listing.price, listing.isActive, listing.listedAt);
+    function updatePlatformFee(uint256 newFee) external onlyOwner {
+        require(newFee <= MAX_FEE, "Fee too high");
+        platformFeePercentage = newFee;
+        emit PlatformFeeUpdated(newFee);
     }
     
     /**
-     * @notice Get multiple listings
-     * @param tokenIds Array of token IDs
+     * @dev Pause marketplace (owner only)
      */
-    function getListings(uint256[] calldata tokenIds) external view returns (Listing[] memory) {
-        Listing[] memory result = new Listing[](tokenIds.length);
-        for (uint i = 0; i < tokenIds.length; i++) {
-            result[i] = listings[tokenIds[i]];
-        }
-        return result;
+    function pause() external onlyOwner {
+        _pause();
     }
     
     /**
-     * @notice Check if token is listed
-     * @param tokenId The INFT token ID
+     * @dev Unpause marketplace (owner only)
+     */
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+    
+    /**
+     * @dev Get listing details
+     * @param tokenId Token ID
+     * @return Listing struct
+     */
+    function getListing(uint256 tokenId) external view returns (Listing memory) {
+        return listings[tokenId];
+    }
+    
+    /**
+     * @dev Check if token is listed
+     * @param tokenId Token ID
+     * @return bool
      */
     function isListed(uint256 tokenId) external view returns (bool) {
         return listings[tokenId].isActive;
-    }
-    
-    /**
-     * @notice Update marketplace fee (owner only)
-     * @param newFee New fee in basis points (e.g., 250 = 2.5%)
-     */
-    function setMarketplaceFee(uint256 newFee) external onlyOwner {
-        require(newFee <= 1000, "Fee too high"); // Max 10%
-        marketplaceFee = newFee;
-        emit FeeUpdated(newFee);
-    }
-    
-    /**
-     * @notice Update oracle address (owner only)
-     * @param newOracle New oracle address
-     */
-    function setOracle(address newOracle) external onlyOwner {
-        require(newOracle != address(0), "Invalid oracle");
-        oracle = IOracle(newOracle);
-    }
-    
-    /**
-     * @notice Emergency pause - remove a listing (owner only)
-     * @param tokenId The INFT token ID
-     */
-    function emergencyDelistToken(uint256 tokenId) external onlyOwner {
-        require(listings[tokenId].isActive, "Not listed");
-        
-        address seller = listings[tokenId].seller;
-        delete listings[tokenId];
-        
-        emit ListingCancelled(tokenId, seller);
-    }
-}
-
-// ===================================
-// contracts/contracts/MockOracle.sol
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
-
-/**
- * @title MockOracle
- * @notice Mock oracle for testing - in production, use real 0G oracle
- */
-contract MockOracle {
-    // Mock implementation - always returns true for testing
-    function verifyProof(bytes calldata) external pure returns (bool) {
-        return true;
-    }
-    
-    // Mock transfer processing
-    function processTransfer(
-        uint256,
-        address,
-        address,
-        bytes calldata
-    ) external pure returns (bytes memory sealedKey, bytes memory proof) {
-        // Return mock data for testing
-        sealedKey = new bytes(32);
-        proof = new bytes(64);
-    }
-    
-    // Mock marketplace transfer processing
-    function processTransferForMarketplace(
-        uint256,
-        address,
-        address,
-        bytes calldata
-    ) external pure returns (bytes memory sealedKey, bytes memory proof) {
-        // Return mock data for testing
-        sealedKey = new bytes(32);
-        proof = new bytes(64);
     }
 }

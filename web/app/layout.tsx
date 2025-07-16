@@ -1,14 +1,21 @@
-import './globals.css'
+// web/app/layout.tsx
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import './globals.css'
 import { Providers } from './providers'
+import { Navbar } from '@/components/layout/navbar'
 import { Toaster } from '@/components/ui/toaster'
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ 
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
+})
 
 export const metadata: Metadata = {
   title: '0G INFT Platform - AI Agent NFTs',
-  description: 'Create, manage and trade AI agents as NFTs on 0G Network',
+  description: 'Create, own, and trade intelligent NFTs on the decentralized 0G Network',
+  keywords: '0G, NFT, AI, blockchain, decentralized, agents',
 }
 
 export default function RootLayout({
@@ -17,37 +24,55 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className={inter.className}>
+    <html lang="en" className={inter.variable}>
+      <body className={`${inter.className} antialiased`}>
         <Providers>
-          <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900">
-            <nav className="border-b border-gray-800 bg-gray-900/50 backdrop-blur-xl">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex justify-between h-16 items-center">
-                  <div className="flex items-center">
-                    <a href="/" className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-                        <span className="text-white font-bold">0G</span>
-                      </div>
-                      <span className="text-xl font-bold text-white">INFT Platform</span>
-                    </a>
-                    <nav className="ml-10 flex space-x-8">
-                      <a href="/mint" className="text-gray-300 hover:text-white transition-colors">
-                        Mint Agent
-                      </a>
-                      <a href="/agents" className="text-gray-300 hover:text-white transition-colors">
-                        My Agents
-                      </a>
-                      <a href="/marketplace" className="text-gray-300 hover:text-white transition-colors">
-                        Marketplace
-                      </a>
-                    </nav>
+          <div className="min-h-screen bg-white">
+            <Navbar />
+            <main>{children}</main>
+            
+            {/* Footer */}
+            <footer className="bg-gray-50 border-t border-gray-200 mt-20">
+              <div className="container mx-auto px-4 py-12">
+                <div className="grid md:grid-cols-4 gap-8">
+                  <div>
+                    <h3 className="font-bold text-lg mb-4 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                      0G INFT
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      Building the future of intelligent NFTs on the 0G Network
+                    </p>
                   </div>
-                  <div id="connect-button-container" />
+                  <div>
+                    <h4 className="font-semibold mb-3">Platform</h4>
+                    <ul className="space-y-2 text-sm text-gray-600">
+                      <li><a href="/mint" className="hover:text-purple-600 transition">Mint Agent</a></li>
+                      <li><a href="/marketplace" className="hover:text-purple-600 transition">Marketplace</a></li>
+                      <li><a href="/agents" className="hover:text-purple-600 transition">My Agents</a></li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-3">Resources</h4>
+                    <ul className="space-y-2 text-sm text-gray-600">
+                      <li><a href="https://docs.0g.ai" target="_blank" rel="noopener noreferrer" className="hover:text-purple-600 transition">Documentation</a></li>
+                      <li><a href="https://faucet.0g.ai" target="_blank" rel="noopener noreferrer" className="hover:text-purple-600 transition">Faucet</a></li>
+                      <li><a href="https://chainscan-galileo.0g.ai" target="_blank" rel="noopener noreferrer" className="hover:text-purple-600 transition">Explorer</a></li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold mb-3">Community</h4>
+                    <ul className="space-y-2 text-sm text-gray-600">
+                      <li><a href="#" className="hover:text-purple-600 transition">Discord</a></li>
+                      <li><a href="#" className="hover:text-purple-600 transition">Twitter</a></li>
+                      <li><a href="#" className="hover:text-purple-600 transition">Telegram</a></li>
+                    </ul>
+                  </div>
+                </div>
+                <div className="border-t border-gray-200 mt-8 pt-8 text-center text-sm text-gray-600">
+                  <p>&copy; 2025 0G INFT Platform. Built with ❤️ on 0G Network</p>
                 </div>
               </div>
-            </nav>
-            <main>{children}</main>
+            </footer>
           </div>
           <Toaster />
         </Providers>

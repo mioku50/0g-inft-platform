@@ -1,0 +1,27 @@
+{
+  "network": "0g-testnet",
+  "chainId": 16601,
+  "deployedAt": "2025-07-14T09:05:33.720Z",
+  "contracts": {
+    "MockOracle": {
+      "address": "0x4527cAF22F8d5E9E3f597df22F2186A1E17a2e0E",
+      "deployer": "0x432330379Af04Dd2770557C711d82f88072cE3d5"
+    },
+    "INFT": {
+      "address": "0x500AF12C3Fd7aF1665DC85Eff9844054709dF380",
+      "deployer": "0x432330379Af04Dd2770557C711d82f88072cE3d5"
+    },
+    "AgentMarketplace": {
+      "address": "0x0386aECf929D5e1157649584869fa6DDdcAB8B00",
+      "deployer": "0x432330379Af04Dd2770557C711d82f88072cE3d5"
+    },
+    "MockComputeOracle": {
+      "address": "0x4918c6bD0aAC81cB284A094a77Ef6E24CA04fA74",
+      "deployer": "0x432330379Af04Dd2770557C711d82f88072cE3d5"
+    },
+    "AIExecutor": {
+      "address": "0x8A7607043ee30bEF94Cc566586230366432de875",
+      "deployer": "0x432330379Af04Dd2770557C711d82f88072cE3d5"
+    }
+  }
+}

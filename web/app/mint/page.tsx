@@ -1,365 +1,262 @@
+// web/app/mint/page.tsx
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAccount, useContractWrite, useWaitForTransaction } from 'wagmi'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import * as z from 'zod'
-import { Button } from '@/components/ui/button'
+import { useState, useCallback } from 'react'
+import { useAccount, useWalletClient, usePublicClient } from 'wagmi'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useToast } from '@/components/ui/use-toast'
-import { Loader2, Brain, Sparkles } from 'lucide-react'
-import { uploadToStorage } from '@/lib/storage/client'
+import { toast } from '@/components/ui/use-toast'
+import { Upload, Loader2 } from 'lucide-react'
+import { uploadToStorage } from '@/lib/storage/client-browser'
+import { ethers } from 'ethers'
 import { INFT_ABI } from '@/lib/contracts/abis'
-const formSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(50),
-  description: z.string().min(10, 'Description must be at least 10 characters'),
-  model: z.string().min(1, 'Model selection is required'),
-  capabilities: z.string().min(1, 'At least one capability is required'),
-  parameters: z.string().optional(),
-  image: z.any().optional(),
-})
 
-type FormData = z.infer<typeof formSchema>
+const AI_MODELS = [
+  { value: 'llama-3.3-70b', label: 'Llama 3.3 70B', provider: '0xf07240Efa67755B5311bc75784a061eDB47165Dd' },
+  { value: 'deepseek-r1-70b', label: 'DeepSeek R1 70B', provider: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3' },
+]
 
 export default function MintPage() {
-  const router = useRouter()
   const { address, isConnected } = useAccount()
-  const { toast } = useToast()
-  const [isUploading, setIsUploading] = useState(false)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const { data: walletClient } = useWalletClient()
+  const publicClient = usePublicClient()
+  
+  const [loading, setLoading] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  
+  // Form state
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [model, setModel] = useState('')
+  const [systemPrompt, setSystemPrompt] = useState('')
+  const [image, setImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState('')
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    setValue,
-    watch,
-  } = useForm<FormData>({
-    resolver: zodResolver(formSchema),
-  })
-
-  const { write: mintINFT, data: mintData } = useContractWrite({
-    address: process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`,
-    abi: INFT_ABI,
-    functionName: 'mint',
-  })
-
-  const { isLoading: isMinting } = useWaitForTransaction({
-    hash: mintData?.hash,
-    onSuccess(data) {
-      // Extract tokenId from event logs
-      const tokenId = data.logs[0]?.topics[3] // Transfer event tokenId
-      if (tokenId) {
-        const id = parseInt(tokenId, 16)
-        toast({
-          title: 'Success!',
-          description: 'Your AI agent has been minted',
-        })
-        router.push(`/chat/${id}`)
-      }
-    },
-  })
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      setValue('image', file)
+      setImage(file)
       const reader = new FileReader()
       reader.onloadend = () => {
         setImagePreview(reader.result as string)
       }
       reader.readAsDataURL(file)
     }
-  }
+  }, [])
 
-const onSubmit = async (data: FormData) => {
-  if (!isConnected || !address) {
-    toast({
-      title: 'Error',
-      description: 'Please connect your wallet',
-      variant: 'destructive',
-    })
-    return
-  }
-
-  setIsUploading(true)
-  try {
-    // Подготовка метаданных агента
-    const metadata: AgentMetadata = {
-      name: data.name,
-      description: data.description,
-      model: data.model,
-      capabilities: data.capabilities.split(',').map(c => c.trim()),
-      parameters: data.parameters ? JSON.parse(data.parameters) : {},
-      image: null as string | null,
-      version: '1.0',
-      createdAt: Date.now(),
+  const handleMint = async () => {
+    if (!isConnected || !walletClient || !address) {
+      toast({
+        title: "Wallet not connected",
+        description: "Please connect your wallet to continue",
+        variant: "destructive",
+      })
+      return
     }
 
-    // Загружаем изображение в 0G Storage если есть
-    if (data.image && imagePreview) {
-      try {
-        toast({
-          title: 'Uploading image...',
-          description: 'Uploading avatar to 0G Storage',
+    if (!name || !description || !model || !systemPrompt) {
+      toast({
+        title: "Missing information",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoading(true)
+    try {
+      // 1. Upload image if exists
+      let imageUrl = ''
+      if (image) {
+        setUploadingImage(true)
+        const formData = new FormData()
+        formData.append('file', image)
+        
+        const response = await fetch('/api/storage/upload-image', {
+          method: 'POST',
+          body: formData,
         })
         
-        // Для браузера используем MetaMask
-        if (typeof window !== 'undefined' && window.ethereum) {
-          // Пользователь подписывает транзакцию через MetaMask
-          const response = await fetch('/api/storage/upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              data: { type: 'image', content: imagePreview },
-              owner: address
-            })
-          })
-          
-          if (response.ok) {
-            const result = await response.json()
-            metadata.image = result.encryptedURI
-          }
-        }
-      } catch (error) {
-        console.error('Image upload error:', error)
-        toast({
-          title: 'Warning',
-          description: 'Failed to upload image, continuing without it',
-        })
+        if (!response.ok) throw new Error('Failed to upload image')
+        
+        const data = await response.json()
+        imageUrl = data.url
+        setUploadingImage(false)
       }
-    }
 
-    // Загружаем метаданные в 0G Storage
-    toast({
-      title: 'Uploading metadata...',
-      description: 'Uploading to 0G Storage',
-    })
-    
-    const response = await fetch('/api/storage/upload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        data: metadata,
-        owner: address
-      })
-    })
-    
-    if (!response.ok) {
-      throw new Error('Failed to upload metadata')
-    }
-    
-    const { encryptedURI, metadataHash } = await response.json()
-    
-    toast({
-      title: 'Minting NFT...',
-      description: 'Please confirm the transaction in your wallet',
-    })
+      // 2. Prepare metadata
+      const selectedModel = AI_MODELS.find(m => m.value === model)
+      const metadata = {
+        name,
+        description,
+        image: imageUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${name}`,
+        model: model,
+        provider: selectedModel?.provider,
+        systemPrompt,
+        createdAt: new Date().toISOString(),
+        createdBy: address,
+      }
 
-    // Минтим INFT
-    mintINFT({
-      args: [address, encryptedURI, metadataHash],
-    })
-  } catch (error: any) {
-    console.error('Minting error:', error)
-    toast({
-      title: 'Error',
-      description: error.message || 'Failed to mint AI agent',
-      variant: 'destructive',
-    })
-  } finally {
-    setIsUploading(false)
-  }
-}
-
-// Также обновите обработчик успешной транзакции:
-const { isLoading: isMinting } = useWaitForTransaction({
-  hash: mintData?.hash,
-  onSuccess(data) {
-    // Извлекаем tokenId из события
-    const transferEvent = data.logs.find(
-      log => log.topics[0] === ethers.utils.id('Transfer(address,address,uint256)')
-    )
-    
-    if (transferEvent && transferEvent.topics[3]) {
-      const tokenId = parseInt(transferEvent.topics[3], 16)
-      toast({
-        title: 'Success! 🎉',
-        description: `Your AI agent #${tokenId} has been minted on 0G Network`,
-      })
+      // 3. Upload metadata to 0G Storage
+      const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' })
+      const metadataFile = new File([metadataBlob], 'metadata.json', { type: 'application/json' })
       
-      // Переходим в чат с новым агентом
-      setTimeout(() => {
-        router.push(`/chat/${tokenId}`)
-      }, 2000)
-    }
-  },
-  onError(error) {
-    console.error('Transaction error:', error)
-    toast({
-      title: 'Transaction Failed',
-      description: 'The transaction failed. Please try again.',
-      variant: 'destructive',
-    })
-  }
-})
+      const { rootHash } = await uploadToStorage(metadataFile)
+      const metadataUri = `https://indexer-storage-testnet-turbo.0g.ai/${rootHash}`
 
-  if (!isConnected) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-20 text-center">
-        <h1 className="text-3xl font-bold text-white mb-4">Connect Your Wallet</h1>
-        <p className="text-gray-400">Please connect your wallet to mint an AI agent</p>
-      </div>
-    )
+      // 4. Mint NFT
+      const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS
+      if (!contractAddress) throw new Error('Contract address not configured')
+
+      const { request } = await publicClient.simulateContract({
+        address: contractAddress as `0x${string}`,
+        abi: INFT_ABI,
+        functionName: 'mint',
+        args: [address, metadataUri, rootHash],
+        account: address,
+      })
+
+      const hash = await walletClient.writeContract(request)
+      
+      toast({
+        title: "Minting in progress",
+        description: "Your AI agent is being created...",
+      })
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash })
+      
+      if (receipt.status === 'success') {
+        toast({
+          title: "Success!",
+          description: "Your AI agent has been minted successfully",
+        })
+        
+        // Reset form
+        setName('')
+        setDescription('')
+        setModel('')
+        setSystemPrompt('')
+        setImage(null)
+        setImagePreview('')
+      }
+    } catch (error) {
+      console.error('Minting error:', error)
+      toast({
+        title: "Minting failed",
+        description: error instanceof Error ? error.message : "Something went wrong",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+      setUploadingImage(false)
+    }
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-10">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-white mb-2">Create AI Agent</h1>
-        <p className="text-gray-400">Mint an intelligent NFT with embedded AI capabilities</p>
-      </div>
-
-      <Card className="bg-gray-800/50 border-gray-700">
+    <div className="container mx-auto py-10">
+      <Card className="max-w-2xl mx-auto">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="h-6 w-6 text-purple-400" />
-            Agent Configuration
-          </CardTitle>
-          <CardDescription>Define your AI agent's properties and capabilities</CardDescription>
+          <CardTitle>Create AI Agent</CardTitle>
+          <CardDescription>
+            Mint your AI agent as an NFT on 0G Network
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="name">Agent Name</Label>
-                <Input
-                  id="name"
-                  placeholder="My AI Assistant"
-                  className="bg-gray-900/50 border-gray-600"
-                  {...register('name')}
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="name">Agent Name</Label>
+            <Input
+              id="name"
+              placeholder="My AI Assistant"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              placeholder="Describe what your AI agent does..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="model">AI Model</Label>
+            <Select value={model} onValueChange={setModel} disabled={loading}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select an AI model" />
+              </SelectTrigger>
+              <SelectContent>
+                {AI_MODELS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="systemPrompt">System Prompt</Label>
+            <Textarea
+              id="systemPrompt"
+              placeholder="You are a helpful AI assistant..."
+              className="min-h-[100px]"
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="image">Agent Image (Optional)</Label>
+            <div className="flex items-center gap-4">
+              {imagePreview && (
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  className="w-20 h-20 rounded-lg object-cover"
                 />
-                {errors.name && (
-                  <p className="text-sm text-red-400">{errors.name.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="model">AI Model</Label>
-                <Select onValueChange={(value) => setValue('model', value)}>
-                  <SelectTrigger className="bg-gray-900/50 border-gray-600">
-                    <SelectValue placeholder="Select a model" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="gpt-4">GPT-4</SelectItem>
-                    <SelectItem value="claude-3">Claude 3</SelectItem>
-                    <SelectItem value="llama-2">Llama 2</SelectItem>
-                    <SelectItem value="custom">Custom Model</SelectItem>
-                  </SelectContent>
-                </Select>
-                {errors.model && (
-                  <p className="text-sm text-red-400">{errors.model.message}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                placeholder="Describe what your AI agent can do..."
-                className="bg-gray-900/50 border-gray-600 min-h-[100px]"
-                {...register('description')}
-              />
-              {errors.description && (
-                <p className="text-sm text-red-400">{errors.description.message}</p>
               )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="capabilities">Capabilities (comma-separated)</Label>
               <Input
-                id="capabilities"
-                placeholder="chat, code generation, image analysis"
-                className="bg-gray-900/50 border-gray-600"
-                {...register('capabilities')}
-              />
-              {errors.capabilities && (
-                <p className="text-sm text-red-400">{errors.capabilities.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="parameters">Advanced Parameters (JSON)</Label>
-              <Textarea
-                id="parameters"
-                placeholder='{"temperature": 0.7, "max_tokens": 1000}'
-                className="bg-gray-900/50 border-gray-600 font-mono text-sm"
-                {...register('parameters')}
+                id="image"
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                disabled={loading}
+                className="flex-1"
               />
             </div>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="image">Agent Avatar (Optional)</Label>
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <Input
-                    id="image"
-                    type="file"
-                    accept="image/*"
-                    className="bg-gray-900/50 border-gray-600"
-                    onChange={handleImageChange}
-                  />
-                </div>
-                {imagePreview && (
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="w-16 h-16 rounded-lg object-cover border border-gray-600"
-                  />
-                )}
-              </div>
-            </div>
+          <Button
+            onClick={handleMint}
+            disabled={!isConnected || loading}
+            className="w-full"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {uploadingImage ? 'Uploading image...' : 'Minting...'}
+              </>
+            ) : (
+              'Mint AI Agent'
+            )}
+          </Button>
 
-            <div className="flex gap-4">
-              <Button
-                type="submit"
-                disabled={isUploading || isMinting}
-                className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
-              >
-                {isUploading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Uploading...
-                  </>
-                ) : isMinting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Minting...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    Mint AI Agent
-                  </>
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.push('/agents')}
-                className="border-gray-600 hover:bg-gray-800"
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
+          {!isConnected && (
+            <p className="text-sm text-muted-foreground text-center">
+              Please connect your wallet to mint an AI agent
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

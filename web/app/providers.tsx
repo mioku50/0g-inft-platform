@@ -5,6 +5,7 @@ import { WagmiConfig, createConfig, configureChains } from 'wagmi'
 import { RainbowKitProvider, getDefaultWallets } from '@rainbow-me/rainbowkit'
 import { jsonRpcProvider } from 'wagmi/providers/jsonRpc'
 import '@rainbow-me/rainbowkit/styles.css'
+import { useEffect, useState } from 'react'
 
 // Определяем 0G Network
 const ogNetwork = {
@@ -46,7 +47,7 @@ const { chains, publicClient } = configureChains(
 
 const { connectors } = getDefaultWallets({
   appName: '0G INFT Platform',
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '',
+  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '98b3feb7c073aaa813638123c8fdb523',
   chains,
 })
 
@@ -57,6 +58,16 @@ const wagmiConfig = createConfig({
 })
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return null
+  }
+
   return (
     <WagmiConfig config={wagmiConfig}>
       <RainbowKitProvider chains={chains}>

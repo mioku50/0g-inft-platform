@@ -1,11 +1,11 @@
-// web/app/agents/page.tsx - полная версия с исправлениями
+// web/app/agents/page.tsx - исправленная версия с большими аватарами и светлым фоном
 'use client'
 
 import { useState, useEffect } from 'react'
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Card } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -20,15 +20,12 @@ import {
   Plus, 
   RefreshCw, 
   Send,
-  Clock,
-  Sparkles,
-  Ban,
   Copy,
-  GraduationCap,
   Brain,
   Settings,
-  BookOpen,
-  Zap
+  Ban,
+  Sparkles,
+  Bot
 } from 'lucide-react'
 import { TransferModal } from '@/components/agents/TransferModal'
 import { CloneModal } from '@/components/agents/CloneModal'
@@ -65,7 +62,6 @@ export default function AgentsPage() {
   const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
   const marketplaceAddress = process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS as `0x${string}`
 
-  // Fix hydration error
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -77,9 +73,6 @@ export default function AgentsPage() {
     }
 
     try {
-      console.log('Loading agents for:', address)
-      
-      // Получаем баланс NFT пользователя
       const balance = await publicClient.readContract({
         address: contractAddress,
         abi: INFT_ABI,
@@ -87,14 +80,8 @@ export default function AgentsPage() {
         args: [address]
       }) as bigint
       
-      console.log('User balance:', balance.toString(), 'tokens')
-      
       const userAgents: Agent[] = []
-      const pendingPurchases = typeof window !== 'undefined' 
-        ? JSON.parse(localStorage.getItem('pendingTransfers') || '{}')
-        : {}
       
-      // Получаем токены пользователя через tokenOfOwnerByIndex
       for (let i = 0; i < Number(balance); i++) {
         try {
           const tokenId = await publicClient.readContract({
@@ -104,65 +91,47 @@ export default function AgentsPage() {
             args: [address, BigInt(i)]
           }) as bigint
           
-          console.log(`User's token ${i}:`, tokenId.toString())
-          
-          // Получаем метаданные
-          let metadataHash = ''
-          
+          let rootHash = ''
           try {
-            metadataHash = await publicClient.readContract({
+            rootHash = await publicClient.readContract({
               address: contractAddress,
               abi: INFT_ABI,
-              functionName: 'getMetadataHash',
+              functionName: 'getEncryptedURI',
               args: [tokenId]
             }) as string
-            console.log('Got metadata hash:', metadataHash)
           } catch (e) {
-            console.log('getMetadataHash failed, trying tokenURI...')
-            try {
-              metadataHash = await publicClient.readContract({
-                address: contractAddress,
-                abi: INFT_ABI,
-                functionName: 'tokenURI',
-                args: [tokenId]
-              }) as string
-              console.log('Got tokenURI:', metadataHash)
-            } catch (e2) {
-              console.error('Both getMetadataHash and tokenURI failed for token', tokenId.toString())
-            }
+            console.error('Failed to get encryptedURI for token', tokenId.toString(), e)
           }
           
-          // Загружаем метаданные
           let metadata = null
-          if (metadataHash) {
+          if (rootHash && rootHash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
             try {
               const response = await fetch('/api/storage/retrieve', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rootHash: metadataHash })
+                body: JSON.stringify({ rootHash })
               })
               
               if (response.ok) {
                 const data = await response.json()
-                metadata = JSON.parse(data.content)
-                console.log('Metadata loaded successfully:', metadata)
+                if (data.content) {
+                  metadata = JSON.parse(data.content)
+                }
               }
             } catch (error) {
               console.error('Failed to load metadata:', error)
             }
           }
           
-          // Если метаданные не загрузились, используем дефолтные
-          if (!metadata) {
+          if (!metadata || metadata.error === 'metadata_not_found') {
             metadata = {
               name: `Agent #${tokenId}`,
-              description: 'Loading metadata...',
-              model: 'Unknown',
+              description: 'AI Agent',
+              model: 'llama-3.3-70b',
               image: `https://api.dicebear.com/7.x/bottts/svg?seed=${tokenId}`
             }
           }
           
-          // Проверяем, выставлен ли на продажу
           let isListed = false
           let listingInfo = null
           try {
@@ -170,7 +139,7 @@ export default function AgentsPage() {
               address: marketplaceAddress,
               abi: AGENT_MARKETPLACE_ABI,
               functionName: 'getListing',
-              args: [tokenId]
+              args: [contractAddress, tokenId]
             })
             
             if (listing && listing.isActive && listing.seller.toLowerCase() === address.toLowerCase()) {
@@ -186,7 +155,7 @@ export default function AgentsPage() {
           
           userAgents.push({
             tokenId: Number(tokenId),
-            metadataHash,
+            metadataHash: rootHash,
             metadata: metadata,
             status: isListed ? 'listed' : 'owned',
             listingInfo: listingInfo
@@ -196,7 +165,6 @@ export default function AgentsPage() {
         }
       }
       
-      console.log('Final agents:', userAgents)
       setAgents(userAgents)
       
     } catch (error) {
@@ -238,7 +206,6 @@ export default function AgentsPage() {
     
     setIsListing(true)
     try {
-      // 1. Approve
       const approveTx = await walletClient.writeContract({
         address: contractAddress,
         abi: INFT_ABI,
@@ -246,14 +213,13 @@ export default function AgentsPage() {
         args: [marketplaceAddress, BigInt(selectedAgent.tokenId)]
       })
       
-      await publicClient.waitForTransactionReceipt({ hash: approveTx })
+      await publicClient.waitForTransactionReceipt(approveTx)
       
       toast({
         title: 'Step 1/2: Approved',
         description: 'Now listing on marketplace...'
       })
       
-      // 2. List
       const priceInWei = parseEther(listingPrice)
       const listTx = await walletClient.writeContract({
         address: marketplaceAddress,
@@ -266,7 +232,7 @@ export default function AgentsPage() {
         ]
       })
       
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: listTx })
+      const receipt = await publicClient.waitForTransactionReceipt(listTx)
       
       if (receipt.status === 'success') {
         toast({
@@ -305,7 +271,7 @@ export default function AgentsPage() {
         ]
       })
       
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
+      const receipt = await publicClient.waitForTransactionReceipt(tx)
       
       if (receipt.status === 'success') {
         toast({
@@ -327,20 +293,19 @@ export default function AgentsPage() {
     }
   }
 
-  // Don't render until mounted to avoid hydration errors
   if (!mounted) {
     return null
   }
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-900 to-pink-900 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-32 h-32 mx-auto mb-6 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center">
-            <Sparkles className="w-16 h-16 text-purple-400" />
+          <div className="p-6 bg-white/70 backdrop-blur rounded-full inline-block mb-6">
+            <Bot className="w-24 h-24 text-purple-600" />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-4">Connect Your Wallet</h1>
-          <p className="text-gray-300">Please connect your wallet to view your AI agents</p>
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">Connect Your Wallet</h1>
+          <p className="text-gray-600">Please connect your wallet to explore your AI agents</p>
         </div>
       </div>
     )
@@ -348,148 +313,120 @@ export default function AgentsPage() {
 
   if (loading && agents.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-900 to-pink-900 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-white mx-auto mb-4" />
-          <p className="text-white">Loading your AI agents...</p>
+          <Loader2 className="h-16 w-16 animate-spin text-purple-600 mx-auto mb-4" />
+          <p className="text-gray-700">Loading your AI agents...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-purple-900 to-pink-900">
-      {/* Animated background */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-20 -left-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob" />
-        <div className="absolute top-40 -right-40 w-80 h-80 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000" />
-        <div className="absolute -bottom-40 left-40 w-80 h-80 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-4000" />
-      </div>
-
-      <div className="container mx-auto py-10 px-4 relative z-10">
+    <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100">
+      <div className="container mx-auto py-10 px-4">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
+        <div className="mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-white/70 backdrop-blur rounded-xl">
+              <Bot className="h-10 w-10 text-purple-600" />
+            </div>
             <div>
-              <h1 className="text-5xl font-bold text-white mb-2 flex items-center gap-3">
-                <GraduationCap className="h-12 w-12 text-purple-400" />
-                My Agent Campus
+              <h1 className="text-4xl font-bold text-gray-900">
+                My Agent Collection
               </h1>
-              <p className="text-gray-300">
-                Train, evolve, and manage your AI agents
-              </p>
+              <p className="text-gray-600 mt-1">Manage and interact with your AI agents</p>
             </div>
-            <div className="flex gap-3">
-              <Button 
-                onClick={handleRefresh} 
-                variant="outline"
-                disabled={refreshing}
-                className="bg-white/10 backdrop-blur-sm border-white/20 text-white hover:bg-white/20"
-              >
-                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
+          </div>
+          
+          <div className="flex gap-3">
+            <Button 
+              onClick={handleRefresh} 
+              variant="outline"
+              disabled={refreshing}
+              className="bg-white/70 backdrop-blur border-purple-200 text-gray-700 hover:bg-white/90"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Link href="/mint">
+              <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white">
+                <Plus className="h-4 w-4 mr-2" />
+                Create New Agent
               </Button>
-              <Link href="/mint">
-                <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create New Agent
-                </Button>
-              </Link>
-            </div>
+            </Link>
           </div>
         </div>
 
         {/* Agents Grid */}
         {agents.length === 0 ? (
           <div className="text-center py-20">
-            <div className="max-w-md mx-auto bg-white/10 backdrop-blur-md rounded-3xl p-12 border border-white/20">
-              <div className="text-8xl mb-6">🐼</div>
-              <h2 className="text-2xl font-bold text-white mb-4">No agents in your campus yet</h2>
-              <p className="text-gray-300 mb-8">
-                Start your AI learning journey by creating your first agent!
+            <Card className="max-w-md mx-auto bg-white/80 backdrop-blur border-purple-200 p-12">
+              <div className="mb-6 inline-block p-4 bg-purple-100 rounded-full">
+                <Sparkles className="w-16 h-16 text-purple-600" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">No agents yet</h2>
+              <p className="text-gray-600 mb-8">
+                Create your first AI agent to get started!
               </p>
               <Link href="/mint">
-                <Button size="lg" className="bg-gradient-to-r from-purple-600 to-pink-600">
-                  <GraduationCap className="mr-2 h-5 w-5" />
-                  Enroll Your First Agent
+                <Button size="lg" className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
+                  <Bot className="mr-2 h-5 w-5" />
+                  Create Your First Agent
                 </Button>
               </Link>
-            </div>
+            </Card>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {agents.map((agent) => (
               <Card 
                 key={`${agent.tokenId}-${agent.status}`}
-                className="group bg-white/10 backdrop-blur-md border-white/20 hover:bg-white/15 transition-all duration-300 hover:scale-[1.02] overflow-hidden"
+                className="bg-white/80 backdrop-blur border-purple-200 hover:shadow-xl transition-all duration-300 overflow-hidden"
               >
-                <CardHeader>
-                  <div className="relative">
-                    <div className="h-48 bg-gradient-to-br from-purple-600/30 to-pink-600/30 rounded-xl mb-4 flex items-center justify-center overflow-hidden group-hover:from-purple-600/40 group-hover:to-pink-600/40 transition-colors">
+                <div className="p-6">
+                  {/* Agent Image - УВЕЛИЧЕННЫЙ РАЗМЕР */}
+                  <div className="h-48 bg-gradient-to-br from-purple-100 to-pink-100 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
+                    <div className="w-32 h-32 flex items-center justify-center">
                       <img 
                         src={agent.metadata?.image || `https://api.dicebear.com/7.x/bottts/svg?seed=${agent.tokenId}`}
                         alt={agent.metadata?.name}
-                        className="w-32 h-32 object-contain group-hover:scale-110 transition-transform"
+                        className="w-full h-full object-contain"
                       />
                     </div>
                     
-                    {/* Status Badge */}
                     {agent.status === 'listed' && (
-                      <Badge className="absolute top-2 right-2 bg-purple-500/80">
+                      <Badge className="absolute top-2 right-2 bg-purple-600 text-white">
                         <ShoppingCart className="w-3 h-3 mr-1" />
                         Listed
                       </Badge>
                     )}
                   </div>
                   
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-xl text-white">
-                        {agent.metadata?.name || `Agent #${agent.tokenId}`}
-                      </CardTitle>
-                      <div className="flex gap-2 mt-1">
-                        <Badge variant="secondary" className="bg-white/20">
-                          #{agent.tokenId}
-                        </Badge>
-                        <Badge className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 border-purple-500/30">
-                          <Brain className="w-3 h-3 mr-1" />
-                          {agent.metadata?.model || 'Unknown'}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                </CardHeader>
-                
-                <CardContent>
-                  <p className="text-sm text-gray-300 mb-4 line-clamp-2">
-                    {agent.metadata?.description || 'Ready to learn and assist!'}
-                  </p>
+                  {/* Agent Info */}
+                  <h3 className="text-xl font-bold text-gray-900 mb-1">
+                    {agent.metadata?.name || `Agent #${agent.tokenId}`}
+                  </h3>
                   
-                  {/* Agent Stats */}
-                  <div className="grid grid-cols-3 gap-2 mb-4">
-                    <div className="bg-purple-900/30 rounded-lg p-2 text-center">
-                      <Zap className="w-4 h-4 mx-auto mb-1 text-purple-400" />
-                      <p className="text-xs text-purple-300">Active</p>
-                    </div>
-                    <div className="bg-indigo-900/30 rounded-lg p-2 text-center">
-                      <BookOpen className="w-4 h-4 mx-auto mb-1 text-indigo-400" />
-                      <p className="text-xs text-indigo-300">Learning</p>
-                    </div>
-                    <div className="bg-pink-900/30 rounded-lg p-2 text-center">
-                      <MessageCircle className="w-4 h-4 mx-auto mb-1 text-pink-400" />
-                      <p className="text-xs text-pink-300">Ready</p>
-                    </div>
+                  <div className="flex gap-2 mb-3">
+                    <Badge variant="outline" className="border-purple-300 text-purple-700">
+                      #{agent.tokenId}
+                    </Badge>
+                    <Badge className="bg-purple-100 text-purple-700 border-0">
+                      {agent.metadata?.model || 'Unknown'}
+                    </Badge>
                   </div>
+                  
+                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                    {agent.metadata?.description || 'AI Assistant'}
+                  </p>
                   
                   {/* Listing info */}
                   {agent.status === 'listed' && agent.listingInfo && (
-                    <div className="mb-4 p-3 bg-purple-900/30 rounded-lg text-xs">
-                      <div className="space-y-1 text-purple-300">
-                        <p>Listed for sale</p>
-                        <p className="text-white font-semibold">
-                          Price: {formatEther(agent.listingInfo.price)} OG
-                        </p>
-                      </div>
+                    <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                      <p className="text-sm text-purple-900">
+                        Listed for: <span className="font-bold">{formatEther(agent.listingInfo.price)} OG</span>
+                      </p>
                     </div>
                   )}
                   
@@ -499,57 +436,69 @@ export default function AgentsPage() {
                       <>
                         <div className="grid grid-cols-2 gap-2">
                           <Link href={`/agent/${agent.tokenId}/chat`}>
-                            <Button variant="outline" className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20">
-                              <MessageCircle className="h-4 w-4 mr-2" />
+                            <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                              <MessageCircle className="h-4 w-4 mr-1" />
                               Chat
                             </Button>
                           </Link>
-                          <Button 
-                            onClick={() => {
-                              setSelectedForPrompt(agent)
-                              setPromptModalOpen(true)
-                            }}
-                            variant="outline"
-                            className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20"
-                          >
-                            <Settings className="h-4 w-4 mr-2" />
-                            Prompt
-                          </Button>
+                          <Link href={`/agents/${agent.tokenId}/fine-tune`}>
+                            <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                              <Brain className="h-4 w-4 mr-1" />
+                              Fine-tune
+                            </Button>
+                          </Link>
                         </div>
                         
                         <div className="grid grid-cols-2 gap-2">
                           <Button 
                             onClick={() => handleClone(agent)}
                             variant="outline"
-                            className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20"
+                            size="sm"
+                            className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
                           >
-                            <Copy className="h-4 w-4 mr-2" />
+                            <Copy className="h-4 w-4 mr-1" />
                             Clone
                           </Button>
                           <Button 
                             onClick={() => handleTransfer(agent)}
                             variant="outline"
-                            className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20"
+                            size="sm"
+                            className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
                           >
-                            <Send className="h-4 w-4 mr-2" />
+                            <Send className="h-4 w-4 mr-1" />
                             Transfer
                           </Button>
                         </div>
                         
-                        <Button 
-                          onClick={() => setSelectedAgent(agent)}
-                          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-                        >
-                          <ShoppingCart className="h-4 w-4 mr-2" />
-                          List for Sale
-                        </Button>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button 
+                            onClick={() => {
+                              setSelectedForPrompt(agent)
+                              setPromptModalOpen(true)
+                            }}
+                            variant="outline"
+                            size="sm"
+                            className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
+                          >
+                            <Settings className="h-4 w-4 mr-1" />
+                            Prompt
+                          </Button>
+                          <Button 
+                            onClick={() => setSelectedAgent(agent)}
+                            size="sm"
+                            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                          >
+                            <ShoppingCart className="h-4 w-4 mr-1" />
+                            List
+                          </Button>
+                        </div>
                       </>
                     )}
                     
                     {agent.status === 'listed' && (
                       <>
                         <Link href={`/agent/${agent.tokenId}/chat`} className="block">
-                          <Button variant="outline" className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20">
+                          <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
                             <MessageCircle className="h-4 w-4 mr-2" />
                             Chat
                           </Button>
@@ -557,7 +506,9 @@ export default function AgentsPage() {
                         <Button 
                           onClick={() => cancelListing(agent)}
                           disabled={cancellingListingId === agent.tokenId}
-                          className="w-full bg-gradient-to-r from-red-500 to-orange-500"
+                          variant="destructive"
+                          size="sm"
+                          className="w-full bg-red-600 hover:bg-red-700 text-white"
                         >
                           {cancellingListingId === agent.tokenId ? (
                             <>
@@ -574,7 +525,7 @@ export default function AgentsPage() {
                       </>
                     )}
                   </div>
-                </CardContent>
+                </div>
               </Card>
             ))}
           </div>
@@ -583,21 +534,21 @@ export default function AgentsPage() {
 
       {/* List for Sale Dialog */}
       <Dialog open={!!selectedAgent} onOpenChange={() => setSelectedAgent(null)}>
-        <DialogContent className="bg-gray-900 border-gray-700 text-white">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>List {selectedAgent?.metadata?.name} for Sale</DialogTitle>
-            <DialogDescription className="text-gray-400">
+            <DialogTitle className="text-xl font-bold">List {selectedAgent?.metadata?.name} for Sale</DialogTitle>
+            <DialogDescription>
               Set your price in OG tokens. The agent will be listed on the marketplace.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 mt-4">
-            <div className="bg-gray-800 p-4 rounded-lg">
-              <p className="text-sm font-medium">{selectedAgent?.metadata?.name}</p>
-              <p className="text-xs text-gray-400 mt-1">{selectedAgent?.metadata?.description}</p>
+            <div className="bg-gray-50 p-4 rounded-lg border">
+              <p className="font-medium">{selectedAgent?.metadata?.name}</p>
+              <p className="text-sm text-gray-600 mt-1">{selectedAgent?.metadata?.description}</p>
               <div className="flex gap-2 mt-2">
-                <Badge variant="outline" className="text-xs">Token #{selectedAgent?.tokenId}</Badge>
-                <Badge variant="outline" className="text-xs">{selectedAgent?.metadata?.model}</Badge>
+                <Badge variant="outline" className="border-purple-300 text-purple-700">Token #{selectedAgent?.tokenId}</Badge>
+                <Badge className="bg-purple-100 text-purple-700 border-0">{selectedAgent?.metadata?.model}</Badge>
               </div>
             </div>
             
@@ -610,7 +561,7 @@ export default function AgentsPage() {
                 value={listingPrice}
                 onChange={(e) => setListingPrice(e.target.value)}
                 placeholder="0.001"
-                className="mt-1 bg-gray-800 border-gray-700"
+                className="mt-1"
               />
               <p className="text-xs text-gray-500 mt-1">
                 Minimum price: 0.001 OG
@@ -620,7 +571,7 @@ export default function AgentsPage() {
             <Button
               onClick={listAgentForSale}
               disabled={isListing || !listingPrice || parseFloat(listingPrice) < 0.001}
-              className="w-full bg-gradient-to-r from-purple-500 to-pink-500"
+              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
             >
               {isListing ? (
                 <>
@@ -672,7 +623,6 @@ export default function AgentsPage() {
           setSelectedForPrompt(null)
         }}
         onUpdate={async (newPrompt) => {
-          // Сохраняем новый промпт
           console.log('Updated prompt for agent:', selectedForPrompt?.tokenId, newPrompt)
           toast({
             title: 'Success!',

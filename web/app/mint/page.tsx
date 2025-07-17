@@ -14,8 +14,11 @@ import { toast } from '@/components/ui/use-toast'
 import { Loader2, Upload, Sparkles, Shield, Zap, Rocket, Star, Wand2 } from 'lucide-react'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import { ethers } from 'ethers'
+import { uploadMetadata } from '@/lib/storage/client-browser'
 
+const { rootHash, txHash } = await uploadMetadata(metadata)
 const ERC7857_MINT_ABI = [
+  
   {
     "inputs": [
       { "internalType": "address", "name": "_to", "type": "address" },

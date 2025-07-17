@@ -1,6 +1,6 @@
 // web/app/api/storage/upload/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { uploadToStorage, StorageError } from '@/lib/storage/client-server'
+import { uploadToStorage } from '@/lib/storage/client-server'
 
 export async function POST(request: NextRequest) {
   console.log('=== Storage Upload API Debug ===')
@@ -27,31 +27,49 @@ export async function POST(request: NextRequest) {
     // Проверяем Content-Type
     const contentType = request.headers.get('content-type') || ''
     
-    let file: File | null = null
-    let metadata: any = null
+    let content: string | Buffer
+    let filename: string = 'metadata.json'
 
     if (contentType.includes('multipart/form-data')) {
       // Обработка FormData
       const formData = await request.formData()
-      file = formData.get('file') as File
-      const metadataStr = formData.get('metadata') as string
-      if (metadataStr) {
-        metadata = JSON.parse(metadataStr)
+      const file = formData.get('file') as File
+      
+      if (file) {
+        // Преобразуем File в Buffer
+        const arrayBuffer = await file.arrayBuffer()
+        content = Buffer.from(arrayBuffer)
+        filename = file.name
+        
+        console.log('File info:', {
+          name: file.name,
+          size: file.size,
+          type: file.type
+        })
+      } else {
+        // Если файла нет, проверяем metadata
+        const metadataStr = formData.get('metadata') as string
+        if (metadataStr) {
+          content = metadataStr
+          filename = 'metadata.json'
+        } else {
+          throw new Error('No file or metadata provided')
+        }
       }
     } else if (contentType.includes('application/json')) {
       // Обработка JSON
       const body = await request.json()
-      metadata = body.metadata
       
-      // Если есть данные файла в base64
-      if (body.fileData && body.fileName) {
-        const buffer = Buffer.from(body.fileData, 'base64')
-        const blob = new Blob([buffer], { type: body.fileType || 'application/octet-stream' })
-        file = new File([blob], body.fileName, { type: body.fileType || 'application/octet-stream' })
-      } else if (metadata) {
-        // Создаем файл из метаданных
-        const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' })
-        file = new File([metadataBlob], 'metadata.json', { type: 'application/json' })
+      if (body.content) {
+        // Если есть content - используем его напрямую
+        content = body.content
+        filename = body.filename || 'metadata.json'
+      } else if (body.metadata) {
+        // Если есть metadata - сериализуем
+        content = JSON.stringify(body.metadata)
+        filename = 'metadata.json'
+      } else {
+        throw new Error('No content or metadata provided')
       }
     } else {
       return NextResponse.json(
@@ -60,47 +78,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!file) {
-      return NextResponse.json(
-        { error: 'No file or metadata provided' },
-        { status: 400 }
-      )
-    }
-
-    console.log('File info:', {
-      name: file.name,
-      size: file.size,
-      type: file.type
+    console.log('Uploading to storage:', {
+      contentType: typeof content,
+      contentSize: content.length,
+      filename: filename
     })
 
     // Upload to 0G Storage
-    const result = await uploadToStorage(file, file.name)
+    const result = await uploadToStorage(content, filename)
     
     console.log('Upload successful:', {
       rootHash: result.rootHash,
-      txHash: result.txHash,
-      size: result.size
+      txHash: result.txHash
     })
 
     return NextResponse.json({
       success: true,
       rootHash: result.rootHash,
-      txHash: result.txHash,
-      size: result.size,
-      segments: result.segments
+      txHash: result.txHash
     })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Storage upload error:', error)
     
-    if (error instanceof StorageError) {
-      return NextResponse.json(
-        { error: error.message, details: error.details },
-        { status: 500 }
-      )
-    }
-    
     return NextResponse.json(
-      { error: 'Failed to upload to storage' },
+      { error: error.message || 'Failed to upload to storage' },
       { status: 500 }
     )
   }

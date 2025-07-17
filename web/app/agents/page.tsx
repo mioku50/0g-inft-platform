@@ -25,8 +25,11 @@ import {
   XCircle,
   AlertCircle,
   Sparkles,
-  Ban
+  Ban,
+  Copy
 } from 'lucide-react'
+import { TransferModal } from '@/components/agents/TransferModal'
+import { CloneModal } from '@/components/agents/CloneModal'
 
 interface Agent {
   tokenId: number
@@ -52,6 +55,10 @@ export default function AgentsPage() {
   const [isTransferring, setIsTransferring] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [cancellingListingId, setCancellingListingId] = useState<number | null>(null)
+  const [transferModalOpen, setTransferModalOpen] = useState(false)
+  const [cloneModalOpen, setCloneModalOpen] = useState(false)
+  const [selectedForTransfer, setSelectedForTransfer] = useState<any>(null)
+  const [selectedForClone, setSelectedForClone] = useState<any>(null)
 
   const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
   const marketplaceAddress = process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS as `0x${string}`
@@ -70,43 +77,71 @@ export default function AgentsPage() {
     try {
       console.log('Loading agents for:', address)
       
-      const totalSupply = await publicClient.readContract({
+      // Получаем баланс NFT пользователя
+      const balance = await publicClient.readContract({
         address: contractAddress,
         abi: INFT_ABI,
-        functionName: 'totalSupply',
-      })
+        functionName: 'balanceOf',
+        args: [address]
+      }) as bigint
+      
+      console.log('User balance:', balance.toString(), 'tokens')
       
       const userAgents: Agent[] = []
-      // Fix for hydration error - only access localStorage on client
       const pendingPurchases = typeof window !== 'undefined' 
         ? JSON.parse(localStorage.getItem('pendingTransfers') || '{}')
         : {}
       
       console.log('Pending purchases:', pendingPurchases)
       
-      // Проверяем все токены
-      for (let i = 1; i <= Number(totalSupply); i++) {
+      // Получаем токены пользователя через tokenOfOwnerByIndex
+      for (let i = 0; i < Number(balance); i++) {
         try {
-          const owner = await publicClient.readContract({
+          const tokenId = await publicClient.readContract({
             address: contractAddress,
             abi: INFT_ABI,
-            functionName: 'ownerOf',
-            args: [BigInt(i)]
-          })
+            functionName: 'tokenOfOwnerByIndex',
+            args: [address, BigInt(i)]
+          }) as bigint
           
-          console.log(`Token ${i} owner:`, owner)
+          console.log(`User's token ${i}:`, tokenId.toString())
           
-          // Если я владелец
-          if (owner.toLowerCase() === address.toLowerCase()) {
-            const metadataHash = await publicClient.readContract({
+          // Получаем метаданные - пробуем разные методы
+          let metadataHash = ''
+          
+          // Сначала пробуем getMetadataHash
+          try {
+            metadataHash = await publicClient.readContract({
               address: contractAddress,
               abi: INFT_ABI,
               functionName: 'getMetadataHash',
-              args: [BigInt(i)]
-            })
-            
-            let metadata = null
+              args: [tokenId]
+            }) as string
+            console.log('Got metadata hash:', metadataHash)
+          } catch (e) {
+            console.log('getMetadataHash failed, trying tokenURI...')
+            // Если не работает, пробуем tokenURI
             try {
+              metadataHash = await publicClient.readContract({
+                address: contractAddress,
+                abi: INFT_ABI,
+                functionName: 'tokenURI',
+                args: [tokenId]
+              }) as string
+              console.log('Got tokenURI:', metadataHash)
+            } catch (e2) {
+              console.error('Both getMetadataHash and tokenURI failed for token', tokenId.toString())
+            }
+          }
+          
+          // Загружаем метаданные с retry
+          let metadata = null
+          let retryCount = 0
+          const maxRetries = 3
+          
+          while (retryCount < maxRetries && metadataHash) {
+            try {
+              console.log(`Attempting to fetch metadata (attempt ${retryCount + 1})...`)
               const response = await fetch('/api/storage/retrieve', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -116,78 +151,122 @@ export default function AgentsPage() {
               if (response.ok) {
                 const data = await response.json()
                 metadata = JSON.parse(data.content)
+                console.log('Metadata loaded successfully:', metadata)
+                break
+              } else {
+                console.error('Failed to load metadata, status:', response.status)
               }
             } catch (error) {
-              console.error(`Failed to load metadata for token ${i}`)
+              console.error(`Metadata fetch attempt ${retryCount + 1} failed:`, error)
             }
             
-            // Проверяем, выставлен ли на продажу
-            let isListed = false
-            let listingInfo = null
-            try {
-              const listing = await publicClient.readContract({
-                address: marketplaceAddress,
-                abi: AGENT_MARKETPLACE_ABI,
-                functionName: 'getListing',
-                args: [BigInt(i)]
-              })
-              
-              if (listing && listing.isActive && listing.seller.toLowerCase() === address.toLowerCase()) {
-                isListed = true
-                listingInfo = {
-                  price: listing.price,
-                  listedAt: listing.listedAt
-                }
-              }
-            } catch (error) {
-              console.log(`No listing for token ${i}`)
+            retryCount++
+            if (retryCount < maxRetries) {
+              // Ждем перед повторной попыткой
+              await new Promise(resolve => setTimeout(resolve, 2000))
             }
-            
-            // Проверяем, есть ли запросы на покупку этого токена
-            const purchaseRequests = Object.values(pendingPurchases).filter(
-              (p: any) => p.tokenId === i.toString() && p.seller.toLowerCase() === address.toLowerCase()
-            )
-            
-            console.log(`Token ${i} - listed: ${isListed}, purchase requests:`, purchaseRequests)
-            
-            userAgents.push({
-              tokenId: i,
-              metadataHash,
-              metadata: metadata || {
-                name: `Agent #${i}`,
-                description: 'Loading metadata...',
-                model: 'Unknown'
-              },
-              status: isListed ? 'listed' : (purchaseRequests.length > 0 ? 'pending_transfer' : 'owned'),
-              pendingInfo: purchaseRequests[0],
-              listingInfo: listingInfo
-            })
           }
-          // Если есть ожидающая покупка от меня
-          else if (pendingPurchases[i.toString()]) {
+          
+          // Если метаданные не загрузились, используем дефолтные
+          if (!metadata) {
+            console.log('Using default metadata for token', tokenId.toString())
+            metadata = {
+              name: `Agent #${tokenId}`,
+              description: 'Loading metadata...',
+              model: 'Unknown',
+              image: `https://api.dicebear.com/7.x/bottts/svg?seed=${tokenId}`
+            }
+          }
+          
+          // Проверяем, выставлен ли на продажу
+          let isListed = false
+          let listingInfo = null
+          try {
+            const listing = await publicClient.readContract({
+              address: marketplaceAddress,
+              abi: AGENT_MARKETPLACE_ABI,
+              functionName: 'getListing',
+              args: [tokenId]
+            })
+            
+            if (listing && listing.isActive && listing.seller.toLowerCase() === address.toLowerCase()) {
+              isListed = true
+              listingInfo = {
+                price: listing.price,
+                listedAt: listing.listedAt
+              }
+            }
+          } catch (error) {
+            console.log(`No listing for token ${tokenId}`)
+          }
+          
+          // Проверяем, есть ли запросы на покупку этого токена
+          const purchaseRequests = Object.values(pendingPurchases).filter(
+            (p: any) => p.tokenId === tokenId.toString() && p.seller.toLowerCase() === address.toLowerCase()
+          )
+          
+          console.log(`Token ${tokenId} - listed: ${isListed}, purchase requests:`, purchaseRequests)
+          
+          userAgents.push({
+            tokenId: Number(tokenId),
+            metadataHash,
+            metadata: metadata,
+            status: isListed ? 'listed' : (purchaseRequests.length > 0 ? 'pending_transfer' : 'owned'),
+            pendingInfo: purchaseRequests[0],
+            listingInfo: listingInfo
+          })
+        } catch (err) {
+          console.error(`Error fetching user token ${i}:`, err)
+        }
+      }
+      
+      // Также проверяем pending purchases из totalSupply (для обратной совместимости)
+      try {
+        const totalSupply = await publicClient.readContract({
+          address: contractAddress,
+          abi: INFT_ABI,
+          functionName: 'totalSupply',
+        })
+        
+        // Проверяем pending purchases
+        for (let i = 1; i <= Number(totalSupply); i++) {
+          if (pendingPurchases[i.toString()]) {
             const purchase = pendingPurchases[i.toString()]
             if (purchase.buyer.toLowerCase() === address.toLowerCase()) {
-              console.log(`Token ${i} - pending purchase for me`)
-              userAgents.push({
-                tokenId: i,
-                metadataHash: '',
-                metadata: {
-                  name: `Agent #${i}`,
-                  description: 'Transfer pending...',
-                  model: 'Unknown'
-                },
-                status: 'pending_purchase',
-                pendingInfo: purchase
-              })
+              // Проверяем, не добавили ли мы уже этот токен
+              const alreadyAdded = userAgents.some(a => a.tokenId === i)
+              if (!alreadyAdded) {
+                console.log(`Token ${i} - pending purchase for me`)
+                userAgents.push({
+                  tokenId: i,
+                  metadataHash: '',
+                  metadata: {
+                    name: `Agent #${i}`,
+                    description: 'Transfer pending...',
+                    model: 'Unknown'
+                  },
+                  status: 'pending_purchase',
+                  pendingInfo: purchase
+                })
+              }
             }
           }
-        } catch (error) {
-          console.error(`Error checking token ${i}:`, error)
         }
+      } catch (error) {
+        console.log('Error checking total supply for pending purchases:', error)
       }
       
       console.log('Final agents:', userAgents)
       setAgents(userAgents)
+      
+      // Если есть агенты с незагруженными метаданными, попробуем перезагрузить через 5 секунд
+      const hasLoadingMetadata = userAgents.some(a => a.metadata?.description === 'Loading metadata...')
+      if (hasLoadingMetadata && !refreshing) {
+        console.log('Some metadata still loading, scheduling retry...')
+        setTimeout(() => {
+          loadAgents()
+        }, 5000)
+      }
     } catch (error) {
       console.error('Error loading agents:', error)
       toast({
@@ -214,6 +293,16 @@ export default function AgentsPage() {
   const handleRefresh = async () => {
     setRefreshing(true)
     await loadAgents()
+  }
+
+  const handleTransfer = (agent: any) => {
+    setSelectedForTransfer(agent)
+    setTransferModalOpen(true)
+  }
+
+  const handleClone = (agent: any) => {
+    setSelectedForClone(agent)
+    setCloneModalOpen(true)
   }
 
   const listAgentForSale = async () => {
@@ -479,6 +568,12 @@ export default function AgentsPage() {
                         Listed
                       </Badge>
                     )}
+                    {agent.metadata?.description === 'Loading metadata...' && (
+                      <Badge className="absolute top-2 left-2 bg-orange-500/80">
+                        <AlertCircle className="w-3 h-3 mr-1" />
+                        Loading...
+                      </Badge>
+                    )}
                   </div>
                   
                   <div className="flex items-start justify-between">
@@ -537,28 +632,48 @@ export default function AgentsPage() {
                   )}
                   
                   {/* Actions */}
-                  <div className="flex gap-2">
+                  <div className="space-y-2">
                     {agent.status === 'owned' && (
                       <>
-                        <Link href={`/agent/${agent.tokenId}/chat`} className="flex-1">
-                          <Button variant="outline" className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20">
-                            <MessageCircle className="h-4 w-4 mr-2" />
-                            Chat
+                        <div className="flex gap-2">
+                          <Link href={`/agent/${agent.tokenId}/chat`} className="flex-1">
+                            <Button variant="outline" className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20">
+                              <MessageCircle className="h-4 w-4 mr-2" />
+                              Chat
+                            </Button>
+                          </Link>
+                          <Button 
+                            onClick={() => setSelectedAgent(agent)}
+                            className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500"
+                          >
+                            <ShoppingCart className="h-4 w-4 mr-2" />
+                            Sell
                           </Button>
-                        </Link>
-                        <Button 
-                          onClick={() => setSelectedAgent(agent)}
-                          className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500"
-                        >
-                          <ShoppingCart className="h-4 w-4 mr-2" />
-                          Sell
-                        </Button>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button 
+                            onClick={() => handleClone(agent)}
+                            variant="outline"
+                            className="flex-1 bg-white/10 border-white/30 text-white hover:bg-white/20"
+                          >
+                            <Copy className="h-4 w-4 mr-2" />
+                            Clone
+                          </Button>
+                          <Button 
+                            onClick={() => handleTransfer(agent)}
+                            variant="outline"
+                            className="flex-1 bg-white/10 border-white/30 text-white hover:bg-white/20"
+                          >
+                            <Send className="h-4 w-4 mr-2" />
+                            Transfer
+                          </Button>
+                        </div>
                       </>
                     )}
                     
                     {agent.status === 'listed' && (
                       <>
-                        <Link href={`/agent/${agent.tokenId}/chat`} className="flex-1">
+                        <Link href={`/agent/${agent.tokenId}/chat`} className="block">
                           <Button variant="outline" className="w-full bg-white/10 border-white/30 text-white hover:bg-white/20">
                             <MessageCircle className="h-4 w-4 mr-2" />
                             Chat
@@ -567,7 +682,7 @@ export default function AgentsPage() {
                         <Button 
                           onClick={() => cancelListing(agent)}
                           disabled={cancellingListingId === agent.tokenId}
-                          className="flex-1 bg-gradient-to-r from-red-500 to-orange-500"
+                          className="w-full bg-gradient-to-r from-red-500 to-orange-500"
                         >
                           {cancellingListingId === agent.tokenId ? (
                             <>
@@ -577,7 +692,7 @@ export default function AgentsPage() {
                           ) : (
                             <>
                               <Ban className="h-4 w-4 mr-2" />
-                              Cancel
+                              Cancel Listing
                             </>
                           )}
                         </Button>
@@ -733,6 +848,36 @@ export default function AgentsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Transfer Modal с TEE */}
+      <TransferModal
+        agent={selectedForTransfer}
+        isOpen={transferModalOpen}
+        onClose={() => {
+          setTransferModalOpen(false)
+          setSelectedForTransfer(null)
+        }}
+        onSuccess={() => {
+          setTransferModalOpen(false)
+          setSelectedForTransfer(null)
+          loadAgents()
+        }}
+      />
+
+      {/* Clone Modal */}
+      <CloneModal
+        agent={selectedForClone}
+        isOpen={cloneModalOpen}
+        onClose={() => {
+          setCloneModalOpen(false)
+          setSelectedForClone(null)
+        }}
+        onSuccess={() => {
+          setCloneModalOpen(false)
+          setSelectedForClone(null)
+          loadAgents()
+        }}
+      />
     </div>
   )
 }

@@ -1,1 +1,4 @@
 node_modules/
+web/.next/
+web/.cache/
+web/node_modules/

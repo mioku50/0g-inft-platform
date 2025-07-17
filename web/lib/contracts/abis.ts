@@ -483,25 +483,28 @@ export const AGENT_MARKETPLACE_ABI = [
     "type": "function"
   },
   {
-    "inputs": [
-      { "internalType": "address", "name": "nftContract", "type": "address" },
-      { "internalType": "uint256", "name": "tokenId", "type": "uint256" }
-    ],
-    "name": "getListing",
-    "outputs": [
-      {
-        "components": [
-          { "internalType": "address", "name": "seller", "type": "address" },
-          { "internalType": "uint256", "name": "price", "type": "uint256" }
-        ],
-        "internalType": "struct AgentMarketplace.Listing",
-        "name": "",
-        "type": "tuple"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
+    
+  "inputs": [
+    { "internalType": "address", "name": "nftContract", "type": "address" },
+    { "internalType": "uint256", "name": "tokenId", "type": "uint256" }
+  ],
+  "name": "getListing",
+  "outputs": [
+    {
+      "components": [
+        { "internalType": "address", "name": "seller", "type": "address" },
+        { "internalType": "uint256", "name": "price", "type": "uint256" },
+        { "internalType": "bool", "name": "isActive", "type": "bool" },
+        { "internalType": "uint256", "name": "listedAt", "type": "uint256" }
+      ],
+      "internalType": "struct AgentMarketplace.Listing",
+      "name": "",
+      "type": "tuple"
+    }
+  ],
+  "stateMutability": "view",
+  "type": "function"
+},
   {
     "inputs": [],
     "name": "listingCount",

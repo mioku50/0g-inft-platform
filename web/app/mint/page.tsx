@@ -1,264 +1,440 @@
-// web/app/mint/page.tsx
+// app/mint/page.tsx
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useAccount, useWalletClient, usePublicClient } from 'wagmi'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Card, CardContent } from '@/components/ui/card'
 import { toast } from '@/components/ui/use-toast'
-import { Upload, Loader2 } from 'lucide-react'
-import { uploadToStorage } from '@/lib/storage/client-browser'
-import { ethers } from 'ethers'
+import { Loader2, Upload, Sparkles, Shield, Zap, Rocket, Star, Wand2 } from 'lucide-react'
 import { INFT_ABI } from '@/lib/contracts/abis'
+import { ethers } from 'ethers'
+
+const ERC7857_MINT_ABI = [
+  {
+    "inputs": [
+      { "internalType": "address", "name": "_to", "type": "address" },
+      { "internalType": "string", "name": "_dataUri", "type": "string" },
+      { "internalType": "bool", "name": "_isDataPublic", "type": "bool" }
+    ],
+    "name": "mint",
+    "outputs": [
+      { "internalType": "uint256", "name": "_tokenId", "type": "uint256" }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+] as const
 
 const AI_MODELS = [
-  { value: 'llama-3.3-70b', label: 'Llama 3.3 70B', provider: '0xf07240Efa67755B5311bc75784a061eDB47165Dd' },
-  { value: 'deepseek-r1-70b', label: 'DeepSeek R1 70B', provider: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3' },
+  { value: 'llama-3.3-70b', label: 'Llama 3.3 70B' },
+  { value: 'deepseek-r1-70b', label: 'DeepSeek R1 70B' },
+]
+
+const PERSONALITY_TRAITS = [
+  { value: 'friendly', label: 'Friendly', emoji: '😊' },
+  { value: 'professional', label: 'Professional', emoji: '💼' },
+  { value: 'creative', label: 'Creative', emoji: '🎨' },
+  { value: 'analytical', label: 'Analytical', emoji: '📊' },
+  { value: 'humorous', label: 'Humorous', emoji: '😄' },
 ]
 
 export default function MintPage() {
   const { address, isConnected } = useAccount()
   const { data: walletClient } = useWalletClient()
   const publicClient = usePublicClient()
-  
+  const router = useRouter()
+
   const [loading, setLoading] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [uploadingMetadata, setUploadingMetadata] = useState(false)
+  const [error, setError] = useState('')
   
-  // Form state
-  const [name, setName] = useState('')
+  const [useERC7857, setUseERC7857] = useState(false)
+  const [agentName, setAgentName] = useState('')
   const [description, setDescription] = useState('')
-  const [model, setModel] = useState('')
+  const [model, setModel] = useState('llama-3.3-70b')
+  const [personality, setPersonality] = useState('creative')
   const [systemPrompt, setSystemPrompt] = useState('')
-  const [image, setImage] = useState<File | null>(null)
+  const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState('')
 
-  const handleImageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const oldContractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
+  const erc7857ContractAddress = '0x027eFE8FE350b1CAed2cca7a662EBF4520C237E2' as `0x${string}`
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      setImage(file)
+      setImageFile(file)
       const reader = new FileReader()
       reader.onloadend = () => {
         setImagePreview(reader.result as string)
       }
       reader.readAsDataURL(file)
     }
-  }, [])
+  }
 
   const handleMint = async () => {
-    if (!isConnected || !walletClient || !address) {
-      toast({
-        title: "Wallet not connected",
-        description: "Please connect your wallet to continue",
-        variant: "destructive",
-      })
-      return
-    }
+  if (!walletClient || !address || !publicClient) return
 
-    if (!name || !description || !model || !systemPrompt) {
-      toast({
-        title: "Missing information",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      })
-      return
-    }
-
+  try {
     setLoading(true)
-    try {
-      // 1. Upload image if exists
-      let imageUrl = ''
-      if (image) {
-        setUploadingImage(true)
-        const formData = new FormData()
-        formData.append('file', image)
-        
-        const response = await fetch('/api/storage/upload-image', {
+    setError('')
+    
+    let imageUrl = ''
+    if (imageFile) {
+      setUploadingImage(true)
+      const formData = new FormData()
+      formData.append('file', imageFile)
+      
+      try {
+        const imageResponse = await fetch('/api/storage/upload-image', {
           method: 'POST',
           body: formData,
         })
         
-        if (!response.ok) throw new Error('Failed to upload image')
-        
-        const data = await response.json()
-        imageUrl = data.url
-        setUploadingImage(false)
+        if (imageResponse.ok) {
+          const { url } = await imageResponse.json()
+          imageUrl = url
+        }
+      } catch (err) {
+        console.log('Image upload failed, using default avatar')
       }
-
-      // 2. Prepare metadata
-      const selectedModel = AI_MODELS.find(m => m.value === model)
-      const metadata = {
-        name,
-        description,
-        image: imageUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${name}`,
-        model: model,
-        provider: selectedModel?.provider,
-        systemPrompt,
-        createdAt: new Date().toISOString(),
-        createdBy: address,
-      }
-
-      // 3. Upload metadata to 0G Storage
-      const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' })
-      const metadataFile = new File([metadataBlob], 'metadata.json', { type: 'application/json' })
-      
-      const { rootHash } = await uploadToStorage(metadataFile)
-      const metadataUri = `https://indexer-storage-testnet-turbo.0g.ai/${rootHash}`
-
-      // 4. Mint NFT
-      const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS
-      if (!contractAddress) throw new Error('Contract address not configured')
-
-      const { request } = await publicClient.simulateContract({
-        address: contractAddress as `0x${string}`,
-        abi: INFT_ABI,
-        functionName: 'mint',
-        args: [address, metadataUri, rootHash],
-        account: address,
-      })
-
-      const hash = await walletClient.writeContract(request)
-      
-      toast({
-        title: "Minting in progress",
-        description: "Your AI agent is being created...",
-      })
-
-      const receipt = await publicClient.waitForTransactionReceipt({ hash })
-      
-      if (receipt.status === 'success') {
-        toast({
-          title: "Success!",
-          description: "Your AI agent has been minted successfully",
-        })
-        
-        // Reset form
-        setName('')
-        setDescription('')
-        setModel('')
-        setSystemPrompt('')
-        setImage(null)
-        setImagePreview('')
-      }
-    } catch (error) {
-      console.error('Minting error:', error)
-      toast({
-        title: "Minting failed",
-        description: error instanceof Error ? error.message : "Something went wrong",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
       setUploadingImage(false)
     }
+
+    const defaultPrompt = systemPrompt || `You are ${agentName}, a ${personality} AI assistant.`
+    const metadata = {
+      name: agentName,
+      description: description || agentName,
+      image: imageUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${agentName}`,
+      model,
+      personality,
+      systemPrompt: defaultPrompt,
+      createdAt: new Date().toISOString(),
+      createdBy: address
+    }
+
+    console.log('Minting with metadata:', metadata)
+
+    setUploadingMetadata(true)
+    const metadataResponse = await fetch('/api/storage/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        metadata: metadata
+      }),
+    })
+
+    const responseText = await metadataResponse.text()
+    console.log('Metadata upload response:', responseText)
+
+    if (!metadataResponse.ok) {
+      throw new Error(`Failed to upload metadata: ${responseText}`)
+    }
+
+    const uploadResult = JSON.parse(responseText)
+    const rootHash = uploadResult.rootHash
+    
+    if (!rootHash) {
+      throw new Error('No root hash received from storage')
+    }
+    
+    console.log('Metadata uploaded, rootHash:', rootHash)
+    console.log('rootHash type:', typeof rootHash)
+    console.log('rootHash length:', rootHash.length)
+    setUploadingMetadata(false)
+
+    let tx
+    if (useERC7857) {
+      console.log('Minting with ERC7857...')
+      tx = await walletClient.writeContract({
+        address: erc7857ContractAddress,
+        abi: ERC7857_MINT_ABI,
+        functionName: 'mint',
+        args: [address, rootHash, true]
+      })
+    } else {
+      console.log('Minting with INFT contract...')
+      
+      // Убедимся, что rootHash это строка
+      const rootHashString = rootHash.toString()
+      
+      // Создаем bytes32 хеш правильно
+      const metadataHashBytes32 = ethers.keccak256(
+        ethers.toUtf8Bytes(rootHashString)
+      ) as `0x${string}`
+      
+      console.log('Mint parameters:', {
+        to: address,
+        encryptedURI: rootHashString,
+        metadataHash: metadataHashBytes32
+      })
+      
+      tx = await walletClient.writeContract({
+        address: oldContractAddress,
+        abi: INFT_ABI,
+        functionName: 'mint',
+        args: [
+          address as `0x${string}`,
+          rootHashString,
+          metadataHashBytes32
+        ]
+      })
+    }
+
+    await publicClient.waitForTransactionReceipt({ hash: tx })
+
+    toast({
+      title: 'Success!',
+      description: `AI Agent "${agentName}" minted successfully!`
+    })
+
+    router.push('/agents')
+  } catch (error: any) {
+    console.error('Mint error:', error)
+    setError(error.shortMessage || error.message || 'Failed to mint agent')
+    toast({
+      title: 'Error',
+      description: error.shortMessage || error.message || 'Failed to mint agent',
+      variant: 'destructive'
+    })
+  } finally {
+    setLoading(false)
+    setUploadingImage(false)
+    setUploadingMetadata(false)
   }
+}
 
   return (
-    <div className="container mx-auto py-10">
-      <Card className="max-w-2xl mx-auto">
-        <CardHeader>
-          <CardTitle>Create AI Agent</CardTitle>
-          <CardDescription>
-            Mint your AI agent as an NFT on 0G Network
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="name">Agent Name</Label>
-            <Input
-              id="name"
-              placeholder="My AI Assistant"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={loading}
-            />
-          </div>
+    <div className="min-h-screen relative bg-gray-900">
+      {/* Градиентный фон как на главной */}
+      <div className="absolute inset-0">
+        <div className="absolute inset-0 bg-gradient-to-b from-purple-900/20 via-gray-900 to-gray-900" />
+        <div className="absolute top-0 left-0 w-96 h-96 bg-purple-600/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-pink-600/20 rounded-full blur-3xl" />
+      </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              placeholder="Describe what your AI agent does..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={loading}
-            />
-          </div>
+      {/* Анимированные элементы */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-20 left-10 animate-float">
+          <Wand2 className="w-8 h-8 text-purple-400/30" />
+        </div>
+        <div className="absolute top-40 right-20 animate-float-delayed">
+          <Star className="w-6 h-6 text-pink-400/30" />
+        </div>
+        <div className="absolute bottom-40 left-20 animate-float">
+          <Sparkles className="w-10 h-10 text-blue-400/30" />
+        </div>
+      </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="model">AI Model</Label>
-            <Select value={model} onValueChange={setModel} disabled={loading}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select an AI model" />
-              </SelectTrigger>
-              <SelectContent>
-                {AI_MODELS.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="systemPrompt">System Prompt</Label>
-            <Textarea
-              id="systemPrompt"
-              placeholder="You are a helpful AI assistant..."
-              className="min-h-[100px]"
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              disabled={loading}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="image">Agent Image (Optional)</Label>
-            <div className="flex items-center gap-4">
-              {imagePreview && (
-                <img
-                  src={imagePreview}
-                  alt="Preview"
-                  className="w-20 h-20 rounded-lg object-cover"
-                />
-              )}
-              <Input
-                id="image"
-                type="file"
-                accept="image/*"
-                onChange={handleImageChange}
-                disabled={loading}
-                className="flex-1"
-              />
-            </div>
-          </div>
-
-          <Button
-            onClick={handleMint}
-            disabled={!isConnected || loading}
-            className="w-full"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {uploadingImage ? 'Uploading image...' : 'Minting...'}
-              </>
-            ) : (
-              'Mint AI Agent'
-            )}
-          </Button>
-
-          {!isConnected && (
-            <p className="text-sm text-muted-foreground text-center">
-              Please connect your wallet to mint an AI agent
+      <div className="relative z-10 container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-5xl font-bold mb-4 text-white">
+              Create Your AI Agent
+            </h1>
+            <p className="text-gray-300 text-lg">
+              Mint a unique AI agent NFT powered by 0G Network
             </p>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+
+          {/* Contract Selection */}
+          <Card className="mb-6 bg-gray-800/50 backdrop-blur border-purple-500/30">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-1">
+                    {useERC7857 ? 'ERC7857 Advanced NFT' : 'Standard INFT'}
+                  </h3>
+                  <p className="text-sm text-gray-300">
+                    {useERC7857 
+                      ? 'Enhanced features with encrypted metadata and secure transfers'
+                      : 'Classic NFT with standard transfer functionality'}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={useERC7857}
+                    onChange={(e) => setUseERC7857(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-14 h-7 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-purple-500 peer-checked:to-pink-500"></div>
+                </label>
+              </div>
+              {useERC7857 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="px-3 py-1 bg-purple-500/20 text-purple-300 rounded-full text-xs flex items-center gap-1">
+                    <Shield className="w-3 h-3" /> Encrypted Metadata
+                  </span>
+                  <span className="px-3 py-1 bg-pink-500/20 text-pink-300 rounded-full text-xs flex items-center gap-1">
+                    <Zap className="w-3 h-3" /> Secure Transfers
+                  </span>
+                  <span className="px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-xs flex items-center gap-1">
+                    <Rocket className="w-3 h-3" /> Advanced Features
+                  </span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Main Form */}
+          <Card className="bg-gray-800/50 backdrop-blur border-purple-500/30">
+            <CardContent className="p-8 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="name" className="text-white">Agent Name</Label>
+                  <Input
+                    id="name"
+                    placeholder="My AI Assistant"
+                    value={agentName}
+                    onChange={(e) => setAgentName(e.target.value)}
+                    className="bg-gray-700/50 border-gray-600 text-white mt-2"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="model" className="text-white">AI Model</Label>
+                  <Select value={model} onValueChange={setModel}>
+                    <SelectTrigger className="bg-gray-700/50 border-gray-600 text-white mt-2">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-800 border-gray-700">
+                      {AI_MODELS.map((m) => (
+                        <SelectItem key={m.value} value={m.value} className="text-white">
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="description" className="text-white">Description</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Describe your AI agent..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  className="bg-gray-700/50 border-gray-600 text-white mt-2"
+                />
+              </div>
+
+              <div>
+                <Label className="text-white mb-3 block">Personality Type</Label>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {PERSONALITY_TRAITS.map((trait) => (
+                    <button
+                      key={trait.value}
+                      type="button"
+                      onClick={() => setPersonality(trait.value)}
+                      className={`p-4 rounded-lg border-2 transition-all ${
+                        personality === trait.value
+                          ? 'border-purple-500 bg-purple-500/20 text-white'
+                          : 'border-gray-600 bg-gray-700/30 text-gray-300 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className="text-center">
+                        <div className="text-2xl mb-1">{trait.emoji}</div>
+                        <div className="text-sm">{trait.label}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="prompt" className="text-white">System Prompt (Optional)</Label>
+                <Textarea
+                  id="prompt"
+                  placeholder='{"role": "assistant", "knowledge": []}'
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  rows={6}
+                  className="bg-gray-700/50 border-gray-600 text-white mt-2 font-mono text-sm"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="image" className="text-white">Agent Avatar (Optional)</Label>
+                <div className="mt-2 flex items-center gap-4">
+                  {imagePreview ? (
+                    <img 
+                      src={imagePreview} 
+                      alt="Preview" 
+                      className="w-20 h-20 rounded-lg object-cover border-2 border-purple-500"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-lg bg-gray-700/50 border-2 border-dashed border-gray-600 flex items-center justify-center">
+                      <Upload className="w-8 h-8 text-gray-400" />
+                    </div>
+                  )}
+                  <Input
+                    id="image"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="bg-gray-700/50 border-gray-600 text-white file:bg-gray-700 file:text-white file:border-0"
+                  />
+                </div>
+              </div>
+
+              {error && (
+                <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-lg">
+                  <p className="text-red-300 text-sm">Error</p>
+                  <p className="text-white">{error}</p>
+                </div>
+              )}
+
+              <Button
+                onClick={handleMint}
+                disabled={loading || !agentName || !isConnected}
+                className="w-full h-12 text-lg font-semibold bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    {uploadingImage ? 'Uploading Image...' : uploadingMetadata ? 'Uploading Metadata...' : 'Minting...'}
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-5 w-5" />
+                    Mint AI Agent
+                  </>
+                )}
+              </Button>
+
+              {!isConnected && (
+                <p className="text-center text-sm text-gray-400">
+                  Please connect your wallet to mint an agent
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-20px); }
+        }
+        .animate-float {
+          animation: float 6s ease-in-out infinite;
+        }
+        .animate-float-delayed {
+          animation: float 6s ease-in-out infinite;
+          animation-delay: 3s;
+        }
+      `}</style>
     </div>
   )
 }

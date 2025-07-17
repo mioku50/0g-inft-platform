@@ -1,215 +1,198 @@
-// web/lib/storage/client-server.ts
+// web/lib/storage/client-server.ts - обновленная версия с проверкой загрузки
 import { ZgFile, Indexer, getFlowContract } from '@0glabs/0g-ts-sdk'
 import { ethers } from 'ethers'
-import * as fs from 'fs'
+import * as fs from 'fs/promises'
 import * as path from 'path'
-import { writeFile, unlink } from 'fs/promises'
+import * as os from 'os'
 
-interface UploadResult {
-  rootHash: string
-  txHash: string
-  size: number
-  segments: number
-}
+const RPC_URL = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
+const INDEXER_RPC = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
+const PRIVATE_KEY = process.env.OG_STORAGE_PRIVATE_KEY!
+const FLOW_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_0G_FLOW_ADDRESS || '0xbD75117F80b4E22698D0Cd7612d92BDb8eaff628'
 
-export async function uploadToStorage(
-  file: File | Buffer,
-  fileName?: string
-): Promise<UploadResult> {
+export async function uploadToStorage(content: string | Buffer, filename?: string): Promise<{ rootHash: string; txHash: string }> {
   console.log('=== Storage Upload Debug ===')
+  console.log('Content size:', typeof content === 'string' ? content.length : content.length)
+  console.log('Filename:', filename || 'metadata.json')
+  console.log('Indexer RPC:', INDEXER_RPC)
+  console.log('Flow Contract:', FLOW_CONTRACT_ADDRESS)
   
-  const privateKey = process.env.OG_STORAGE_PRIVATE_KEY
-  if (!privateKey) {
-    throw new Error('OG_STORAGE_PRIVATE_KEY not configured')
-  }
-
-  // Network configuration
-  const flowAddress = process.env.NEXT_PUBLIC_0G_FLOW_ADDRESS || '0xbD75117F80b4E22698D0Cd7612d92BDb8eaff628'
-  const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
-  const evmRpc = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
-
-  console.log('Environment check:', {
-    NODE_ENV: process.env.NODE_ENV,
-    hasStorageKey: !!privateKey,
-    keyLength: privateKey.length,
-    keyPrefix: privateKey.substring(0, 6) + '...',
-    flowAddress,
-    storageRpc: indexerRpc,
-    l1Rpc: evmRpc
-  })
-
-  // Create temporary file path
-  const tempDir = path.join(process.cwd(), 'tmp')
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true })
-  }
-  
-  const tempFilePath = path.join(tempDir, `upload-${Date.now()}-${fileName || 'file'}`)
+  let file: ZgFile
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'upload-'))
+  const tempPath = path.join(tempDir, filename || 'metadata.json')
   
   try {
-    // Initialize provider and wallet
-    const provider = new ethers.JsonRpcProvider(evmRpc)
-    const wallet = new ethers.Wallet(privateKey, provider)
-    console.log('Wallet address:', wallet.address)
-
-    // Check balance
-    const balance = await provider.getBalance(wallet.address)
+    // Записываем контент во временный файл
+    await fs.writeFile(tempPath, content)
+    console.log('Temp file created:', tempPath)
+    
+    // Создаем ZgFile объект
+    file = await ZgFile.fromFilePath(tempPath)
+    const [tree, merkleError] = await file.merkleTree()
+    
+    if (merkleError) {
+      console.error('Merkle tree error:', merkleError)
+      throw merkleError
+    }
+    
+    console.log('File root hash:', tree!.rootHash())
+    
+    // Настраиваем провайдера и контракт
+    const provider = new ethers.JsonRpcProvider(RPC_URL)
+    const signer = new ethers.Wallet(PRIVATE_KEY, provider)
+    const flowContract = getFlowContract(FLOW_CONTRACT_ADDRESS, signer)
+    
+    // Проверяем баланс перед загрузкой
+    const balance = await provider.getBalance(signer.address)
     console.log('Wallet balance:', ethers.formatEther(balance), 'ETH')
-
-    if (balance === 0n) {
-      throw new Error('Wallet has no balance. Please fund it with testnet tokens.')
-    }
-
-    // Write buffer to temporary file
-    if (Buffer.isBuffer(file)) {
-      console.log('Writing buffer to temp file, size:', file.length)
-      await writeFile(tempFilePath, file)
-    } else {
-      console.log('Writing File object to temp file')
-      const arrayBuffer = await file.arrayBuffer()
-      const buffer = Buffer.from(arrayBuffer)
-      await writeFile(tempFilePath, buffer)
-    }
-
-    // Create ZgFile from file path
-    console.log('Creating ZgFile from path:', tempFilePath)
-    const zgFile = await ZgFile.fromFilePath(tempFilePath)
     
-    // Get merkle tree
-    const [tree, treeErr] = await zgFile.merkleTree()
-    if (treeErr) {
-      console.error('Merkle tree error:', treeErr)
-      throw new Error(`Failed to create merkle tree: ${treeErr}`)
+    if (balance < ethers.parseEther('0.01')) {
+      throw new Error('Insufficient balance for upload. Need at least 0.01 ETH')
     }
-    console.log('File root hash:', tree.rootHash())
-
-    // Create indexer client
-    const indexer = new Indexer(indexerRpc)
-    console.log('Indexer initialized')
-
-    // Upload to storage nodes
-    console.log('Uploading to storage nodes...')
-    const [uploadTx, uploadErr] = await indexer.upload(
-      zgFile,
-      evmRpc,
-      wallet
-    )
-
-    if (uploadErr) {
-      console.error('Storage upload error:', uploadErr)
-      throw new Error(`Failed to upload to storage: ${uploadErr}`)
+    
+    // Создаем indexer
+    const indexer = new Indexer(INDEXER_RPC)
+    
+    // Загружаем файл
+    console.log('Starting upload...')
+    const [uploadTx, uploadError] = await indexer.upload(file, RPC_URL, signer)
+    
+    if (uploadError) {
+      console.error('Upload error:', uploadError)
+      throw uploadError
     }
-
-    console.log('Upload complete:', uploadTx)
     
-    // Get file size before closing
-    const fileSize = zgFile.size()
+    console.log('Upload transaction:', uploadTx)
     
-    // Close file
-    await zgFile.close()
-
-    // Return result
+    // Ждем подтверждения транзакции
+    if (uploadTx) {
+      console.log('Waiting for transaction confirmation...')
+      const receipt = await provider.waitForTransactionReceipt(uploadTx, 3) // Ждем 3 подтверждения
+      console.log('Transaction confirmed:', receipt?.status === 1 ? 'Success' : 'Failed')
+      
+      if (receipt?.status !== 1) {
+        throw new Error('Upload transaction failed')
+      }
+    }
+    
+    // Ждем синхронизации (важно!)
+    console.log('Waiting for storage network synchronization...')
+    await new Promise(resolve => setTimeout(resolve, 10000)) // 10 секунд
+    
+    // Проверяем, что файл доступен
+    const rootHash = tree!.rootHash()
+    console.log('Verifying file availability...')
+    
+    try {
+      const locations = await indexer.getFileLocations(rootHash)
+      console.log('File is available at', locations.length, 'locations')
+      
+      if (locations.length === 0) {
+        console.log('File not yet synchronized, waiting more...')
+        await new Promise(resolve => setTimeout(resolve, 10000)) // Еще 10 секунд
+        
+        // Проверяем еще раз
+        const locationsRetry = await indexer.getFileLocations(rootHash)
+        if (locationsRetry.length === 0) {
+          console.warn('File still not available, but continuing...')
+        }
+      }
+    } catch (verifyError) {
+      console.warn('Could not verify file availability:', verifyError)
+    }
+    
     return {
-      rootHash: tree.rootHash(),
-      txHash: uploadTx,
-      size: fileSize,
-      segments: Math.ceil(fileSize / (1024 * 1024)) // Calculate segments based on 1MB chunks
+      rootHash: rootHash,
+      txHash: uploadTx || '0x0'
     }
+    
   } catch (error) {
     console.error('0G Storage upload error:', error)
-    throw new StorageError(
-      `Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      error
-    )
+    throw new StorageError('Upload failed', error)
   } finally {
-    // Clean up temp file
+    // Закрываем файл и удаляем временные файлы
+    if (file!) {
+      await file.close()
+    }
     try {
-      if (fs.existsSync(tempFilePath)) {
-        await unlink(tempFilePath)
-        console.log('Temp file cleaned up')
-      }
-    } catch (err) {
-      console.error('Failed to clean up temp file:', err)
+      await fs.rm(tempDir, { recursive: true })
+    } catch (e) {
+      console.error('Failed to cleanup temp files:', e)
     }
   }
 }
 
-export async function downloadFromStorage(rootHash: string): Promise<Buffer> {
+export async function downloadFromStorage(rootHash: string): Promise<string> {
+  console.log('=== Storage Download Debug ===')
+  console.log('Downloading file with root hash:', rootHash)
+  console.log('Indexer RPC:', INDEXER_RPC)
+  
+  const tempPath = path.join(os.tmpdir(), `download-${Date.now()}.tmp`)
+  console.log('Downloading to temp path:', tempPath)
+  
   try {
-    const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
-    const evmRpc = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
+    const indexer = new Indexer(INDEXER_RPC)
     
-    console.log('=== Storage Download Debug ===')
-    console.log('Downloading file with root hash:', rootHash)
-    console.log('Indexer RPC:', indexerRpc)
-    
-    const indexer = new Indexer(indexerRpc)
-    
-    // Create temp file for download
-    const tempDir = path.join(process.cwd(), 'tmp')
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true })
-    }
-    const outputPath = path.join(tempDir, `download-${Date.now()}.tmp`)
-    
-    console.log('Downloading to temp path:', outputPath)
-    
-    // Download file
-    const err = await indexer.download(rootHash, outputPath, false) // false = without proof
-    
-    if (err !== null) {
-      console.error('Download error:', err)
-      throw new Error(`Download failed: ${err}`)
-    }
-    
-    console.log('Download complete, reading file...')
-    
-    // Read file into buffer
-    const buffer = await fs.promises.readFile(outputPath)
-    console.log('File read successfully, size:', buffer.length)
-    
-    // Clean up temp file
+    // Сначала проверяем доступность файла
     try {
-      await unlink(outputPath)
-      console.log('Temp download file cleaned up')
-    } catch (cleanupErr) {
-      console.error('Failed to clean up download file:', cleanupErr)
+      const locations = await indexer.getFileLocations(rootHash)
+      console.log('File found at', locations.length, 'locations')
+      
+      if (locations.length === 0) {
+        throw new Error('File not available in storage network')
+      }
+    } catch (locError) {
+      console.error('File location check error:', locError)
+      // Продолжаем попытку загрузки
     }
     
-    return buffer
+    // Пытаемся загрузить
+    const downloadError = await indexer.download(rootHash, tempPath, false)
+    
+    if (downloadError) {
+      console.error('Download error:', downloadError)
+      throw downloadError
+    }
+    
+    console.log('Download successful, reading file...')
+    const content = await fs.readFile(tempPath, 'utf-8')
+    console.log('File content length:', content.length)
+    
+    // Удаляем временный файл
+    await fs.unlink(tempPath).catch(() => {})
+    
+    return content
   } catch (error) {
     console.error('0G Storage download error:', error)
-    throw new StorageError(
-      `Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      error
-    )
-  }
-}
-
-// Helper function to verify if content exists
-export async function verifyContent(rootHash: string): Promise<boolean> {
-  try {
-    const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
-    const indexer = new Indexer(indexerRpc)
     
-    // Try to get file info
-    const info = await indexer.getFileInfo(rootHash)
-    return info !== null
-  } catch (error) {
-    console.error('Error verifying content:', error)
-    return false
+    // Если файл не найден, возвращаем пустые метаданные
+    if (error instanceof Error && error.message.includes('file not found')) {
+      console.log('File not found, returning default metadata')
+      return JSON.stringify({
+        name: 'Unknown Agent',
+        description: 'Metadata not available',
+        model: 'Unknown',
+        error: 'metadata_not_found'
+      })
+    }
+    
+    throw new StorageError('Download failed', error)
+  } finally {
+    // Убеждаемся, что временный файл удален
+    try {
+      await fs.unlink(tempPath)
+    } catch (e) {
+      // Игнорируем ошибки удаления
+    }
   }
 }
 
-// Helper function to get storage URL for a root hash
-export function getStorageUrl(rootHash: string): string {
-  const baseUrl = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
-  return `${baseUrl}/${rootHash}`
-}
-
-export class StorageError extends Error {
-  constructor(message: string, public details?: unknown) {
+class StorageError extends Error {
+  details: any
+  
+  constructor(message: string, details?: any) {
     super(message)
     this.name = 'StorageError'
+    this.details = details
   }
 }

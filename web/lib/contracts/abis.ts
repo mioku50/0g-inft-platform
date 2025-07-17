@@ -419,6 +419,32 @@ export const INFT_ABI = [
     "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
     "stateMutability": "view",
     "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "tokenId", "type": "uint256" },
+      { "internalType": "bytes32", "name": "newMetadataHash", "type": "bytes32" },
+      { "internalType": "bytes32", "name": "encryptionKey", "type": "bytes32" },
+      { "internalType": "bytes32", "name": "decryptionKeyHash", "type": "bytes32" }
+    ],
+    "name": "clone",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "from", "type": "address" },
+      { "internalType": "address", "name": "to", "type": "address" },
+      { "internalType": "uint256", "name": "tokenId", "type": "uint256" },
+      { "internalType": "bytes32", "name": "newMetadataHash", "type": "bytes32" },
+      { "internalType": "bytes", "name": "encryptedKey", "type": "bytes" },
+      { "internalType": "bytes", "name": "proof", "type": "bytes" }
+    ],
+    "name": "transferWithMetadata",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
   }
 ] as const;
 

@@ -1,4 +1,4 @@
-// web/lib/storage/client-server.ts - обновленная версия с проверкой загрузки
+// web/lib/storage/client-server.ts
 import { ZgFile, Indexer, getFlowContract } from '@0glabs/0g-ts-sdk'
 import { ethers } from 'ethers'
 import * as fs from 'fs/promises'
@@ -14,19 +14,15 @@ export async function uploadToStorage(content: string | Buffer, filename?: strin
   console.log('=== Storage Upload Debug ===')
   console.log('Content size:', typeof content === 'string' ? content.length : content.length)
   console.log('Filename:', filename || 'metadata.json')
-  console.log('Indexer RPC:', INDEXER_RPC)
-  console.log('Flow Contract:', FLOW_CONTRACT_ADDRESS)
   
   let file: ZgFile
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'upload-'))
   const tempPath = path.join(tempDir, filename || 'metadata.json')
   
   try {
-    // Записываем контент во временный файл
     await fs.writeFile(tempPath, content)
     console.log('Temp file created:', tempPath)
     
-    // Создаем ZgFile объект
     file = await ZgFile.fromFilePath(tempPath)
     const [tree, merkleError] = await file.merkleTree()
     
@@ -37,23 +33,18 @@ export async function uploadToStorage(content: string | Buffer, filename?: strin
     
     console.log('File root hash:', tree!.rootHash())
     
-    // Настраиваем провайдера и контракт
     const provider = new ethers.JsonRpcProvider(RPC_URL)
     const signer = new ethers.Wallet(PRIVATE_KEY, provider)
-    const flowContract = getFlowContract(FLOW_CONTRACT_ADDRESS, signer)
     
-    // Проверяем баланс перед загрузкой
     const balance = await provider.getBalance(signer.address)
-    console.log('Wallet balance:', ethers.formatEther(balance), 'ETH')
+    console.log('Wallet balance:', ethers.formatEther(balance), 'OG')
     
     if (balance < ethers.parseEther('0.01')) {
-      throw new Error('Insufficient balance for upload. Need at least 0.01 ETH')
+      throw new Error('Insufficient balance for upload. Need at least 0.01 OG')
     }
     
-    // Создаем indexer
     const indexer = new Indexer(INDEXER_RPC)
     
-    // Загружаем файл
     console.log('Starting upload...')
     const [uploadTx, uploadError] = await indexer.upload(file, RPC_URL, signer)
     
@@ -64,42 +55,17 @@ export async function uploadToStorage(content: string | Buffer, filename?: strin
     
     console.log('Upload transaction:', uploadTx)
     
-    // Ждем подтверждения транзакции
     if (uploadTx) {
       console.log('Waiting for transaction confirmation...')
-      const receipt = await provider.waitForTransactionReceipt(uploadTx, 3) // Ждем 3 подтверждения
+      const receipt = await provider.waitForTransactionReceipt(uploadTx, 3)
       console.log('Transaction confirmed:', receipt?.status === 1 ? 'Success' : 'Failed')
-      
-      if (receipt?.status !== 1) {
-        throw new Error('Upload transaction failed')
-      }
     }
     
-    // Ждем синхронизации (важно!)
+    // Ждем синхронизации
     console.log('Waiting for storage network synchronization...')
-    await new Promise(resolve => setTimeout(resolve, 10000)) // 10 секунд
+    await new Promise(resolve => setTimeout(resolve, 10000))
     
-    // Проверяем, что файл доступен
     const rootHash = tree!.rootHash()
-    console.log('Verifying file availability...')
-    
-    try {
-      const locations = await indexer.getFileLocations(rootHash)
-      console.log('File is available at', locations.length, 'locations')
-      
-      if (locations.length === 0) {
-        console.log('File not yet synchronized, waiting more...')
-        await new Promise(resolve => setTimeout(resolve, 10000)) // Еще 10 секунд
-        
-        // Проверяем еще раз
-        const locationsRetry = await indexer.getFileLocations(rootHash)
-        if (locationsRetry.length === 0) {
-          console.warn('File still not available, but continuing...')
-        }
-      }
-    } catch (verifyError) {
-      console.warn('Could not verify file availability:', verifyError)
-    }
     
     return {
       rootHash: rootHash,
@@ -108,9 +74,8 @@ export async function uploadToStorage(content: string | Buffer, filename?: strin
     
   } catch (error) {
     console.error('0G Storage upload error:', error)
-    throw new StorageError('Upload failed', error)
+    throw error
   } finally {
-    // Закрываем файл и удаляем временные файлы
     if (file!) {
       await file.close()
     }
@@ -125,28 +90,12 @@ export async function uploadToStorage(content: string | Buffer, filename?: strin
 export async function downloadFromStorage(rootHash: string): Promise<string> {
   console.log('=== Storage Download Debug ===')
   console.log('Downloading file with root hash:', rootHash)
-  console.log('Indexer RPC:', INDEXER_RPC)
   
   const tempPath = path.join(os.tmpdir(), `download-${Date.now()}.tmp`)
-  console.log('Downloading to temp path:', tempPath)
   
   try {
     const indexer = new Indexer(INDEXER_RPC)
     
-    // Сначала проверяем доступность файла
-    try {
-      const locations = await indexer.getFileLocations(rootHash)
-      console.log('File found at', locations.length, 'locations')
-      
-      if (locations.length === 0) {
-        throw new Error('File not available in storage network')
-      }
-    } catch (locError) {
-      console.error('File location check error:', locError)
-      // Продолжаем попытку загрузки
-    }
-    
-    // Пытаемся загрузить
     const downloadError = await indexer.download(rootHash, tempPath, false)
     
     if (downloadError) {
@@ -156,38 +105,28 @@ export async function downloadFromStorage(rootHash: string): Promise<string> {
     
     console.log('Download successful, reading file...')
     const content = await fs.readFile(tempPath, 'utf-8')
-    console.log('File content length:', content.length)
     
-    // Удаляем временный файл
     await fs.unlink(tempPath).catch(() => {})
     
     return content
   } catch (error) {
     console.error('0G Storage download error:', error)
     
-    // Если файл не найден, возвращаем пустые метаданные
-    if (error instanceof Error && error.message.includes('file not found')) {
-      console.log('File not found, returning default metadata')
-      return JSON.stringify({
-        name: 'Unknown Agent',
-        description: 'Metadata not available',
-        model: 'Unknown',
-        error: 'metadata_not_found'
-      })
-    }
-    
-    throw new StorageError('Download failed', error)
+    // Возвращаем дефолтные метаданные если файл не найден
+    return JSON.stringify({
+      name: 'Unknown Agent',
+      description: 'Metadata not available',
+      model: 'Unknown',
+      error: 'metadata_not_found'
+    })
   } finally {
-    // Убеждаемся, что временный файл удален
     try {
       await fs.unlink(tempPath)
-    } catch (e) {
-      // Игнорируем ошибки удаления
-    }
+    } catch (e) {}
   }
 }
 
-class StorageError extends Error {
+export class StorageError extends Error {
   details: any
   
   constructor(message: string, details?: any) {

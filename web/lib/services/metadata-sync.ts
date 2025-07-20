@@ -147,4 +147,5 @@ export class MetadataSyncService {
       console.log('[MetadataSync] Auto-sync stopped')
     }
   }
+
 }

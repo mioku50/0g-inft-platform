@@ -9,6 +9,7 @@ import Link from 'next/link'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+import { useMetadataSync } from '@/hooks/useMetadataSync'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -18,39 +19,6 @@ const inter = Inter({ subsets: ['latin'] })
 //   description: 'Create and manage AI agents as NFTs',
 // }
 
-// Хук для автоматической синхронизации метаданных
-function useMetadataSync(enabled = true, intervalMinutes = 5) {
-  useEffect(() => {
-    if (!enabled) return
-    
-    const syncMetadata = async () => {
-      try {
-        const response = await fetch('/api/sync/metadata', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        })
-        
-        if (!response.ok) {
-          console.error('[MetadataSync] Sync failed')
-        } else {
-          console.log('[MetadataSync] Sync triggered successfully')
-        }
-      } catch (error) {
-        console.error('[MetadataSync] Error:', error)
-      }
-    }
-    
-    // Синхронизация при монтировании
-    syncMetadata()
-    
-    // Периодическая синхронизация
-    const interval = setInterval(syncMetadata, intervalMinutes * 60 * 1000)
-    
-    return () => clearInterval(interval)
-  }, [enabled, intervalMinutes])
-}
 
 function Navigation() {
   const pathname = usePathname()

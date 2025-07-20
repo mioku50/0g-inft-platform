@@ -4,16 +4,23 @@ import React from 'react'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Button,
+  Card,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  Input,
+  Label,
+  Badge,
+  Skeleton,
+  useToast,
+} from '@/components/ui'
 import Link from 'next/link'
 import { INFT_ABI, AGENT_MARKETPLACE_ABI } from '@/lib/contracts/abis'
-import { toast } from '@/components/ui/use-toast'
+import { toast } from '@/components/ui'
 import { parseEther, formatEther } from 'viem'
 import { 
   ShoppingCart, 
@@ -33,6 +40,9 @@ import {
 import { TransferModal } from '@/components/agents/TransferModal'
 import { CloneModal } from '@/components/agents/CloneModal'
 import { PromptManager } from '@/components/agents/PromptManager'
+import AgentAvatar from '@/components/agents/AgentAvatar'
+
+const metadataCache = new Map<string, any>()
 
 interface Agent {
   tokenId: number
@@ -41,72 +51,6 @@ interface Agent {
   status?: 'owned' | 'pending_purchase' | 'pending_transfer' | 'listed'
   pendingInfo?: any
   listingInfo?: any
-}
-
-// Компонент для безопасного отображения изображений
-const AgentAvatar = ({ agent, size = 'large' }: { agent: Agent, size?: 'small' | 'large' }) => {
-  const [imageError, setImageError] = useState(false)
-  const [imageSrc, setImageSrc] = useState('')
-  const [loading, setLoading] = useState(true)
-  
-  const sizeClasses = size === 'large' 
-    ? 'w-32 h-32' 
-    : 'w-16 h-16'
-  
-  const iconSize = size === 'large' ? 'w-16 h-16' : 'w-8 h-8'
-  
-  useEffect(() => {
-    setLoading(true)
-    setImageError(false)
-    
-    // Определяем источник изображения
-    if (agent.metadata?.image) {
-      // Если это base64, проверяем размер
-      if (agent.metadata.image.startsWith('data:')) {
-        // Base64 слишком большой для производительности
-        // Используем fallback
-        setImageSrc(`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.metadata.name || agent.tokenId}`)
-      } else if (agent.metadata.image.startsWith('http')) {
-        setImageSrc(agent.metadata.image)
-      } else {
-        // Неизвестный формат
-        setImageSrc(`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.tokenId}`)
-      }
-    } else {
-      setImageSrc(`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.tokenId}`)
-    }
-    
-    setLoading(false)
-  }, [agent])
-  
-  if (loading) {
-    return (
-      <div className={`${sizeClasses} flex items-center justify-center`}>
-        <Skeleton className="w-full h-full rounded-full" />
-      </div>
-    )
-  }
-  
-  return (
-    <div className={`${sizeClasses} flex items-center justify-center`}>
-      {!imageError ? (
-        <img 
-          src={imageSrc}
-          alt={agent.metadata?.name || `Agent #${agent.tokenId}`}
-          className="w-full h-full object-contain"
-          loading="lazy"
-          onError={() => {
-            setImageError(true)
-            setImageSrc(`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.tokenId}`)
-          }}
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-400 to-pink-400 rounded-full">
-          <Bot className={`${iconSize} text-white`} />
-        </div>
-      )}
-    </div>
-  )
 }
 
 // Оптимизированная карточка агента
@@ -343,21 +287,26 @@ export default function AgentsPage() {
           
           let metadata = null
           if (rootHash && rootHash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
-            try {
-              const response = await fetch('/api/storage/retrieve', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rootHash, tokenId: tokenId.toString() })
-              })
-              
-              if (response.ok) {
-                const data = await response.json()
-                if (data.content) {
-                  metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
+            if (metadataCache.has(rootHash)) {
+              metadata = metadataCache.get(rootHash)
+            } else {
+              try {
+                const response = await fetch('/api/storage/retrieve', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ rootHash, tokenId: tokenId.toString() })
+                })
+
+                if (response.ok) {
+                  const data = await response.json()
+                  if (data.content) {
+                    metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
+                    metadataCache.set(rootHash, metadata)
+                  }
                 }
+              } catch (error) {
+                console.error('Failed to load metadata:', error)
               }
-            } catch (error) {
-              console.error('Failed to load metadata:', error)
             }
           }
           

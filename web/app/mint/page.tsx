@@ -30,6 +30,7 @@ import {
   MessageSquare
 } from 'lucide-react'
 import { INFT_ABI } from '@/lib/contracts/abis'
+import { cacheMetadata } from '@/lib/cache/local-metadata'
 import { ethers } from 'ethers'
 
 const AI_MODELS = [
@@ -260,19 +261,23 @@ export default function MintPage() {
           rootHash: metadataHash,
           local: uploadResult.local || false
         })
+        if (metadataHash.startsWith('local://')) {
+          cacheMetadata(metadataHash.replace('local://', ''), metadata)
+        }
         
         // Ждем синхронизации
         await new Promise(resolve => setTimeout(resolve, 2000))
         
       } catch (uploadError: any) {
         console.error('Upload error:', uploadError)
-        
+
         // Если upload failed, создаем hash локально
         metadataHash = ethers.keccak256(
           ethers.toUtf8Bytes(JSON.stringify(metadata))
         )
-        
+
         console.log('Using local hash fallback:', metadataHash)
+        cacheMetadata(metadataHash.replace('0x', ''), metadata)
       }
 
       // Step 3: Mint NFT
@@ -515,13 +520,13 @@ export default function MintPage() {
                     <div className="flex items-center gap-6">
                       <div className="flex-shrink-0">
                         {imagePreview ? (
-                          <img 
-                            src={imagePreview} 
-                            alt="Preview" 
-                            className="w-32 h-32 rounded-2xl object-cover border-2 border-purple-400"
+                          <img
+                            src={imagePreview}
+                            alt="Preview"
+                            className="w-[200px] h-[200px] rounded-2xl object-cover border-2 border-purple-400"
                           />
                         ) : (
-                          <div className="w-32 h-32 rounded-2xl bg-gradient-to-br from-purple-600/30 to-pink-600/30 border-2 border-dashed border-white/30 flex items-center justify-center">
+                          <div className="w-[200px] h-[200px] rounded-2xl bg-gradient-to-br from-purple-600/30 to-pink-600/30 border-2 border-dashed border-white/30 flex items-center justify-center">
                             <div className="text-center">
                               <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                               <p className="text-xs text-gray-400">Upload</p>

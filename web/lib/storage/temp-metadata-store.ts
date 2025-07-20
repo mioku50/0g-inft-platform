@@ -63,7 +63,7 @@ export async function hybridStoreMetadata(
 
 export async function hybridRetrieveMetadata(
   rootHash: string,
-  downloadFrom0G: (hash: string) => Promise<string>
+  downloadFrom0G: (hash: string) => Promise<Blob>
 ): Promise<any> {
   // First try local storage (fast)
   const localData = await retrieveMetadataLocally(rootHash)
@@ -73,7 +73,8 @@ export async function hybridRetrieveMetadata(
   
   // Then try 0G Storage
   try {
-    const content = await downloadFrom0G(rootHash)
+    const blob = await downloadFrom0G(rootHash)
+    const content = await blob.text()
     return JSON.parse(content)
   } catch (error) {
     console.error('Failed to retrieve from 0G:', error)

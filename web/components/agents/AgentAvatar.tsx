@@ -5,24 +5,32 @@ export interface AgentAvatarProps {
   size?: number | 'small' | 'large'
 }
 
-export default function AgentAvatar({ agent, size = 'large' }: AgentAvatarProps) {
-  const numericSize = typeof size === 'number' ? size : size === 'small' ? 64 : 128
-  const fallback = `https://api.dicebear.com/7.x/bottts/svg?seed=${agent.metadata?.name || agent.tokenId}`
-  const image = agent?.metadata?.image
+export const ALLOWED_MIMES = ['image/png', 'image/jpeg', 'image/webp']
+
+export function resolveAvatarSrc(image: string | undefined, fallbackSeed: string | number) {
+  const fallback = `https://api.dicebear.com/7.x/bottts/svg?seed=${fallbackSeed}`
 
   let src: string | undefined
   if (typeof image === 'string') {
     if (image.startsWith('http://') || image.startsWith('https://')) {
       src = image
     } else if (image.startsWith('data:')) {
-      if (image.length > 100 * 1024) {
-        src = fallback
-      } else {
+      const match = image.match(/^data:([^;]+);base64,/)
+      const mime = match?.[1]
+      if (mime && ALLOWED_MIMES.includes(mime) && image.length < 100 * 1024) {
         src = image
       }
     }
   }
   if (!src) src = fallback
+  return src
+}
+
+export default function AgentAvatar({ agent, size = 'large' }: AgentAvatarProps) {
+  const numericSize = typeof size === 'number' ? size : size === 'small' ? 64 : 128
+  const seed = agent.metadata?.name || agent.tokenId!
+  const fallback = `https://api.dicebear.com/7.x/bottts/svg?seed=${seed}`
+  const src = resolveAvatarSrc(agent?.metadata?.image, seed)
 
   return (
     <img

@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
     const base64 = buffer.toString('base64')
-    const mimeType = file.type || 'image/png'
+    const mimeType = file.type || 'application/octet-stream'
     
     // Для маленьких изображений (< 1MB) используем data URL
     if (file.size < 1024 * 1024) {

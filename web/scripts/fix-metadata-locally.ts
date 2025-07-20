@@ -1,4 +1,5 @@
 // scripts/fix-metadata-locally.ts
+export {}
 const fs = require('fs').promises
 const path = require('path')
 const cryptoModule = require('crypto')

@@ -139,7 +139,7 @@ export default function ChatPage() {
 
     try {
       // Call 0G Compute API
-      const response = await computeClient.chat({
+      const response = await (computeClient as any).chat({
         tokenId,
         messages: [...messages, userMessage].map(m => ({
           role: m.role,

@@ -1,4 +1,5 @@
 // web/scripts/check-storage-balance.ts
+export {}
 import { ethers } from 'ethers'
 import dotenv from 'dotenv'
 import path from 'path'
@@ -63,7 +64,7 @@ async function checkBalances() {
   // Get current gas price
   const feeData = await provider.getFeeData()
   console.log('⛽ Network Gas Price:')
-  console.log(`  Current: ${ethers.formatUnits(feeData.gasPrice || 0n, 'gwei')} gwei`)
+  console.log(`  Current: ${ethers.formatUnits(feeData.gasPrice || BigInt(0), 'gwei')} gwei`)
   console.log()
 }
 

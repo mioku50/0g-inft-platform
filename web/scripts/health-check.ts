@@ -1,4 +1,5 @@
 // scripts/health-check.ts
+export {}
 const { ethers } = require('ethers')
 const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
 const dotenv = require('dotenv')

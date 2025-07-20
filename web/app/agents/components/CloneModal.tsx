@@ -29,7 +29,7 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
+  const contractAddress = (process.env?.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS ?? '') as `0x${string}`
 
   const handleClone = async () => {
     if (!cloneName || !walletClient || !agent) return
@@ -87,16 +87,16 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
       const { rootHash: newMetadataHash } = await uploadResponse.json()
 
       // Минтим через старый контракт
-      const tx = await walletClient.writeContract({
+      const tx = await (walletClient as any).writeContract({
         address: contractAddress,
         abi: INFT_ABI,
         functionName: 'mint',
         args: [
           address as `0x${string}`,
           newMetadataHash,
-          ethers.keccak256(ethers.toUtf8Bytes(cloneName + Date.now())) as `0x${string}`(ethers.toUtf8Bytes(cloneName + Date.now())),
+          ethers.keccak256(ethers.toUtf8Bytes(cloneName + Date.now())) as `0x${string}`,
           ethers.keccak256(ethers.toUtf8Bytes('decryption-key'))
-        ]
+        ] as any
       })
 
       await publicClient.waitForTransactionReceipt({ hash: tx })

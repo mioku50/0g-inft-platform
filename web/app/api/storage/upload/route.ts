@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { uploadToStorage } from '@/lib/storage/client-server'
 
+export const runtime = 'nodejs'
+
 function cleanRootHash(hash: string): string {
   if (!hash) return hash
   

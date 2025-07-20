@@ -1,4 +1,5 @@
 // web/lib/storage/client-server.ts - исправленная версия
+import 'dotenv/config'
 import { ZgFile, Indexer, getFlowContract } from '@0glabs/0g-ts-sdk'
 import { ethers } from 'ethers'
 import * as fs from 'fs'
@@ -233,7 +234,7 @@ export class StorageError extends Error {
 }
 // web/lib/storage/client-server.ts - добавьте в конец файла
 export async function checkStorageHealth() {
-  const indexerRpc = process.env?.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
+  const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
   try {
     const indexer = new Indexer(indexerRpc)
     // Попробуем получить информацию о сети

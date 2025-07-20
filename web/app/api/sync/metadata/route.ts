@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MetadataSyncService } from '@/lib/services/metadata-sync'
 
+export const runtime = 'nodejs'
+
 export async function POST(request: NextRequest) {
   try {
     // Проверяем авторизацию (опционально)

@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { ethers } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 

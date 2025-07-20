@@ -1,4 +1,5 @@
 // web/lib/services/metadata-sync.ts
+import 'dotenv/config'
 import { ethers } from 'ethers'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import fs from 'fs/promises'

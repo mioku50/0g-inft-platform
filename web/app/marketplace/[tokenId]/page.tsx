@@ -26,8 +26,8 @@ export default function AgentDetailPage() {
   const [showTransferInfo, setShowTransferInfo] = useState(false)
   const [txHash, setTxHash] = useState<string>('')
   
-  const marketplaceAddress = (process.env?.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS ?? '') as `0x${string}`
-  const nftAddress = (process.env?.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS ?? '') as `0x${string}`
+  const marketplaceAddress = process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS as `0x${string}`
+  const nftAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
 
   useEffect(() => {
     loadAgentDetails()

@@ -1,7 +1,8 @@
 // scripts/check-metadata.ts
-const { ethers } = require('ethers')
-const { INFT_ABI } = require('../lib/contracts/abis')
-const dotenv = require('dotenv')
+export {}
+import { ethers } from 'ethers'
+import { INFT_ABI } from '../lib/contracts/abis'
+import dotenv from 'dotenv'
 
 dotenv.config({ path: '.env' })
 

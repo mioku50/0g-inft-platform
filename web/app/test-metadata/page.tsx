@@ -32,7 +32,7 @@ export default function TestMetadataPage() {
       }
     } catch (error) {
       console.error('Error:', error)
-      setResult({ error: error.message })
+      setResult({ error: (error as any).message })
     } finally {
       setLoading(false)
     }

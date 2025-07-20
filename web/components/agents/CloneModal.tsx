@@ -97,7 +97,7 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
         // Получаем tokenId из события
         const cloneEvent = receipt.logs.find(log => {
           try {
-            const decoded = publicClient.decodeEventLog({
+            const decoded = (publicClient as any).decodeEventLog({
               abi: INFT_ABI,
               data: log.data,
               topics: log.topics as any
@@ -109,7 +109,7 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
         })
 
         if (cloneEvent) {
-          const decoded = publicClient.decodeEventLog({
+          const decoded = (publicClient as any).decodeEventLog({
             abi: INFT_ABI,
             data: cloneEvent.data,
             topics: cloneEvent.topics as any

@@ -41,6 +41,7 @@ import { TransferModal } from '@/components/agents/TransferModal'
 import { CloneModal } from '@/components/agents/CloneModal'
 import { PromptManager } from '@/components/agents/PromptManager'
 import AgentAvatar from '@/components/agents/AgentAvatar'
+import { getCachedMetadata } from '@/lib/cache/local-metadata'
 
 const metadataCache = new Map<string, any>()
 
@@ -287,7 +288,10 @@ export default function AgentsPage() {
           
           let metadata = null
           if (rootHash && rootHash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
-            if (metadataCache.has(rootHash)) {
+            if (rootHash.startsWith('local://')) {
+              metadata = getCachedMetadata(rootHash.replace('local://','')) || null
+            }
+            if (!metadata && metadataCache.has(rootHash)) {
               metadata = metadataCache.get(rootHash)
             } else {
               try {

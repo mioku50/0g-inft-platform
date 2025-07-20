@@ -83,18 +83,23 @@ export async function POST(request: NextRequest) {
       
       // Пробуем загрузить в 0G Storage
       try {
-        const result = await uploadToStorage(finalContent, filename)
-        console.log('Upload successful:', result)
-        
-        // КРИТИЧНО: Убеждаемся что возвращаем только хэш, не URL
-        const cleanedHash = cleanRootHash(result.rootHash)
-        
+      const result = await uploadToStorage(finalContent, filename)
+      console.log('Upload successful:', result)
+
+      if (result.rootHash.startsWith('local://')) {
         return NextResponse.json({
           ...result,
-          rootHash: cleanedHash, // Только очищенный хэш!
-          minified: isMinified,
-          originalSize: contentSize
+          local: true
         })
+      }
+
+      const cleanedHash = cleanRootHash(result.rootHash)
+      return NextResponse.json({
+        ...result,
+        rootHash: cleanedHash,
+        minified: isMinified,
+        originalSize: contentSize
+      })
       } catch (error: any) {
         console.error('Upload to 0G Storage failed:', error)
         
@@ -167,10 +172,10 @@ export async function POST(request: NextRequest) {
     
     try {
       const result = await uploadToStorage(buffer, file.name)
-      
-      // Очищаем rootHash от URL если есть
+      if (result.rootHash.startsWith('local://')) {
+        return NextResponse.json({ ...result, local: true })
+      }
       const cleanedHash = cleanRootHash(result.rootHash)
-      
       return NextResponse.json({
         ...result,
         rootHash: cleanedHash

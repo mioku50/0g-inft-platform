@@ -2,6 +2,7 @@
 import 'dotenv/config'
 import { ethers } from 'ethers'
 import { INFT_ABI } from '@/lib/contracts/abis'
+import { uploadToStorage } from '@/lib/storage/client-server'
 import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
@@ -129,14 +130,19 @@ export class MetadataSyncService {
     if (this.syncInterval) {
       clearInterval(this.syncInterval)
     }
-    
+
     // Первый запуск сразу
     this.syncMissingMetadata()
-    
+    this.retryFailedUploads().catch(console.error)
+
     // Затем каждые N минут
     this.syncInterval = setInterval(() => {
       this.syncMissingMetadata()
     }, intervalMinutes * 60 * 1000)
+
+    setInterval(() => {
+      this.retryFailedUploads().catch(console.error)
+    }, 30 * 60 * 1000)
     
     console.log(`[MetadataSync] Auto-sync started (every ${intervalMinutes} minutes)`)
   }
@@ -146,6 +152,33 @@ export class MetadataSyncService {
       clearInterval(this.syncInterval)
       this.syncInterval = null
       console.log('[MetadataSync] Auto-sync stopped')
+    }
+  }
+
+  async retryFailedUploads() {
+    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
+    const wallet = new ethers.Wallet(process.env.OG_STORAGE_PRIVATE_KEY!, provider)
+    const contract = new ethers.Contract(process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS!, INFT_ABI, wallet)
+    const total = await contract.totalSupply()
+    for (let i = 0; i < Number(total); i++) {
+      const tokenId = await contract.tokenByIndex(i)
+      const uri: string = await contract.getEncryptedURI(tokenId)
+      if (uri.startsWith('local://')) {
+        const hash = uri.replace('local://', '')
+        const filePath = path.join(process.cwd(), 'data', 'metadata', `${hash}.json`)
+        try {
+          const content = await fs.readFile(filePath, 'utf-8')
+          const { rootHash } = await uploadToStorage(content, `${hash}.json`)
+          if (!rootHash.startsWith('local://')) {
+            // Assume contract has setTokenURI or similar method
+            try {
+              await (contract as any).setTokenURI(tokenId, rootHash)
+            } catch {}
+          }
+        } catch (e) {
+          console.error('[MetadataSync] Retry upload failed:', e)
+        }
+      }
     }
   }
 

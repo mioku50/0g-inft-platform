@@ -83,7 +83,7 @@ export default function MintPage() {
   const [step, setStep] = useState(1)
   const [mintStep, setMintStep] = useState<'idle' | 'uploading' | 'minting' | 'success'>('idle')
 
-  const contractAddress = (process.env?.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS ?? '') as `0x${string}`
+  const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0]

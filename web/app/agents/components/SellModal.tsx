@@ -28,8 +28,8 @@ export function SellModal({ isOpen, onClose, agent, onSuccess }: SellModalProps)
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'approve' | 'list'>('approve')
 
-  const nftAddress = (process.env?.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS ?? '') as `0x${string}`
-  const marketplaceAddress = (process.env?.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS ?? '') as `0x${string}`
+  const nftAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
+  const marketplaceAddress = process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS as `0x${string}`
 
   const handleList = async () => {
     if (!walletClient) return

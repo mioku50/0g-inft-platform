@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
     console.log('\n=== 0G Compute Request ===')
     console.log('Message:', message)
     
-    const provider = new ethers.JsonRpcProvider(process.env?.NEXT_PUBLIC_0G_RPC_URL ?? '')
-    const privateKey = process.env?.OG_COMPUTE_PRIVATE_KEY ?? ''
+    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
+    const privateKey = process.env.OG_COMPUTE_PRIVATE_KEY || ''
     const wallet = new ethers.Wallet(privateKey, provider)
     
     let servicesCount = 0

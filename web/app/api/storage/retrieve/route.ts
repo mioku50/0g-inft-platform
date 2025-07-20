@@ -41,9 +41,21 @@ export async function POST(request: NextRequest) {
       })
     } catch (error: any) {
       console.error('Storage retrieval error:', error)
-      
+
       // Если не удалось загрузить, пробуем локальное хранилище
-      if (cleanRootHash) {
+      if (cleanRootHash.startsWith('local://')) {
+        try {
+          const hash = cleanRootHash.replace('local://', '')
+          const fs = require('fs').promises
+          const path = require('path')
+          const localDir = path.join(process.cwd(), 'data', 'metadata')
+          const localPath = path.join(localDir, `${hash}.json`)
+          const localContent = await fs.readFile(localPath, 'utf-8')
+          return NextResponse.json({ success: true, content: localContent, rootHash: cleanRootHash, local: true })
+        } catch {
+          // continue to fallback
+        }
+      } else if (cleanRootHash) {
         try {
           const fs = require('fs').promises
           const path = require('path')

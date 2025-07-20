@@ -1630,7 +1630,11 @@ NEXT_PUBLIC_TURBO_L1_RPC=https://evmrpc-testnet.0g.ai
 
 # Default network
 NEXT_PUBLIC_DEFAULT_NETWORK=turbo
+NEXT_PUBLIC_0G_STORAGE_URL=https://indexer-storage-testnet-turbo.0g.ai
+NEXT_PUBLIC_0G_FLOW_ADDRESS=0xbD75117F80b4E22698D0Cd7612d92BDb8eaff628
 ```
+
+When storage upload fails the application stores metadata locally under `data/metadata`. Token URIs will start with `local://<hash>` until the sync service uploads them to 0G.
 
 ## Advanced Usage
 

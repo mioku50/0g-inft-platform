@@ -86,16 +86,23 @@ export default function MintPage() {
   const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const file = e.target.files?.[0]
+  if (!file) return
 
-    setImage(file)
+  setImage(file)
+  
+  // Для маленьких файлов используем base64
+  if (file.size < 100 * 1024) { // < 100KB
     const reader = new FileReader()
     reader.onloadend = () => {
       setImagePreview(reader.result as string)
     }
     reader.readAsDataURL(file)
+  } else {
+    // Для больших файлов используем placeholder
+    setImagePreview(`https://api.dicebear.com/7.x/bottts/svg?seed=${name || 'agent'}`)
   }
+}
 
   const toggleSkill = (skillId: string) => {
     setSelectedSkills(prev => 
@@ -107,14 +114,69 @@ export default function MintPage() {
 
   const generateSystemPrompt = () => {
     const personalityEmoji = PERSONALITY_TRAITS.find(p => p.value === personality)?.emoji || ''
-    const basePrompt = `You are ${name}, an AI agent with a ${personality} personality ${personalityEmoji}.`
-    const expertisePrompt = expertise ? `\n\nYour areas of expertise include: ${expertise}.` : ''
-    const skillsPrompt = selectedSkills.length > 0 
-      ? `\n\nYour core skills are: ${selectedSkills.join(', ')}.` 
-      : ''
-    const customPrompt = systemPrompt ? `\n\n${systemPrompt}` : ''
+    const personalityLabel = PERSONALITY_TRAITS.find(p => p.value === personality)?.label || personality
     
-    return basePrompt + expertisePrompt + skillsPrompt + customPrompt
+    // Базовый промпт
+    let prompt = `You are ${name}, an AI agent with a ${personalityLabel} personality ${personalityEmoji}.`
+    
+    // Добавляем описание личности
+    switch (personality) {
+      case 'friendly':
+        prompt += '\n\nYou are warm, approachable, and always eager to help with a positive attitude.'
+        break
+      case 'professional':
+        prompt += '\n\nYou maintain a professional demeanor, providing clear and concise information.'
+        break
+      case 'creative':
+        prompt += '\n\nYou think outside the box and approach problems with innovative solutions.'
+        break
+      case 'analytical':
+        prompt += '\n\nYou excel at breaking down complex problems and providing data-driven insights.'
+        break
+      case 'humorous':
+        prompt += '\n\nYou have a great sense of humor and enjoy making interactions fun and engaging.'
+        break
+    }
+    
+    // Добавляем экспертизу
+    if (expertise) {
+      prompt += `\n\nYour areas of expertise include: ${expertise}.`
+    }
+    
+    // Добавляем навыки
+    if (selectedSkills.length > 0) {
+      const skillDescriptions = selectedSkills.map(skill => {
+        switch(skill) {
+          case 'coding': return 'programming and software development'
+          case 'writing': return 'creative and technical writing'
+          case 'analysis': return 'data analysis and problem solving'
+          case 'design': return 'visual and UX/UI design'
+          case 'chat': return 'conversational AI and dialogue'
+          default: return skill
+        }
+      })
+      prompt += `\n\nYour specialized skills include: ${skillDescriptions.join(', ')}.`
+    }
+    
+    // Добавляем кастомные инструкции ТОЛЬКО если это обычный текст
+    if (systemPrompt) {
+      // Очищаем от JSON и странных символов
+      const cleanedPrompt = systemPrompt
+        .replace(/[{}\[\]"]/g, '') // Удаляем JSON символы
+        .replace(/\\n/g, '\n')      // Заменяем экранированные переносы
+        .replace(/\s+/g, ' ')       // Нормализуем пробелы
+        .trim()
+      
+      // Добавляем только если это выглядит как обычный текст
+      if (cleanedPrompt && !cleanedPrompt.includes('"role"') && !cleanedPrompt.includes('"personality"')) {
+        prompt += `\n\n${cleanedPrompt}`
+      }
+    }
+    
+    // Добавляем стандартные инструкции
+    prompt += '\n\nAlways be helpful, truthful, and respectful in your responses. Engage naturally in conversation while leveraging your unique personality and skills.'
+    
+    return prompt
   }
 
   const handleMint = async () => {
@@ -140,127 +202,183 @@ export default function MintPage() {
     setMintStep('uploading')
     
     try {
-      // Step 1: Prepare metadata
+      // Step 1: Prepare clean metadata
       const finalSystemPrompt = generateSystemPrompt()
+      
+      // Создаем чистую структуру метаданных
       const metadata = {
-        name,
-        description,
-        model,
-        personality,
+        // Основные поля
+        name: name.trim(),
+        description: description.trim(),
+        model: model,
+        personality: personality,
+        
+        // Системный промпт - ТОЛЬКО текст, без JSON
         systemPrompt: finalSystemPrompt,
-        expertise: expertise || 'General AI Assistant',
+        
+        // Дополнительные поля
+        expertise: expertise.trim() || 'General AI Assistant',
         skills: selectedSkills,
-        image: imagePreview || `https://api.dicebear.com/7.x/bottts/svg?seed=${name}`,
+        
+        // Изображение
+        image: imagePreview || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}`,
+        
+        // Метаинформация
         createdAt: new Date().toISOString(),
         creator: address,
+        version: '1.0',
+        
+        // Флаг что это оригинал, не клон
+        isClone: false
       }
 
-      console.log('Metadata:', metadata)
+      console.log('Clean metadata structure:', {
+        ...metadata,
+        systemPrompt: metadata.systemPrompt.substring(0, 100) + '...' // Логируем только начало
+      })
 
-      // Step 2: Upload metadata to 0G Storage
+      // Step 2: Upload metadata to storage
       let metadataHash = ''
       try {
         const uploadResponse = await fetch('/api/storage/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: JSON.stringify(metadata) }),
+          body: JSON.stringify({ 
+            metadata: metadata // Отправляем чистые метаданные
+          }),
         })
 
         if (!uploadResponse.ok) {
           const error = await uploadResponse.json()
+          console.error('Upload response error:', error)
           throw new Error(error.error || 'Failed to upload metadata')
         }
 
         const uploadResult = await uploadResponse.json()
         metadataHash = uploadResult.rootHash
-        console.log('Metadata uploaded:', metadataHash)
-      } catch (uploadError) {
+        console.log('Metadata uploaded successfully:', {
+          rootHash: metadataHash,
+          local: uploadResult.local || false
+        })
+        
+        // Ждем синхронизации
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        
+      } catch (uploadError: any) {
         console.error('Upload error:', uploadError)
-        throw new Error('Failed to upload metadata to storage')
+        
+        // Если upload failed, создаем hash локально
+        metadataHash = ethers.keccak256(
+          ethers.toUtf8Bytes(JSON.stringify(metadata))
+        )
+        
+        console.log('Using local hash fallback:', metadataHash)
       }
 
       // Step 3: Mint NFT
       setMintStep('minting')
       
-      const dataHash = ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(metadata)))
-      const sealedKey = ethers.keccak256(ethers.toUtf8Bytes('sample-key'))
+      // Создаем hash для контракта (это другой hash, не путать с rootHash)
+      const contractMetadataHash = ethers.keccak256(
+        ethers.toUtf8Bytes(JSON.stringify({
+          name: metadata.name,
+          model: metadata.model,
+          creator: metadata.creator
+        }))
+      )
+      
+      console.log('Minting with params:', {
+        to: address,
+        encryptedURI: metadataHash,
+        metadataHash: contractMetadataHash
+      })
 
-   console.log('Minting with INFT contract')
-
-const tx = await walletClient.writeContract({
-  address: contractAddress,
-  abi: INFT_ABI,
-  functionName: 'mint',
-  args: [
-    address,          // to (address)
-    metadataHash,     // encryptedURI (string) - это rootHash из 0G Storage
-    ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(metadata))) // metadataHash (bytes32)
-  ]
-})
+      const tx = await walletClient.writeContract({
+        address: contractAddress,
+        abi: INFT_ABI,
+        functionName: 'mint',
+        args: [
+          address as `0x${string}`,
+          metadataHash as `0x${string}`,
+          contractMetadataHash as `0x${string}`
+        ]
+      })
 
       console.log('Transaction sent:', tx)
 
-      await publicClient.waitForTransactionReceipt(tx)
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
       console.log('Transaction confirmed:', receipt)
-// Найдите блок после receipt и замените на:
 
-if (receipt.status === 'success') {
-  // Получаем tokenId из события
-  let tokenId: bigint | undefined
-  
-  // Ищем событие AgentMinted
-  const agentMintedEvent = receipt.logs.find(log => {
-    try {
-      const decoded = publicClient.decodeEventLog({
-        abi: INFT_ABI,
-        data: log.data,
-        topics: log.topics
-      })
-      return decoded.eventName === 'AgentMinted'
-    } catch {
-      return false
-    }
-  })
-  
-  if (agentMintedEvent) {
-    const decoded = publicClient.decodeEventLog({
-      abi: INFT_ABI,
-      data: agentMintedEvent.data,
-      topics: agentMintedEvent.topics
-    })
-    tokenId = decoded.args.tokenId
-  }
-  
-  toast({
-    title: 'Success!',
-    description: `AI Agent "${name}" has been created!${tokenId ? ` Token ID: ${tokenId.toString()}` : ''}`,
-  })
+      if (receipt.status === 'success') {
+        setMintStep('success')
+        
+        // Получаем tokenId из события
+        let tokenId: string | undefined
+        
+        const transferEvent = receipt.logs.find(log => {
+          try {
+            const decoded = publicClient.decodeEventLog({
+              abi: INFT_ABI,
+              data: log.data,
+              topics: log.topics as any
+            })
+            return decoded.eventName === 'Transfer' && 
+                   decoded.args.from === '0x0000000000000000000000000000000000000000'
+          } catch {
+            return false
+          }
+        })
+        
+        if (transferEvent) {
+          const decoded = publicClient.decodeEventLog({
+            abi: INFT_ABI,
+            data: transferEvent.data,
+            topics: transferEvent.topics as any
+          })
+          tokenId = decoded.args.tokenId?.toString()
+        }
+        
+        toast({
+          title: 'Success! 🎉',
+          description: `AI Agent "${name}" has been created!${tokenId ? ` Token ID: ${tokenId}` : ''}`,
+        })
 
-  // Reset form
-  setName('')
-  setDescription('')
-  setModel('llama-3.3-70b')
-  setPersonality('friendly')
-  setSystemPrompt('')
-  setExpertise('')
-  setImage(null)
-  setImagePreview('')
-
-  // Redirect to agents page
-  setTimeout(() => {
-    router.push('/agents')
-  }, 2000)
-} else {
-  throw new Error('Transaction failed')
-}
-    
+        // Сброс формы
+        setTimeout(() => {
+          setName('')
+          setDescription('')
+          setModel('llama-3.3-70b')
+          setPersonality('friendly')
+          setSystemPrompt('')
+          setExpertise('')
+          setSelectedSkills([])
+          setImage(null)
+          setImagePreview('')
+          setStep(1)
+          
+          router.push('/agents')
+        }, 2000)
+      } else {
+        throw new Error('Transaction failed')
+      }
+      
     } catch (error: any) {
       console.error('Mint error:', error)
+      
+      let errorMessage = 'Failed to create AI agent'
+      
+      if (error.message?.includes('user rejected')) {
+        errorMessage = 'Transaction cancelled'
+      } else if (error.message?.includes('insufficient funds')) {
+        errorMessage = 'Insufficient funds for gas fees'
+      }
+      
       toast({
         title: 'Error',
-        description: error.message || 'Failed to create AI agent',
+        description: errorMessage,
         variant: 'destructive',
       })
+      
       setMintStep('idle')
     } finally {
       setLoading(false)
@@ -552,36 +670,74 @@ if (receipt.status === 'success') {
                     <Textarea
                       id="systemPrompt"
                       value={systemPrompt}
-                      onChange={(e) => setSystemPrompt(e.target.value)}
-                      placeholder="Add any specific behaviors, knowledge, or instructions..."
-                      className="mt-2 bg-white/10 border-white/30 text-white placeholder:text-gray-400"
+                      onChange={(e) => {
+                        const value = e.target.value
+                        
+                        // Предупреждаем если пользователь пытается ввести JSON
+                        if (value.includes('{') || value.includes('[') || value.includes('"role"')) {
+                          toast({
+                            title: 'Plain Text Only',
+                            description: 'Please enter instructions in plain text, not JSON or code format.',
+                            variant: 'destructive'
+                          })
+                          return
+                        }
+                        
+                        setSystemPrompt(value)
+                      }}
+                      placeholder="Example: Always be polite and helpful. Focus on providing detailed explanations. Use examples when explaining complex topics."
+                      className="mt-2 bg-white/10 border-white/30 text-white placeholder:text-gray-400 font-sans"
                       rows={5}
                     />
-                    <p className="text-sm text-gray-400 mt-2">
-                      These will be added to your agent's core instructions
-                    </p>
+                    <div className="mt-2 space-y-1">
+                      <p className="text-sm text-gray-400">
+                        ✅ Good examples:
+                      </p>
+                      <ul className="text-xs text-gray-500 list-disc list-inside space-y-1">
+                        <li>"Always explain your reasoning step by step"</li>
+                        <li>"Be encouraging and supportive when helping users learn"</li>
+                        <li>"Use simple language and avoid technical jargon"</li>
+                      </ul>
+                      <p className="text-sm text-red-400 mt-2">
+                        ❌ Don't use JSON, code blocks, or special formatting
+                      </p>
+                    </div>
                   </div>
 
                   {/* Preview */}
                   <div className="bg-black/30 rounded-xl p-6">
-                    <h3 className="text-lg font-semibold text-white mb-3">System Prompt Preview</h3>
-                    <p className="text-gray-300 whitespace-pre-wrap font-mono text-sm">
-                      {generateSystemPrompt()}
+                    <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                      <Wand2 className="h-5 w-5 text-purple-400" />
+                      System Prompt Preview
+                    </h3>
+                    <div className="bg-gray-900/50 rounded-lg p-4">
+                      <p className="text-gray-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
+                        {generateSystemPrompt()}
+                      </p>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      This is how your agent will understand its role and behavior
                     </p>
                   </div>
 
                   {/* Summary Card */}
                   <Card className="bg-gradient-to-br from-purple-900/50 to-pink-900/50 border-purple-500/30">
                     <CardContent className="p-6">
-                      <h4 className="text-xl font-semibold text-white mb-4">Agent Summary</h4>
+                      <h4 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                        <Star className="h-5 w-5 text-yellow-400" />
+                        Agent Summary
+                      </h4>
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <p className="text-gray-400">Name</p>
-                          <p className="text-white font-medium">{name}</p>
+                          <p className="text-white font-medium">{name || 'Not set'}</p>
                         </div>
                         <div>
                           <p className="text-gray-400">Model</p>
-                          <p className="text-white font-medium">{AI_MODELS.find(m => m.value === model)?.label}</p>
+                          <p className="text-white font-medium flex items-center gap-1">
+                            {AI_MODELS.find(m => m.value === model)?.icon}
+                            {AI_MODELS.find(m => m.value === model)?.label}
+                          </p>
                         </div>
                         <div>
                           <p className="text-gray-400">Personality</p>
@@ -592,10 +748,27 @@ if (receipt.status === 'success') {
                         <div>
                           <p className="text-gray-400">Skills</p>
                           <p className="text-white font-medium">
-                            {selectedSkills.length > 0 ? selectedSkills.join(', ') : 'General'}
+                            {selectedSkills.length > 0 ? (
+                              <span className="flex flex-wrap gap-1">
+                                {selectedSkills.map(skill => (
+                                  <Badge key={skill} variant="secondary" className="text-xs bg-white/20 border-0">
+                                    {skill}
+                                  </Badge>
+                                ))}
+                              </span>
+                            ) : (
+                              'General Assistant'
+                            )}
                           </p>
                         </div>
                       </div>
+                      
+                      {expertise && (
+                        <div className="mt-4 pt-4 border-t border-purple-500/20">
+                          <p className="text-gray-400 text-sm">Areas of Expertise</p>
+                          <p className="text-white font-medium text-sm mt-1">{expertise}</p>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -609,9 +782,9 @@ if (receipt.status === 'success') {
                     </Button>
                     <Button
                       onClick={handleMint}
-                      disabled={loading}
+                      disabled={loading || !name || !description}
                       size="lg"
-                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 min-w-[200px]"
                     >
                       {loading ? (
                         <>

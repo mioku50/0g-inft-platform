@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/components/ui/use-toast'
 import { Loader2, ShoppingCart, TrendingUp } from 'lucide-react'
-import { MARKETPLACE_ABI } from '@/lib/contracts/abis'
+import { AGENT_MARKETPLACE_ABI } from '@/lib/contracts/abis'
 
 interface ListingModalProps {
   tokenId: string
@@ -31,7 +31,7 @@ export function ListingModal({ tokenId, agentName, onClose, onSuccess }: Listing
 
   const { write: listAgent, data: listData } = useContractWrite({
     address: process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS as `0x${string}`,
-    abi: MARKETPLACE_ABI,
+    abi: AGENT_MARKETPLACE_ABI,
     functionName: 'listAgent',
   })
 

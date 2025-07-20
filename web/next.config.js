@@ -1,17 +1,17 @@
-// Загружаем переменные из .env файла
-  transpilePackages: ["@0glabs/0g-serving-broker"],
+// Р—Р°РіСЂСѓР¶Р°РµРј РїРµСЂРµРјРµРЅРЅС‹Рµ РёР· .env С„Р°Р№Р»Р°
 require('dotenv').config({ path: '.env' })
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Явно передаем переменные в среду выполнения
+  transpilePackages: ["@0glabs/0g-serving-broker"],
+  // РЇРІРЅРѕ РїРµСЂРµРґР°РµРј РїРµСЂРµРјРµРЅРЅС‹Рµ РІ СЃСЂРµРґСѓ РІС‹РїРѕР»РЅРµРЅРёСЏ
   env: {
     OG_STORAGE_PRIVATE_KEY: process.env.OG_STORAGE_PRIVATE_KEY || '',
     OG_COMPUTE_PRIVATE_KEY: process.env.OG_COMPUTE_PRIVATE_KEY || '',
   },
   webpack: (config, { isServer }) => {
-    // Обработка node: префиксов
+    // РћР±СЂР°Р±РѕС‚РєР° node: РїСЂРµС„РёРєСЃРѕРІ
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,
@@ -23,9 +23,12 @@ const nextConfig = {
       buffer: isServer ? false : require.resolve('buffer/'),
       events: isServer ? false : require.resolve('events/'),
       process: isServer ? false : require.resolve('process/browser'),
+      child_process: false,
+      'fs/promises': false,
+      readline: false,
     }
 
-    // Предотвращаем обработку node: модулей в браузере
+    // РџСЂРµРґРѕС‚РІСЂР°С‰Р°РµРј РѕР±СЂР°Р±РѕС‚РєСѓ node: РјРѕРґСѓР»РµР№ РІ Р±СЂР°СѓР·РµСЂРµ
     if (!isServer) {
       config.resolve.alias = {
         ...config.resolve.alias,
@@ -34,17 +37,21 @@ const nextConfig = {
         'node:buffer': 'buffer',
         'node:util': 'util',
         'node:events': 'events',
+        'node:fs': false,
+        'node:child_process': false,
+        'node:fs/promises': false,
+        'node:readline': false,
       }
     }
 
-    // Игнорируем некоторые модули
+    // РРіРЅРѕСЂРёСЂСѓРµРј РЅРµРєРѕС‚РѕСЂС‹Рµ РјРѕРґСѓР»Рё
     config.externals.push({
       'pino-pretty': 'commonjs pino-pretty',
       lokijs: 'commonjs lokijs',
       encoding: 'commonjs encoding',
     })
 
-    // Provide глобальные переменные
+    // Provide РіР»РѕР±Р°Р»СЊРЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ
     const webpack = require('webpack')
     config.plugins.push(
       new webpack.ProvidePlugin({
@@ -58,9 +65,9 @@ const nextConfig = {
   images: {
     domains: ['api.dicebear.com', 'ipfs.io'],
   },
-  // Экспериментальная поддержка для серверных компонентов
+  // Р­РєСЃРїРµСЂРёРјРµРЅС‚Р°Р»СЊРЅР°СЏ РїРѕРґРґРµСЂР¶РєР° РґР»СЏ СЃРµСЂРІРµСЂРЅС‹С… РєРѕРјРїРѕРЅРµРЅС‚РѕРІ
   experimental: {
-    serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk'],
+    serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk', '@0glabs/0g-serving-broker'],
   },
 }
 

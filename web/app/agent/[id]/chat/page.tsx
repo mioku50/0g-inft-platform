@@ -29,51 +29,129 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
 
-  const contractAddress = '0x500AF12C3Fd7aF1665DC85Eff9844054709dF380'
+  const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
 
   useEffect(() => {
     if (!publicClient || !tokenId) return
 
     const loadAgent = async () => {
       try {
-        const metadataHash = await publicClient.readContract({
-          address: contractAddress as `0x${string}`,
-          abi: INFT_ABI,
-          functionName: 'getMetadataHash',
-          args: [BigInt(tokenId)],
-        })
-
+        // ВАЖНО: Используем getEncryptedURI вместо getMetadataHash
+        let metadataHash = ''
         try {
-          const response = await fetch('/api/storage/retrieve', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rootHash: metadataHash }),
-          })
-          
-          if (response.ok) {
-            const data = await response.json()
-            const metadata = JSON.parse(data.content)
-            setAgent({ tokenId, metadata })
+          // Сначала пробуем getEncryptedURI (это правильный метод)
+          metadataHash = await publicClient.readContract({
+            address: contractAddress,
+            abi: INFT_ABI,
+            functionName: 'getEncryptedURI',
+            args: [BigInt(tokenId)],
+          }) as string
+        } catch (e) {
+          console.warn('getEncryptedURI failed, trying getMetadataHash')
+          // Fallback на getMetadataHash если getEncryptedURI не работает
+          try {
+            metadataHash = await publicClient.readContract({
+              address: contractAddress,
+              abi: INFT_ABI,
+              functionName: 'getMetadataHash',
+              args: [BigInt(tokenId)],
+            }) as string
+          } catch (e2) {
+            console.error('Both methods failed:', e2)
+          }
+        }
+
+        console.log('Loading metadata for token', tokenId, 'hash:', metadataHash)
+
+        if (metadataHash && metadataHash !== '0x' && metadataHash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
+          try {
+            const response = await fetch('/api/storage/retrieve', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                rootHash: metadataHash,
+                tokenId: tokenId // Передаем tokenId для fallback
+              }),
+            })
             
+            if (response.ok) {
+              const data = await response.json()
+              const metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
+              
+              console.log('Loaded metadata:', metadata)
+              
+              setAgent({ tokenId, metadata })
+              
+              // Создаем приветственное сообщение
+              const welcomeMessage = metadata.systemPrompt 
+                ? `Hello! ${metadata.systemPrompt.split('.')[0]}.` 
+                : `Hello! I'm ${metadata.name}. ${metadata.description || 'How can I help you today?'}`
+              
+              setMessages([{
+                id: '1',
+                role: 'assistant',
+                content: welcomeMessage,
+                timestamp: new Date()
+              }])
+            } else {
+              throw new Error('Failed to retrieve metadata')
+            }
+          } catch (error) {
+            console.error('Failed to load metadata:', error)
+            // Используем fallback данные
+            const fallbackMetadata = {
+              name: `Agent #${tokenId}`,
+              description: 'AI Assistant',
+              model: 'llama-3.3-70b',
+              personality: 'friendly'
+            }
+            setAgent({ tokenId, metadata: fallbackMetadata })
             setMessages([{
               id: '1',
               role: 'assistant',
-              content: `Hello! I'm ${metadata.name}. ${metadata.description}`,
+              content: `Hello! I'm Agent #${tokenId}. How can I help you today?`,
               timestamp: new Date()
             }])
           }
-        } catch (error) {
-          console.error('Failed to load metadata:', error)
+        } else {
+          // Нет метаданных - используем дефолтные
+          const fallbackMetadata = {
+            name: `Agent #${tokenId}`,
+            description: 'AI Assistant',
+            model: 'llama-3.3-70b',
+            personality: 'friendly'
+          }
+          setAgent({ tokenId, metadata: fallbackMetadata })
+          setMessages([{
+            id: '1',
+            role: 'assistant',
+            content: `Hello! I'm Agent #${tokenId}. How can I help you today?`,
+            timestamp: new Date()
+          }])
         }
       } catch (error) {
         console.error('Error loading agent:', error)
+        // Даже при ошибке показываем что-то
+        setAgent({ 
+          tokenId, 
+          metadata: { 
+            name: `Agent #${tokenId}`, 
+            model: 'llama-3.3-70b' 
+          } 
+        })
+        setMessages([{
+          id: '1',
+          role: 'assistant',
+          content: `Hello! I'm Agent #${tokenId}. How can I assist you?`,
+          timestamp: new Date()
+        }])
       } finally {
         setInitializing(false)
       }
     }
 
     loadAgent()
-  }, [publicClient, tokenId])
+  }, [publicClient, tokenId, contractAddress])
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return
@@ -119,7 +197,7 @@ export default function ChatPage() {
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Error: ${error instanceof Error ? error.message : 'Failed to send message'}`,
+        content: `I apologize, but I encountered an error. Please try again later.`,
         timestamp: new Date()
       }
       setMessages(prev => [...prev, assistantMessage])
@@ -148,7 +226,18 @@ export default function ChatPage() {
       <Card className="h-[600px] flex flex-col">
         <CardHeader className="border-b">
           <CardTitle className="flex items-center gap-2">
-            <span className="text-2xl">🤖</span>
+            {agent?.metadata?.image ? (
+              <img 
+                src={agent.metadata.image} 
+                alt={agent.metadata.name}
+                className="w-8 h-8 rounded-full"
+                onError={(e) => {
+                  e.currentTarget.src = `https://api.dicebear.com/7.x/bottts/svg?seed=agent-${tokenId}`
+                }}
+              />
+            ) : (
+              <span className="text-2xl">🤖</span>
+            )}
             Chat with {agent?.metadata?.name || `Agent #${tokenId}`}
           </CardTitle>
           <p className="text-sm text-gray-600">

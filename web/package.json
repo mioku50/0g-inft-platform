@@ -18,7 +18,8 @@
     "fix-metadata-locally": "ts-node --project tsconfig.scripts.json scripts/fix-metadata-locally.ts",
     "update-tokens": "ts-node --project tsconfig.scripts.json scripts/update-problematic-tokens.ts",
     "fix-missing": "ts-node --project tsconfig.scripts.json scripts/fix-all-missing-metadata.ts",
-    "fix-specific-token": "ts-node --project tsconfig.scripts.json scripts/fix-specific-token.ts"
+    "fix-specific-token": "ts-node --project tsconfig.scripts.json scripts/fix-specific-token.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@0glabs/0g-serving-broker": "0.2.14",
@@ -77,6 +78,7 @@
     "tailwindcss-animate": "^1.0.7",
     "ts-node": "^10.9.1",
     "typescript": "^5.2.2",
-    "util": "^0.12.5"
+    "util": "^0.12.5",
+    "vitest": "^1.3.0"
   }
 }

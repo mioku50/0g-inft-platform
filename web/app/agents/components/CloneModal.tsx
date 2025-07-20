@@ -11,6 +11,7 @@ import { toast } from '@/components/ui/use-toast'
 import { Loader2, Copy, Sparkles } from 'lucide-react'
 import { ethers } from 'ethers'
 import { INFT_ABI } from '@/lib/contracts/abis'
+import { cacheMetadata } from '@/lib/cache/local-metadata'
 
 interface CloneModalProps {
   agent: any
@@ -85,6 +86,9 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
       }
       
       const { rootHash: newMetadataHash } = await uploadResponse.json()
+      if (newMetadataHash.startsWith('local://')) {
+        cacheMetadata(newMetadataHash.replace('local://', ''), cloneMetadata)
+      }
 
       // Минтим через старый контракт
       const tx = await (walletClient as any).writeContract({

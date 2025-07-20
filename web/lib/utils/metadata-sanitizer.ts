@@ -62,31 +62,3 @@ export function sanitizeMetadata(metadata: any): any {
     personality: metadata.personality || 'friendly'
   }
 }
-
-// web/app/api/compute/chat/route.ts - обновить импорты и использование
-import { sanitizeMetadata, sanitizeSystemPrompt } from '@/lib/utils/metadata-sanitizer'
-
-// В функции POST, после получения metadata:
-if (metadata) {
-  metadata = sanitizeMetadata(metadata)
-}
-
-// При генерации systemPrompt:
-let systemPrompt = metadata?.systemPrompt
-if (systemPrompt) {
-  systemPrompt = sanitizeSystemPrompt(systemPrompt)
-}
-
-// web/app/agents/[id]/chat/page.tsx - добавить в начало файла
-import { sanitizeMetadata } from '@/lib/utils/metadata-sanitizer'
-
-// В useEffect где устанавливается welcome message:
-useEffect(() => {
-  if (agent && messages.length === 0) {
-    const cleanMetadata = sanitizeMetadata(agent.metadata)
-    const agentName = cleanMetadata?.name || `Agent #${tokenId}`
-    const personality = cleanMetadata?.personality || 'friendly'
-    
-    // ... rest of the code
-  }
-}, [agent, messages.length, tokenId])

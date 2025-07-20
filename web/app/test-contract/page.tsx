@@ -31,7 +31,7 @@ export default function AgentsPage() {
         const logs = await publicClient.getLogs({
           address: contractAddress as `0x${string}`,
           event: parseAbiItem('event AgentMinted(uint256 indexed tokenId, address indexed owner, string encryptedURI)'),
-          fromBlock: 0n,
+          fromBlock: BigInt(0),
           toBlock: 'latest',
         })
         

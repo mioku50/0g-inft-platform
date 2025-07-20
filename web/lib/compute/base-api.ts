@@ -45,7 +45,7 @@ export class OGComputeAPI {
           endpoint,
           status: 'error',
           ok: false,
-          error: error.message
+          error: (error as any).message
         })
       }
     }

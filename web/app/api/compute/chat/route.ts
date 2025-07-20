@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
     console.log('\n=== 0G Compute Request ===')
     console.log('Message:', message)
     
-    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
-    const privateKey = process.env.OG_COMPUTE_PRIVATE_KEY!
+    const provider = new ethers.JsonRpcProvider(process.env?.NEXT_PUBLIC_0G_RPC_URL ?? '')
+    const privateKey = process.env?.OG_COMPUTE_PRIVATE_KEY ?? ''
     const wallet = new ethers.Wallet(privateKey, provider)
     
     let servicesCount = 0
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
           console.log('Funds added')
         }
       } catch (e) {
-        console.log('Ledger check error:', e.message)
+        console.log('Ledger check error:', (e as any).message)
       }
       
       const services = await broker.inference.listService()
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
               )
               console.log('Response valid:', isValid)
             } catch (e) {
-              console.log('Process response error:', e.message)
+              console.log('Process response error:', (e as any).message)
             }
             
             return NextResponse.json({
@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
                 })
               }
             } catch (fetchError) {
-              console.log('Fetch error:', fetchError.message)
+              console.log('Fetch error:', (fetchError as any).message)
             }
           }
           

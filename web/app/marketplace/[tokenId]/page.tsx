@@ -26,8 +26,8 @@ export default function AgentDetailPage() {
   const [showTransferInfo, setShowTransferInfo] = useState(false)
   const [txHash, setTxHash] = useState<string>('')
   
-  const marketplaceAddress = process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS as `0x${string}`
-  const nftAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
+  const marketplaceAddress = (process.env?.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS ?? '') as `0x${string}`
+  const nftAddress = (process.env?.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS ?? '') as `0x${string}`
 
   useEffect(() => {
     loadAgentDetails()
@@ -121,10 +121,10 @@ export default function AgentDetailPage() {
         // Purchase through marketplace
         const price = parseEther(agent.price.toString())
         
-        const tx = await walletClient.writeContract({
+        const tx = await (walletClient as any).writeContract({
           address: marketplaceAddress,
           abi: AGENT_MARKETPLACE_ABI,
-          functionName: 'purchaseItem',
+          functionName: 'purchaseItem' as any,
           args: [nftAddress, BigInt(tokenId)],
           value: price
         })

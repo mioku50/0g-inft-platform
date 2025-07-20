@@ -1,4 +1,5 @@
 // scripts/fix-all-missing-metadata.ts
+export {}
 const fs = require('fs').promises
 const path = require('path')
 const { ethers } = require('ethers')

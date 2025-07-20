@@ -28,8 +28,8 @@ export function SellModal({ isOpen, onClose, agent, onSuccess }: SellModalProps)
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'approve' | 'list'>('approve')
 
-  const nftAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
-  const marketplaceAddress = process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS as `0x${string}`
+  const nftAddress = (process.env?.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS ?? '') as `0x${string}`
+  const marketplaceAddress = (process.env?.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS ?? '') as `0x${string}`
 
   const handleList = async () => {
     if (!walletClient) return
@@ -38,7 +38,7 @@ export function SellModal({ isOpen, onClose, agent, onSuccess }: SellModalProps)
     
     try {
       // Step 1: Check if already approved
-      const isApproved = await walletClient.readContract({
+      const isApproved = await (walletClient as any).readContract({
         address: nftAddress,
         abi: INFT_ABI,
         functionName: 'isApprovedForAll',
@@ -52,7 +52,7 @@ export function SellModal({ isOpen, onClose, agent, onSuccess }: SellModalProps)
         console.log('Approving marketplace...')
         setStep('approve')
         
-        const approveTx = await walletClient.writeContract({
+        const approveTx = await (walletClient as any).writeContract({
           address: nftAddress,
           abi: INFT_ABI,
           functionName: 'setApprovalForAll',
@@ -63,7 +63,7 @@ export function SellModal({ isOpen, onClose, agent, onSuccess }: SellModalProps)
         console.log('Approve tx:', approveTx)
         
         // Wait for approval
-        const receipt = await walletClient.waitForTransactionReceipt({ hash: approveTx })
+        const receipt = await (walletClient as any).waitForTransactionReceipt({ hash: approveTx })
         console.log('Approve receipt:', receipt)
         
         if (receipt.status !== 'success') {
@@ -88,7 +88,7 @@ export function SellModal({ isOpen, onClose, agent, onSuccess }: SellModalProps)
       // Попробуем альтернативный способ вызова
       try {
         // Сначала проверим, что контракт маркетплейса существует
-        const code = await walletClient.request({
+        const code = await (walletClient as any).request({
           method: 'eth_getCode',
           params: [marketplaceAddress, 'latest']
         })
@@ -100,7 +100,7 @@ export function SellModal({ isOpen, onClose, agent, onSuccess }: SellModalProps)
         }
         
         // Теперь пробуем вызвать функцию
-        const listTx = await walletClient.writeContract({
+        const listTx = await (walletClient as any).writeContract({
           address: marketplaceAddress,
           abi: AGENT_MARKETPLACE_ABI,
           functionName: 'listAgent',
@@ -112,7 +112,7 @@ export function SellModal({ isOpen, onClose, agent, onSuccess }: SellModalProps)
         
         console.log('List tx:', listTx)
         
-        const listReceipt = await walletClient.waitForTransactionReceipt({ hash: listTx })
+        const listReceipt = await (walletClient as any).waitForTransactionReceipt({ hash: listTx })
         console.log('List receipt:', listReceipt)
         
         if (listReceipt.status !== 'success') {

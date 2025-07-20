@@ -79,7 +79,7 @@ export async function uploadToStorage(
     if (treeErr) {
       throw new Error(`Failed to create merkle tree: ${treeErr}`)
     }
-    console.log('File root hash:', tree.rootHash())
+    console.log('File root hash:', tree!.rootHash())
     
     // Create indexer client
     const indexer = new Indexer(indexerRpc)
@@ -129,7 +129,7 @@ export async function uploadToStorage(
             setTimeout(() => reject(new Error('Transaction confirmation timeout')), 65000)
           )
         ])
-        console.log('Transaction confirmed in block:', receipt?.blockNumber)
+        console.log('Transaction confirmed in block:', (receipt as any)?.blockNumber)
       } catch (waitError) {
         console.log('Transaction submitted but confirmation timed out. TX hash:', uploadTx)
         // Continue anyway - transaction was submitted
@@ -139,7 +139,7 @@ export async function uploadToStorage(
       await zgFile.close()
 
       return {
-        rootHash: tree.rootHash(),
+        rootHash: tree!.rootHash() as string,
         txHash: uploadTx,
         size: fileSize,
         segments: Math.ceil(fileSize / 256 / 1024) // segments calculation
@@ -154,7 +154,7 @@ export async function uploadToStorage(
         console.log('Current nonce:', nonce)
         
         const gasPrice = await provider.getFeeData()
-        console.log('Network gas price:', ethers.formatUnits(gasPrice.gasPrice || 0n, 'gwei'), 'gwei')
+        console.log('Network gas price:', ethers.formatUnits(gasPrice.gasPrice || BigInt(0), 'gwei'), 'gwei')
       } catch (debugError) {
         console.error('Debug info error:', debugError)
       }
@@ -233,12 +233,11 @@ export class StorageError extends Error {
 }
 // web/lib/storage/client-server.ts - добавьте в конец файла
 export async function checkStorageHealth() {
+  const indexerRpc = process.env?.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
   try {
-    const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
     const indexer = new Indexer(indexerRpc)
-    
     // Попробуем получить информацию о сети
-    const status = await indexer.getStatus().catch(() => null)
+    const status = await (indexer as any).getStatus().catch(() => null)
     
     return {
       connected: !!status,
@@ -249,7 +248,7 @@ export async function checkStorageHealth() {
     return {
       connected: false,
       indexerUrl: indexerRpc,
-      error: error.message
+      error: (error as any).message
     }
   }
 }

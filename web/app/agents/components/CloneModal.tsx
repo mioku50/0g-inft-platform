@@ -29,7 +29,7 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const contractAddress = (process.env?.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS ?? '') as `0x${string}`
+  const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
 
   const handleClone = async () => {
     if (!cloneName || !walletClient || !agent) return

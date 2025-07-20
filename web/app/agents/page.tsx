@@ -1,7 +1,8 @@
-// web/app/agents/page.tsx - исправленная версия с большими аватарами и светлым фоном
+// web/app/agents/page.tsx
 'use client'
+import React from 'react'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -9,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import Link from 'next/link'
 import { INFT_ABI, AGENT_MARKETPLACE_ABI } from '@/lib/contracts/abis'
 import { toast } from '@/components/ui/use-toast'
@@ -25,7 +27,8 @@ import {
   Settings,
   Ban,
   Sparkles,
-  Bot
+  Bot,
+  ImageOff
 } from 'lucide-react'
 import { TransferModal } from '@/components/agents/TransferModal'
 import { CloneModal } from '@/components/agents/CloneModal'
@@ -39,6 +42,231 @@ interface Agent {
   pendingInfo?: any
   listingInfo?: any
 }
+
+// Компонент для безопасного отображения изображений
+const AgentAvatar = ({ agent, size = 'large' }: { agent: Agent, size?: 'small' | 'large' }) => {
+  const [imageError, setImageError] = useState(false)
+  const [imageSrc, setImageSrc] = useState('')
+  const [loading, setLoading] = useState(true)
+  
+  const sizeClasses = size === 'large' 
+    ? 'w-32 h-32' 
+    : 'w-16 h-16'
+  
+  const iconSize = size === 'large' ? 'w-16 h-16' : 'w-8 h-8'
+  
+  useEffect(() => {
+    setLoading(true)
+    setImageError(false)
+    
+    // Определяем источник изображения
+    if (agent.metadata?.image) {
+      // Если это base64, проверяем размер
+      if (agent.metadata.image.startsWith('data:')) {
+        // Base64 слишком большой для производительности
+        // Используем fallback
+        setImageSrc(`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.metadata.name || agent.tokenId}`)
+      } else if (agent.metadata.image.startsWith('http')) {
+        setImageSrc(agent.metadata.image)
+      } else {
+        // Неизвестный формат
+        setImageSrc(`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.tokenId}`)
+      }
+    } else {
+      setImageSrc(`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.tokenId}`)
+    }
+    
+    setLoading(false)
+  }, [agent])
+  
+  if (loading) {
+    return (
+      <div className={`${sizeClasses} flex items-center justify-center`}>
+        <Skeleton className="w-full h-full rounded-full" />
+      </div>
+    )
+  }
+  
+  return (
+    <div className={`${sizeClasses} flex items-center justify-center`}>
+      {!imageError ? (
+        <img 
+          src={imageSrc}
+          alt={agent.metadata?.name || `Agent #${agent.tokenId}`}
+          className="w-full h-full object-contain"
+          loading="lazy"
+          onError={() => {
+            setImageError(true)
+            setImageSrc(`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.tokenId}`)
+          }}
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-400 to-pink-400 rounded-full">
+          <Bot className={`${iconSize} text-white`} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Оптимизированная карточка агента
+const AgentCard = React.memo(({ 
+  agent, 
+  onTransfer, 
+  onClone, 
+  onList,
+  onCancelListing,
+  onPrompt,
+  cancellingListingId 
+}: {
+  agent: Agent
+  onTransfer: (agent: Agent) => void
+  onClone: (agent: Agent) => void
+  onList: (agent: Agent) => void
+  onCancelListing: (agent: Agent) => void
+  onPrompt: (agent: Agent) => void
+  cancellingListingId: number | null
+}) => {
+  return (
+    <Card 
+      className="bg-white/80 backdrop-blur border-purple-200 hover:shadow-xl transition-all duration-300 overflow-hidden"
+    >
+      <div className="p-6">
+        {/* Agent Image */}
+        <div className="h-48 bg-gradient-to-br from-purple-100 to-pink-100 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
+          <AgentAvatar agent={agent} size="large" />
+          
+          {agent.status === 'listed' && (
+            <Badge className="absolute top-2 right-2 bg-purple-600 text-white">
+              <ShoppingCart className="w-3 h-3 mr-1" />
+              Listed
+            </Badge>
+          )}
+        </div>
+        
+        {/* Agent Info */}
+        <h3 className="text-xl font-bold text-gray-900 mb-1">
+          {agent.metadata?.name || `Agent #${agent.tokenId}`}
+        </h3>
+        
+        <div className="flex gap-2 mb-3">
+          <Badge variant="outline" className="border-purple-300 text-purple-700">
+            #{agent.tokenId}
+          </Badge>
+          <Badge className="bg-purple-100 text-purple-700 border-0">
+            {agent.metadata?.model || 'Unknown'}
+          </Badge>
+        </div>
+        
+        <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+          {agent.metadata?.description || 'AI Assistant'}
+        </p>
+        
+        {/* Listing info */}
+        {agent.status === 'listed' && agent.listingInfo && (
+          <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+            <p className="text-sm text-purple-900">
+              Listed for: <span className="font-bold">{formatEther(agent.listingInfo.price)} OG</span>
+            </p>
+          </div>
+        )}
+        
+        {/* Actions */}
+        <div className="space-y-2">
+          {agent.status === 'owned' && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <Link href={`/agent/${agent.tokenId}/chat`}>
+                  <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                    <MessageCircle className="h-4 w-4 mr-1" />
+                    Chat
+                  </Button>
+                </Link>
+                <Link href={`/agents/${agent.tokenId}/fine-tune`}>
+                  <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                    <Brain className="h-4 w-4 mr-1" />
+                    Fine-tune
+                  </Button>
+                </Link>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <Button 
+                  onClick={() => onClone(agent)}
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
+                >
+                  <Copy className="h-4 w-4 mr-1" />
+                  Clone
+                </Button>
+                <Button 
+                  onClick={() => onTransfer(agent)}
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
+                >
+                  <Send className="h-4 w-4 mr-1" />
+                  Transfer
+                </Button>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-2">
+                <Button 
+                  onClick={() => onPrompt(agent)}
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
+                >
+                  <Settings className="h-4 w-4 mr-1" />
+                  Prompt
+                </Button>
+                <Button 
+                  onClick={() => onList(agent)}
+                  size="sm"
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                >
+                  <ShoppingCart className="h-4 w-4 mr-1" />
+                  List
+                </Button>
+              </div>
+            </>
+          )}
+          
+          {agent.status === 'listed' && (
+            <>
+              <Link href={`/agent/${agent.tokenId}/chat`} className="block">
+                <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                  <MessageCircle className="h-4 w-4 mr-2" />
+                  Chat
+                </Button>
+              </Link>
+              <Button 
+                onClick={() => onCancelListing(agent)}
+                disabled={cancellingListingId === agent.tokenId}
+                variant="destructive"
+                size="sm"
+                className="w-full bg-red-600 hover:bg-red-700 text-white"
+              >
+                {cancellingListingId === agent.tokenId ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Cancelling...
+                  </>
+                ) : (
+                  <>
+                    <Ban className="h-4 w-4 mr-2" />
+                    Cancel Listing
+                  </>
+                )}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    </Card>
+  )
+})
 
 export default function AgentsPage() {
   const { address, isConnected } = useAccount()
@@ -66,7 +294,8 @@ export default function AgentsPage() {
     setMounted(true)
   }, [])
 
-  const loadAgents = async () => {
+  // Оптимизированная загрузка агентов с кешированием
+  const loadAgents = useCallback(async () => {
     if (!address || !publicClient || !mounted) {
       setLoading(false)
       return
@@ -82,15 +311,24 @@ export default function AgentsPage() {
       
       const userAgents: Agent[] = []
       
+      // Загружаем все токены параллельно для оптимизации
+      const tokenPromises = []
       for (let i = 0; i < Number(balance); i++) {
-        try {
-          const tokenId = await publicClient.readContract({
+        tokenPromises.push(
+          publicClient.readContract({
             address: contractAddress,
             abi: INFT_ABI,
             functionName: 'tokenOfOwnerByIndex',
             args: [address, BigInt(i)]
-          }) as bigint
-          
+          })
+        )
+      }
+      
+      const tokenIds = await Promise.all(tokenPromises)
+      
+      // Загружаем метаданные параллельно
+      const agentPromises = tokenIds.map(async (tokenId) => {
+        try {
           let rootHash = ''
           try {
             rootHash = await publicClient.readContract({
@@ -109,13 +347,13 @@ export default function AgentsPage() {
               const response = await fetch('/api/storage/retrieve', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rootHash })
+                body: JSON.stringify({ rootHash, tokenId: tokenId.toString() })
               })
               
               if (response.ok) {
                 const data = await response.json()
                 if (data.content) {
-                  metadata = JSON.parse(data.content)
+                  metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
                 }
               }
             } catch (error) {
@@ -128,10 +366,12 @@ export default function AgentsPage() {
               name: `Agent #${tokenId}`,
               description: 'AI Agent',
               model: 'llama-3.3-70b',
-              image: `https://api.dicebear.com/7.x/bottts/svg?seed=${tokenId}`
+              image: `https://api.dicebear.com/7.x/bottts/svg?seed=${tokenId}`,
+              personality: 'friendly'
             }
           }
           
+          // Проверяем listing статус
           let isListed = false
           let listingInfo = null
           try {
@@ -150,22 +390,26 @@ export default function AgentsPage() {
               }
             }
           } catch (error) {
-            console.log(`No listing for token ${tokenId}`)
+            // No listing
           }
           
-          userAgents.push({
+          return {
             tokenId: Number(tokenId),
             metadataHash: rootHash,
             metadata: metadata,
             status: isListed ? 'listed' : 'owned',
             listingInfo: listingInfo
-          })
+          } as Agent
         } catch (err) {
-          console.error(`Error fetching user token ${i}:`, err)
+          console.error(`Error fetching token ${tokenId}:`, err)
+          return null
         }
-      }
+      })
       
-      setAgents(userAgents)
+      const results = await Promise.all(agentPromises)
+      const validAgents = results.filter(agent => agent !== null) as Agent[]
+      
+      setAgents(validAgents)
       
     } catch (error) {
       console.error('Error loading agents:', error)
@@ -178,31 +422,40 @@ export default function AgentsPage() {
       setLoading(false)
       setRefreshing(false)
     }
-  }
+  }, [address, publicClient, mounted, contractAddress, marketplaceAddress])
 
   useEffect(() => {
     if (mounted) {
       loadAgents()
     }
-  }, [address, publicClient, mounted])
+  }, [mounted, loadAgents])
 
   const handleRefresh = async () => {
     setRefreshing(true)
     await loadAgents()
   }
 
-  const handleTransfer = (agent: any) => {
+  const handleTransfer = useCallback((agent: any) => {
     setSelectedForTransfer(agent)
     setTransferModalOpen(true)
-  }
+  }, [])
 
-  const handleClone = (agent: any) => {
+  const handleClone = useCallback((agent: any) => {
     setSelectedForClone(agent)
     setCloneModalOpen(true)
-  }
+  }, [])
+
+  const handlePrompt = useCallback((agent: any) => {
+    setSelectedForPrompt(agent)
+    setPromptModalOpen(true)
+  }, [])
+
+  const handleList = useCallback((agent: any) => {
+    setSelectedAgent(agent)
+  }, [])
 
   const listAgentForSale = async () => {
-    if (!selectedAgent || !listingPrice || !walletClient) return
+    if (!selectedAgent || !listingPrice || !walletClient || !publicClient) return
     
     setIsListing(true)
     try {
@@ -213,7 +466,7 @@ export default function AgentsPage() {
         args: [marketplaceAddress, BigInt(selectedAgent.tokenId)]
       })
       
-      await publicClient.waitForTransactionReceipt(approveTx)
+      await publicClient.waitForTransactionReceipt({ hash: approveTx })
       
       toast({
         title: 'Step 1/2: Approved',
@@ -232,7 +485,7 @@ export default function AgentsPage() {
         ]
       })
       
-      const receipt = await publicClient.waitForTransactionReceipt(listTx)
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: listTx })
       
       if (receipt.status === 'success') {
         toast({
@@ -256,8 +509,8 @@ export default function AgentsPage() {
     }
   }
 
-  const cancelListing = async (agent: Agent) => {
-    if (!walletClient) return
+  const cancelListing = useCallback(async (agent: Agent) => {
+    if (!walletClient || !publicClient) return
     
     setCancellingListingId(agent.tokenId)
     try {
@@ -271,7 +524,7 @@ export default function AgentsPage() {
         ]
       })
       
-      const receipt = await publicClient.waitForTransactionReceipt(tx)
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
       
       if (receipt.status === 'success') {
         toast({
@@ -291,7 +544,23 @@ export default function AgentsPage() {
     } finally {
       setCancellingListingId(null)
     }
-  }
+  }, [walletClient, publicClient, contractAddress, marketplaceAddress, loadAgents])
+
+  // Мемоизированные компоненты для оптимизации
+  const agentCards = useMemo(() => {
+    return agents.map((agent) => (
+      <AgentCard
+        key={`${agent.tokenId}-${agent.status}`}
+        agent={agent}
+        onTransfer={handleTransfer}
+        onClone={handleClone}
+        onList={handleList}
+        onCancelListing={cancelListing}
+        onPrompt={handlePrompt}
+        cancellingListingId={cancellingListingId}
+      />
+    ))
+  }, [agents, cancellingListingId, handleTransfer, handleClone, handleList, cancelListing, handlePrompt])
 
   if (!mounted) {
     return null
@@ -379,155 +648,7 @@ export default function AgentsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {agents.map((agent) => (
-              <Card 
-                key={`${agent.tokenId}-${agent.status}`}
-                className="bg-white/80 backdrop-blur border-purple-200 hover:shadow-xl transition-all duration-300 overflow-hidden"
-              >
-                <div className="p-6">
-                  {/* Agent Image - УВЕЛИЧЕННЫЙ РАЗМЕР */}
-                  <div className="h-48 bg-gradient-to-br from-purple-100 to-pink-100 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
-                    <div className="w-32 h-32 flex items-center justify-center">
-                      <img 
-                        src={agent.metadata?.image || `https://api.dicebear.com/7.x/bottts/svg?seed=${agent.tokenId}`}
-                        alt={agent.metadata?.name}
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                    
-                    {agent.status === 'listed' && (
-                      <Badge className="absolute top-2 right-2 bg-purple-600 text-white">
-                        <ShoppingCart className="w-3 h-3 mr-1" />
-                        Listed
-                      </Badge>
-                    )}
-                  </div>
-                  
-                  {/* Agent Info */}
-                  <h3 className="text-xl font-bold text-gray-900 mb-1">
-                    {agent.metadata?.name || `Agent #${agent.tokenId}`}
-                  </h3>
-                  
-                  <div className="flex gap-2 mb-3">
-                    <Badge variant="outline" className="border-purple-300 text-purple-700">
-                      #{agent.tokenId}
-                    </Badge>
-                    <Badge className="bg-purple-100 text-purple-700 border-0">
-                      {agent.metadata?.model || 'Unknown'}
-                    </Badge>
-                  </div>
-                  
-                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                    {agent.metadata?.description || 'AI Assistant'}
-                  </p>
-                  
-                  {/* Listing info */}
-                  {agent.status === 'listed' && agent.listingInfo && (
-                    <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
-                      <p className="text-sm text-purple-900">
-                        Listed for: <span className="font-bold">{formatEther(agent.listingInfo.price)} OG</span>
-                      </p>
-                    </div>
-                  )}
-                  
-                  {/* Actions */}
-                  <div className="space-y-2">
-                    {agent.status === 'owned' && (
-                      <>
-                        <div className="grid grid-cols-2 gap-2">
-                          <Link href={`/agent/${agent.tokenId}/chat`}>
-                            <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
-                              <MessageCircle className="h-4 w-4 mr-1" />
-                              Chat
-                            </Button>
-                          </Link>
-                          <Link href={`/agents/${agent.tokenId}/fine-tune`}>
-                            <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
-                              <Brain className="h-4 w-4 mr-1" />
-                              Fine-tune
-                            </Button>
-                          </Link>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-2">
-                          <Button 
-                            onClick={() => handleClone(agent)}
-                            variant="outline"
-                            size="sm"
-                            className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
-                          >
-                            <Copy className="h-4 w-4 mr-1" />
-                            Clone
-                          </Button>
-                          <Button 
-                            onClick={() => handleTransfer(agent)}
-                            variant="outline"
-                            size="sm"
-                            className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
-                          >
-                            <Send className="h-4 w-4 mr-1" />
-                            Transfer
-                          </Button>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-2">
-                          <Button 
-                            onClick={() => {
-                              setSelectedForPrompt(agent)
-                              setPromptModalOpen(true)
-                            }}
-                            variant="outline"
-                            size="sm"
-                            className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
-                          >
-                            <Settings className="h-4 w-4 mr-1" />
-                            Prompt
-                          </Button>
-                          <Button 
-                            onClick={() => setSelectedAgent(agent)}
-                            size="sm"
-                            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                          >
-                            <ShoppingCart className="h-4 w-4 mr-1" />
-                            List
-                          </Button>
-                        </div>
-                      </>
-                    )}
-                    
-                    {agent.status === 'listed' && (
-                      <>
-                        <Link href={`/agent/${agent.tokenId}/chat`} className="block">
-                          <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
-                            <MessageCircle className="h-4 w-4 mr-2" />
-                            Chat
-                          </Button>
-                        </Link>
-                        <Button 
-                          onClick={() => cancelListing(agent)}
-                          disabled={cancellingListingId === agent.tokenId}
-                          variant="destructive"
-                          size="sm"
-                          className="w-full bg-red-600 hover:bg-red-700 text-white"
-                        >
-                          {cancellingListingId === agent.tokenId ? (
-                            <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Cancelling...
-                            </>
-                          ) : (
-                            <>
-                              <Ban className="h-4 w-4 mr-2" />
-                              Cancel Listing
-                            </>
-                          )}
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            ))}
+            {agentCards}
           </div>
         )}
       </div>

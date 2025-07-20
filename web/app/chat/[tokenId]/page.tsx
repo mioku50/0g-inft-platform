@@ -25,7 +25,7 @@ import {
   ExternalLink
 } from 'lucide-react'
 import { INFT_ABI } from '@/lib/contracts/abis'
-import { compute } from '@/lib/compute/client'
+import { computeClient } from '@/lib/compute/client'
 import { TransferModal } from '@/components/agent/TransferModal'
 import { ListingModal } from '@/components/marketplace/ListingModal'
 
@@ -139,7 +139,7 @@ export default function ChatPage() {
 
     try {
       // Call 0G Compute API
-      const response = await compute.chat({
+      const response = await computeClient.chat({
         tokenId,
         messages: [...messages, userMessage].map(m => ({
           role: m.role,

@@ -1,0 +1,40 @@
+// web/app/api/compute/analyze/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+
+export async function POST(request: NextRequest) {
+  const { content, type, agentMetadata } = await request.json()
+  
+  switch (type) {
+    case 'sentiment':
+      return analyzeSentiment(content, agentMetadata)
+    case 'summary':
+      return generateSummary(content, agentMetadata)
+    case 'code':
+      return analyzeCode(content, agentMetadata)
+    case 'image-prompt':
+      return generateImagePrompt(content, agentMetadata)
+    default:
+      return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
+  }
+}
+
+// Вспомогательные функции
+async function analyzeSentiment(content: string, agentMetadata: any) {
+  // ... код анализа
+  return NextResponse.json({ type: 'sentiment', result: 'positive' })
+}
+
+async function generateSummary(content: string, agentMetadata: any) {
+  // ... код суммаризации
+  return NextResponse.json({ type: 'summary', result: 'summary' })
+}
+
+async function analyzeCode(content: string, agentMetadata: any) {
+  // ... код анализа кода
+  return NextResponse.json({ type: 'code', result: 'analysis' })
+}
+
+async function generateImagePrompt(content: string, agentMetadata: any) {
+  // ... генерация промпта
+  return NextResponse.json({ type: 'image-prompt', result: 'prompt' })
+}

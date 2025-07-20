@@ -94,7 +94,7 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
         args: [
           address as `0x${string}`,
           newMetadataHash,
-          ethers.keccak256(ethers.toUtf8Bytes(cloneName + Date.now())),
+          ethers.keccak256(ethers.toUtf8Bytes(cloneName + Date.now())) as `0x${string}`(ethers.toUtf8Bytes(cloneName + Date.now())),
           ethers.keccak256(ethers.toUtf8Bytes('decryption-key'))
         ]
       })

@@ -32,7 +32,7 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
   const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
 
   const handleClone = async () => {
-    if (!cloneName || !walletClient || !agent) return
+    if (!cloneName || !walletClient || !agent || !address) return
 
     try {
       setLoading(true)
@@ -57,7 +57,8 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
         description: cloneDescription || `Clone of ${originalMetadata.name}`,
         originalTokenId: agent.tokenId,
         clonedAt: new Date().toISOString(),
-        isClone: true
+        isClone: true,
+        creator: address // Обновляем создателя
       }
 
       // Шаг 3: Загружаем новые метаданные в 0G Storage
@@ -65,7 +66,7 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: JSON.stringify(cloneMetadata)
+          metadata: cloneMetadata // Используем metadata вместо content
         }),
       })
 
@@ -73,29 +74,61 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
       
       const { rootHash: newMetadataHash } = await uploadResponse.json()
 
-      // Проверяем, есть ли функция clone в контракте
-      try {
-        // Генерируем новые ключи для клона
-        const keyPair = ethers.Wallet.createRandom()
-        const encryptionKey = ethers.keccak256(ethers.toUtf8Bytes(keyPair.privateKey))
-        const decryptionKeyHash = ethers.keccak256(ethers.toUtf8Bytes(keyPair.address))
+      // Шаг 4: Создаем proof для клонирования (simplified version)
+      const proof = ethers.hexlify(ethers.randomBytes(32)) // Упрощенный proof
+      const sealedKey = ethers.hexlify(ethers.randomBytes(32)) // Упрощенный sealed key
 
+      // Шаг 5: Пробуем использовать функцию clone
+      try {
         const tx = await walletClient.writeContract({
           address: contractAddress,
           abi: INFT_ABI,
           functionName: 'clone',
           args: [
             BigInt(agent.tokenId),
-            newMetadataHash,
-            encryptionKey,
-            decryptionKeyHash
+            address as `0x${string}`, // to
+            sealedKey as `0x${string}`, // sealedKey
+            proof as `0x${string}` // proof
           ]
         })
 
-        await publicClient.waitForTransactionReceipt({ hash: tx })
-      } catch (e) {
-        // Если функция clone не существует, используем обычный mint
-        console.log('clone function not available, using standard mint')
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
+        
+        // Получаем tokenId из события
+        const cloneEvent = receipt.logs.find(log => {
+          try {
+            const decoded = publicClient.decodeEventLog({
+              abi: INFT_ABI,
+              data: log.data,
+              topics: log.topics as any
+            })
+            return decoded.eventName === 'AgentCloned'
+          } catch {
+            return false
+          }
+        })
+
+        if (cloneEvent) {
+          const decoded = publicClient.decodeEventLog({
+            abi: INFT_ABI,
+            data: cloneEvent.data,
+            topics: cloneEvent.topics as any
+          })
+          console.log('Clone created with tokenId:', decoded.args.newTokenId)
+        }
+
+      } catch (cloneError: any) {
+        // Если clone не работает, используем обычный mint
+        console.log('Clone function failed, using standard mint:', cloneError.message)
+        
+        // Генерируем хэш для контракта
+        const metadataHash = ethers.keccak256(
+          ethers.toUtf8Bytes(JSON.stringify({
+            name: cloneMetadata.name,
+            model: cloneMetadata.model,
+            creator: address
+          }))
+        )
         
         const tx = await walletClient.writeContract({
           address: contractAddress,
@@ -103,9 +136,8 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
           functionName: 'mint',
           args: [
             address as `0x${string}`,
-            newMetadataHash,
-            ethers.keccak256(ethers.toUtf8Bytes('encryption-key')),
-            ethers.keccak256(ethers.toUtf8Bytes('decryption-key'))
+            newMetadataHash as `0x${string}`, // encryptedURI
+            metadataHash as `0x${string}` // metadataHash
           ]
         })
 
@@ -113,14 +145,23 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
       }
 
       toast({
-        title: 'Success!',
+        title: 'Success! 🎉',
         description: `Clone "${cloneName}" created successfully`
       })
       
+      // Закрываем модал и обновляем список
+      onClose()
       onSuccess()
+      
     } catch (err: any) {
       console.error('Clone error:', err)
       setError(err.message || 'Clone failed')
+      
+      toast({
+        title: 'Error',
+        description: err.message || 'Failed to create clone',
+        variant: 'destructive'
+      })
     } finally {
       setLoading(false)
     }
@@ -130,7 +171,7 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[500px] bg-gray-900 border-gray-700 text-white">
         <DialogHeader>
-          <DialogTitle>Clone Agent</DialogTitle>
+          <DialogTitle className="text-xl font-bold">Clone Agent</DialogTitle>
           <DialogDescription className="text-gray-400">
             Create a copy of "{agent?.metadata?.name}" with a new identity. The clone will have the same capabilities but a unique token ID.
           </DialogDescription>
@@ -138,56 +179,61 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
 
         <div className="space-y-4 mt-4">
           <div>
-            <Label htmlFor="cloneName">Clone Name</Label>
+            <Label htmlFor="cloneName" className="text-white">Clone Name *</Label>
             <Input
               id="cloneName"
-              placeholder={`${agent?.metadata?.name} Clone`}
+              placeholder={`${agent?.metadata?.name} v2`}
               value={cloneName}
               onChange={(e) => setCloneName(e.target.value)}
               disabled={loading}
-              className="bg-gray-800 border-gray-700"
+              className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
             />
           </div>
 
           <div>
-            <Label htmlFor="cloneDescription">Clone Description (Optional)</Label>
+            <Label htmlFor="cloneDescription" className="text-white">Clone Description (Optional)</Label>
             <Textarea
               id="cloneDescription"
-              placeholder={`Clone of ${agent?.metadata?.name}`}
+              placeholder={`An enhanced version of ${agent?.metadata?.name}`}
               value={cloneDescription}
               onChange={(e) => setCloneDescription(e.target.value)}
               disabled={loading}
               rows={3}
-              className="bg-gray-800 border-gray-700"
+              className="bg-gray-800 border-gray-700 text-white placeholder:text-gray-500"
             />
           </div>
 
-          <Alert className="bg-purple-900/30 border-purple-500/30">
-            <Sparkles className="h-4 w-4" />
+          <Alert className="bg-purple-900/20 border-purple-500/30">
+            <Sparkles className="h-4 w-4 text-purple-400" />
             <AlertDescription className="text-purple-300">
-              The clone will inherit the AI model and capabilities but will have its own unique identity and encryption keys.
+              The clone will inherit:
+              <ul className="list-disc list-inside mt-1 text-sm">
+                <li>AI Model: {agent?.metadata?.model}</li>
+                <li>Personality: {agent?.metadata?.personality}</li>
+                <li>Skills & capabilities</li>
+              </ul>
             </AlertDescription>
           </Alert>
 
           {error && (
-            <Alert variant="destructive" className="bg-red-900/30 border-red-500/30">
-              <AlertDescription>{error}</AlertDescription>
+            <Alert variant="destructive" className="bg-red-900/20 border-red-500/30">
+              <AlertDescription className="text-red-300">{error}</AlertDescription>
             </Alert>
           )}
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 mt-6">
             <Button 
               variant="outline" 
               onClick={onClose} 
               disabled={loading}
-              className="bg-gray-800 border-gray-700"
+              className="bg-gray-800 border-gray-700 hover:bg-gray-700"
             >
               Cancel
             </Button>
             <Button 
               onClick={handleClone} 
               disabled={loading || !cloneName}
-              className="bg-gradient-to-r from-purple-500 to-pink-500"
+              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
             >
               {loading ? (
                 <>

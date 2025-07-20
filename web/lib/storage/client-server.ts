@@ -231,3 +231,25 @@ export class StorageError extends Error {
     this.name = 'StorageError'
   }
 }
+// web/lib/storage/client-server.ts - добавьте в конец файла
+export async function checkStorageHealth() {
+  try {
+    const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
+    const indexer = new Indexer(indexerRpc)
+    
+    // Попробуем получить информацию о сети
+    const status = await indexer.getStatus().catch(() => null)
+    
+    return {
+      connected: !!status,
+      indexerUrl: indexerRpc,
+      status: status || 'Unable to connect'
+    }
+  } catch (error) {
+    return {
+      connected: false,
+      indexerUrl: indexerRpc,
+      error: error.message
+    }
+  }
+}

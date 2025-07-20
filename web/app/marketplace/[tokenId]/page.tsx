@@ -1,4 +1,3 @@
-// web/app/marketplace/[tokenId]/page.tsx
 'use client'
 
 import { useParams, useRouter } from 'next/navigation'
@@ -25,6 +24,7 @@ export default function AgentDetailPage() {
   const [loading, setLoading] = useState(true)
   const [purchasing, setPurchasing] = useState(false)
   const [showTransferInfo, setShowTransferInfo] = useState(false)
+  const [txHash, setTxHash] = useState<string>('')
   
   const marketplaceAddress = process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS as `0x${string}`
   const nftAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
@@ -45,22 +45,22 @@ export default function AgentDetailPage() {
       const metadataHash = await publicClient.readContract({
         address: nftAddress,
         abi: INFT_ABI,
-        functionName: 'getMetadataHash',
+        functionName: 'getEncryptedURI',
         args: [BigInt(tokenId)]
       })
       
-      // Получаем цену из листинга
       let price = '0.001'
       let isListed = false
+      
       try {
         const listingData = await publicClient.readContract({
           address: marketplaceAddress,
           abi: AGENT_MARKETPLACE_ABI,
           functionName: 'getListing',
-          args: [BigInt(tokenId)]
+          args: [nftAddress, BigInt(tokenId)]
         })
         
-        if (listingData && listingData.isActive && listingData.price) {
+        if (listingData && listingData.isActive) {
           price = formatEther(listingData.price)
           isListed = true
         }
@@ -76,7 +76,7 @@ export default function AgentDetailPage() {
       
       if (response.ok) {
         const data = await response.json()
-        const metadata = JSON.parse(data.content)
+        const metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
         
         setAgent({
           tokenId,
@@ -89,6 +89,16 @@ export default function AgentDetailPage() {
       }
     } catch (error) {
       console.error('Error loading agent:', error)
+      setAgent({
+        tokenId,
+        name: `Agent #${tokenId}`,
+        description: 'AI Agent',
+        model: 'Unknown',
+        price: '0.001',
+        owner: '0x0',
+        isOwner: false,
+        isListed: false
+      })
     } finally {
       setLoading(false)
     }
@@ -107,77 +117,77 @@ export default function AgentDetailPage() {
     setPurchasing(true)
     
     try {
-      const currentOwner = await publicClient.readContract({
-        address: nftAddress,
-        abi: INFT_ABI,
-        functionName: 'ownerOf',
-        args: [BigInt(tokenId)]
-      })
-      
-      if (currentOwner.toLowerCase() === address.toLowerCase()) {
-        throw new Error('You already own this agent!')
-      }
-      
-      const price = agent.price ? parseEther(agent.price.toString()) : parseEther('0.001')
-      
-      toast({
-        title: 'Sending payment...',
-        description: `Sending ${formatEther(price)} OG to owner`
-      })
-      
-      const tx = await walletClient.sendTransaction({
-        to: currentOwner as `0x${string}`,
-        value: price,
-      })
-      
-      const receipt = await publicClient.waitForTransactionReceipt({ 
-        hash: tx,
-        confirmations: 1 
-      })
-      
-      if (receipt.status === 'success') {
-        toast({
-          title: '✅ Payment sent!',
-          description: `Successfully sent ${formatEther(price)} OG to the owner`,
-          duration: 5000
+      if (agent.isListed) {
+        // Purchase through marketplace
+        const price = parseEther(agent.price.toString())
+        
+        const tx = await walletClient.writeContract({
+          address: marketplaceAddress,
+          abi: AGENT_MARKETPLACE_ABI,
+          functionName: 'purchaseItem',
+          args: [nftAddress, BigInt(tokenId)],
+          value: price
         })
         
-        const purchases = JSON.parse(localStorage.getItem('pendingTransfers') || '{}')
-        purchases[tokenId] = {
-          tokenId,
-          buyer: address,
-          seller: currentOwner,
-          price: price.toString(),
-          txHash: tx,
-          timestamp: Date.now()
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
+        
+        if (receipt.status === 'success') {
+          toast({
+            title: '🎉 Success!',
+            description: 'You now own this AI agent!',
+          })
+          
+          setTimeout(() => {
+            router.push('/agents')
+          }, 2000)
         }
-        localStorage.setItem('pendingTransfers', JSON.stringify(purchases))
-        
-        setShowTransferInfo(true)
-        
-        toast({
-          title: '📋 Next Steps',
-          description: 'The owner needs to transfer the NFT to you. Transaction: ' + tx.slice(0, 10) + '...',
-          duration: 10000
+      } else {
+        // Direct purchase (manual transfer)
+        const currentOwner = await publicClient.readContract({
+          address: nftAddress,
+          abi: INFT_ABI,
+          functionName: 'ownerOf',
+          args: [BigInt(tokenId)]
         })
         
-        checkOwnershipStatus(tokenId)
+        const price = parseEther(agent.price.toString())
+        
+        const tx = await walletClient.sendTransaction({
+          to: currentOwner as `0x${string}`,
+          value: price,
+        })
+        
+        setTxHash(tx)
+        
+        const receipt = await publicClient.waitForTransactionReceipt({ hash: tx })
+        
+        if (receipt.status === 'success') {
+          toast({
+            title: '✅ Payment sent!',
+            description: `Successfully sent ${agent.price} OG to the owner`,
+          })
+          
+          setShowTransferInfo(true)
+          
+          const purchases = JSON.parse(localStorage.getItem('pendingTransfers') || '{}')
+          purchases[tokenId] = {
+            tokenId,
+            buyer: address,
+            seller: currentOwner,
+            price: price.toString(),
+            txHash: tx,
+            timestamp: Date.now()
+          }
+          localStorage.setItem('pendingTransfers', JSON.stringify(purchases))
+          
+          checkOwnershipStatus(tokenId)
+        }
       }
     } catch (error: any) {
-      console.error('Full error:', error)
-      
-      let errorMessage = 'Purchase failed'
-      if (error.message?.includes('insufficient funds')) {
-        errorMessage = 'Insufficient balance. You need more OG tokens.'
-      } else if (error.message?.includes('user rejected')) {
-        errorMessage = 'Transaction was cancelled'
-      } else if (error.message?.includes('already own')) {
-        errorMessage = error.message
-      }
-      
+      console.error('Purchase error:', error)
       toast({
         title: 'Error',
-        description: errorMessage,
+        description: error.message || 'Purchase failed',
         variant: 'destructive'
       })
     } finally {
@@ -206,7 +216,6 @@ export default function AgentDetailPage() {
           toast({
             title: '🎉 Congratulations!',
             description: 'You are now the owner of this AI agent!',
-            duration: 5000
           })
           
           const purchases = JSON.parse(localStorage.getItem('pendingTransfers') || '{}')
@@ -245,15 +254,7 @@ export default function AgentDetailPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900">
-      {/* Animated stars background */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="stars"></div>
-        <div className="stars2"></div>
-        <div className="stars3"></div>
-      </div>
-
-      <div className="relative container mx-auto py-10 px-4">
-        {/* Back button */}
+      <div className="container mx-auto py-10 px-4">
         <Link href="/marketplace">
           <Button variant="ghost" className="mb-6 text-white hover:text-purple-300 hover:bg-white/10">
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -261,11 +262,9 @@ export default function AgentDetailPage() {
           </Button>
         </Link>
 
-        {/* Content */}
         <div className="grid lg:grid-cols-2 gap-8">
-          {/* Left Column - Image and Transfer Info */}
+          {/* Left Column */}
           <div className="space-y-6">
-            {/* Agent Image Card */}
             <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 border border-white/20">
               <div className="bg-gradient-to-br from-purple-600/40 to-pink-600/40 rounded-2xl p-1">
                 <div className="bg-gray-900/90 rounded-xl p-12 backdrop-blur-sm">
@@ -277,7 +276,6 @@ export default function AgentDetailPage() {
                 </div>
               </div>
               
-              {/* Agent Stats */}
               <div className="grid grid-cols-3 gap-4 mt-6">
                 <div className="text-center">
                   <div className="w-12 h-12 bg-purple-500/20 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -300,44 +298,41 @@ export default function AgentDetailPage() {
               </div>
             </div>
             
-            {/* Transfer Info Card */}
-     // web/app/marketplace/[tokenId]/page.tsx
-// После успешной оплаты добавьте:
+            {showTransferInfo && (
+              <div className="bg-yellow-500/10 backdrop-blur-md rounded-3xl p-6 border border-yellow-500/30">
+                <h3 className="text-lg font-semibold text-yellow-400 mb-3">
+                  ⚠️ Manual Transfer Required
+                </h3>
+                
+                <div className="space-y-4">
+                  <div className="bg-black/30 rounded-xl p-4">
+                    <p className="text-sm text-white mb-2">Payment Transaction:</p>
+                    <p className="font-mono text-xs text-gray-300 break-all">
+                      {txHash}
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <p className="text-white mb-2">Next steps for seller:</p>
+                    <ol className="list-decimal list-inside text-sm text-gray-300 space-y-1">
+                      <li>Go to "My Agents" page</li>
+                      <li>Find agent #{tokenId}</li>
+                      <li>Click "Transfer" button</li>
+                      <li>Enter buyer address: {address}</li>
+                      <li>Confirm transfer</li>
+                    </ol>
+                  </div>
+                  
+                  <div className="text-xs text-gray-400">
+                    <p>We're monitoring the blockchain.</p>
+                    <p>You'll be redirected once the transfer is complete.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
-{showTransferInfo && (
-  <div className="bg-yellow-500/10 backdrop-blur-md rounded-3xl p-6 border border-yellow-500/30 mt-4">
-    <h3 className="text-lg font-semibold text-yellow-400 mb-3">
-      ⚠️ Manual Transfer Required
-    </h3>
-    
-    <div className="space-y-4">
-      <div className="bg-black/30 rounded-xl p-4">
-        <p className="text-sm text-white mb-2">Payment Transaction:</p>
-        <p className="font-mono text-xs text-gray-300 break-all">
-          {/* Показать hash транзакции */}
-        </p>
-      </div>
-      
-      <div>
-        <p className="text-white mb-2">Next steps for seller:</p>
-        <ol className="list-decimal list-inside text-sm text-gray-300 space-y-1">
-          <li>Go to "My Agents" page</li>
-          <li>Find agent #{tokenId}</li>
-          <li>Click "Transfer" button</li>
-          <li>Enter buyer address: {address}</li>
-          <li>Confirm transfer</li>
-        </ol>
-      </div>
-      
-      <div className="text-xs text-gray-400">
-        <p>We're monitoring the blockchain.</p>
-        <p>You'll be redirected once the transfer is complete.</p>
-      </div>
-    </div>
-  </div>
-)}
-
-          {/* Right Column - Agent Details */}
+          {/* Right Column */}
           <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 border border-white/20">
             <div className="mb-6">
               <h1 className="text-4xl font-bold text-white mb-4">{agent.name}</h1>
@@ -358,18 +353,14 @@ export default function AgentDetailPage() {
             </div>
 
             <div className="space-y-6">
-              {/* Description */}
               <div>
                 <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                   <Zap className="w-5 h-5 text-purple-400" />
                   Description
                 </h3>
-                <p className="text-gray-300">
-                  {agent.description}
-                </p>
+                <p className="text-gray-300">{agent.description}</p>
               </div>
               
-              {/* System Prompt */}
               <div>
                 <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                   <Code className="w-5 h-5 text-cyan-400" />
@@ -382,7 +373,6 @@ export default function AgentDetailPage() {
                 </div>
               </div>
               
-              {/* Price and Purchase */}
               <div className="border-t border-white/20 pt-6">
                 <div className="mb-6">
                   <p className="text-sm text-gray-400 mb-1">Price</p>
@@ -427,12 +417,6 @@ export default function AgentDetailPage() {
                 ) : (
                   <div className="text-center">
                     <p className="text-gray-400 mb-4">Connect wallet to purchase</p>
-                    <Button 
-                      onClick={() => {}}
-                      className="px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full text-white font-semibold hover:opacity-90 transition-all shadow-lg"
-                    >
-                      Connect Wallet
-                    </Button>
                   </div>
                 )}
               </div>
@@ -440,108 +424,6 @@ export default function AgentDetailPage() {
           </div>
         </div>
       </div>
-
-      {/* CSS для звезд */}
-     {/* CSS для звезд и градиентов */}
-<style jsx>{`
-  @keyframes gradient {
-    0%, 100% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-  }
-  
-  .animate-gradient {
-    background-size: 200% 200%;
-    animation: gradient 3s ease infinite;
-  }
-  
-  .stars {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 120%;
-    overflow: hidden;
-  }
-  
-  .stars::after {
-    content: "";
-    position: absolute;
-    top: -10rem;
-    left: -10rem;
-    right: -10rem;
-    bottom: -10rem;
-    background-image: 
-      radial-gradient(2px 2px at 20% 30%, white, transparent),
-      radial-gradient(2px 2px at 60% 70%, white, transparent),
-      radial-gradient(1px 1px at 50% 50%, white, transparent),
-      radial-gradient(1px 1px at 80% 10%, white, transparent),
-      radial-gradient(2px 2px at 90% 60%, white, transparent);
-    background-size: 200px 200px;
-    background-position: 0 0, 40px 60px, 130px 270px, 70px 100px, 150px 150px;
-    animation: moveStars 100s linear infinite;
-    opacity: 0.5;
-  }
-  
-  .stars2 {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 120%;
-    overflow: hidden;
-  }
-  
-  .stars2::after {
-    content: "";
-    position: absolute;
-    top: -10rem;
-    left: -10rem;
-    right: -10rem;
-    bottom: -10rem;
-    background-image: 
-      radial-gradient(3px 3px at 30% 40%, white, transparent),
-      radial-gradient(2px 2px at 70% 20%, white, transparent),
-      radial-gradient(1px 1px at 40% 80%, white, transparent);
-    background-size: 300px 300px;
-    background-position: 20px 30px, 150px 180px, 70px 70px;
-    animation: moveStars 150s linear infinite;
-    opacity: 0.3;
-  }
-  
-  .stars3 {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 120%;
-    overflow: hidden;
-  }
-  
-  .stars3::after {
-    content: "";
-    position: absolute;
-    top: -10rem;
-    left: -10rem;
-    right: -10rem;
-    bottom: -10rem;
-    background-image: 
-      radial-gradient(1px 1px at 10% 10%, white, transparent),
-      radial-gradient(1px 1px at 90% 90%, white, transparent);
-    background-size: 400px 400px;
-    background-position: 50px 50px, 200px 300px;
-    animation: moveStars 200s linear infinite;
-    opacity: 0.2;
-  }
-  
-  @keyframes moveStars {
-    from {
-      transform: translateY(0);
-    }
-    to {
-      transform: translateY(-100%);
-    }
-  }
-`}</style>
     </div>
   )
 }

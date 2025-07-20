@@ -89,11 +89,11 @@ export async function hybridRetrieveMetadata(
 }
 
 // web/app/api/storage/upload/route.ts - обновленная версия с гибридным подходом
-import { NextRequest, NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
 import { uploadToStorage } from '@/lib/storage/client-server'
-import { hybridStoreMetadata } from '@/lib/storage/temp-metadata-store'
 
-export async function POST(request: NextRequest) {
+export async function uploadPOST(request: NextReq) {
   console.log('=== Storage Upload API ===')
   
   try {
@@ -227,11 +227,11 @@ export async function POST(request: NextRequest) {
 }
 
 // web/app/api/storage/retrieve/route.ts - обновленная версия
-import { NextRequest, NextResponse } from 'next/server'
+import type { NextRequest as NextReq } from 'next/server'
+import { NextResponse as NextRes } from 'next/server'
 import { downloadFromStorage } from '@/lib/storage/client-server'
-import { hybridRetrieveMetadata } from '@/lib/storage/temp-metadata-store'
 
-export async function POST(request: NextRequest) {
+export async function retrievePOST(request: NextReq) {
   try {
     const { rootHash } = await request.json()
     
@@ -268,8 +268,7 @@ export async function POST(request: NextRequest) {
         description: 'Metadata not available',
         model: 'Unknown',
         error: 'retrieval_failed'
-      }),
-      rootHash
+      })
     })
   }
 }

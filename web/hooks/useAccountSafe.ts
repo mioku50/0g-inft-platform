@@ -19,10 +19,10 @@ export function useWatchAccount() {
         }
       }
 
-      window.ethereum.on('accountsChanged', handleAccountsChanged)
+      window.ethereum?.on?.('accountsChanged', handleAccountsChanged)
       
       return () => {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
+        window.ethereum?.removeListener?.('accountsChanged', handleAccountsChanged)
       }
     }
   }, [])

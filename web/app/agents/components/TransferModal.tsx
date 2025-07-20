@@ -90,14 +90,14 @@ export function TransferModal({ agent, isOpen, onClose, onSuccess }: TransferMod
         abi: INFT_ABI,
         functionName: 'transferWithMetadata',
         args: [
-          address,
-          recipientAddress,
+          address as `0x${string}`,
+          recipientAddress as `0x${string}`,
           BigInt(agent.tokenId),
           newMetadataHash,
           encryptedKey,
           proof
         ],
-        account: address,
+        account: address as `0x${string}`,
       })
 
       const hash = await walletClient.writeContract(request)

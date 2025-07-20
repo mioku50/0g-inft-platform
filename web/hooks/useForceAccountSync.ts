@@ -13,8 +13,8 @@ export function useForceAccountSync() {
 
     const checkAccount = async () => {
       try {
-        const accounts = await window.ethereum.request({ 
-          method: 'eth_accounts' 
+        const accounts = await (window.ethereum as any)?.request({
+          method: 'eth_accounts'
         })
         
         const currentMetaMaskAccount = accounts[0]?.toLowerCase()
@@ -52,13 +52,11 @@ export function useForceAccountSync() {
       }, 100)
     }
 
-    window.ethereum.on('accountsChanged', handleAccountsChanged)
+    window.ethereum?.on?.('accountsChanged', handleAccountsChanged)
 
     return () => {
       clearInterval(checkInterval)
-      if (window.ethereum?.removeListener) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged)
-      }
+      window.ethereum?.removeListener?.('accountsChanged', handleAccountsChanged)
     }
   }, [address, disconnect])
 

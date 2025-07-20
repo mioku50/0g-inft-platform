@@ -1,4 +1,5 @@
 // scripts/fix-specific-token.ts
+export {}
 const fs = require('fs').promises
 const path = require('path')
 const dotenv = require('dotenv')

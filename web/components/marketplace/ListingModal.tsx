@@ -30,9 +30,9 @@ export function ListingModal({ tokenId, agentName, onClose, onSuccess }: Listing
   const { toast } = useToast()
 
   const { write: listAgent, data: listData } = useContractWrite({
-    address: process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS as `0x${string}`,
+    address: (process.env?.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS ?? '') as `0x${string}`,
     abi: AGENT_MARKETPLACE_ABI,
-    functionName: 'listAgent',
+    functionName: 'listAgent' as any,
   })
 
   const { isLoading: isListing } = useWaitForTransaction({

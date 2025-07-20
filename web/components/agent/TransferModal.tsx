@@ -30,9 +30,9 @@ export function TransferModal({ tokenId, onClose, onSuccess }: TransferModalProp
   const { toast } = useToast()
 
   const { write: transfer, data: transferData } = useContractWrite({
-    address: process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`,
+    address: (process.env?.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS ?? '') as `0x${string}`,
     abi: INFT_ABI,
-    functionName: 'secureTransfer',
+    functionName: 'secureTransfer' as any,
   })
 
   const { isLoading: isTransferring } = useWaitForTransaction({

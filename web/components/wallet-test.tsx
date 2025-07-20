@@ -33,16 +33,16 @@ export function WalletTest() {
       logEvent(`Disconnected: ${error?.message || 'user action'}`);
     };
 
-    window.ethereum.on('accountsChanged', handleAccountsChanged);
-    window.ethereum.on('chainChanged', handleChainChanged);
-    window.ethereum.on('connect', handleConnect);
-    window.ethereum.on('disconnect', handleDisconnect);
+    window.ethereum?.on?.('accountsChanged', handleAccountsChanged);
+    window.ethereum?.on?.('chainChanged', handleChainChanged);
+    window.ethereum?.on?.('connect', handleConnect);
+    window.ethereum?.on?.('disconnect', handleDisconnect);
 
     return () => {
-      window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-      window.ethereum.removeListener('chainChanged', handleChainChanged);
-      window.ethereum.removeListener('connect', handleConnect);
-      window.ethereum.removeListener('disconnect', handleDisconnect);
+      window.ethereum?.removeListener?.('accountsChanged', handleAccountsChanged);
+      window.ethereum?.removeListener?.('chainChanged', handleChainChanged);
+      window.ethereum?.removeListener?.('connect', handleConnect);
+      window.ethereum?.removeListener?.('disconnect', handleDisconnect);
     };
   }, []);
 
@@ -110,9 +110,9 @@ export function WalletTest() {
             <p>Installed: {typeof window !== 'undefined' && window.ethereum ? 'Yes' : 'No'}</p>
             {typeof window !== 'undefined' && window.ethereum && (
               <>
-                <p>Connected: {window.ethereum.isConnected() ? 'Yes' : 'No'}</p>
-                <p>Selected Address: {window.ethereum.selectedAddress || 'None'}</p>
-                <p>Chain ID: {window.ethereum.chainId || 'Unknown'}</p>
+                <p>Connected: {(window.ethereum as any)?.isConnected?.() ? 'Yes' : 'No'}</p>
+                <p>Selected Address: {(window.ethereum as any).selectedAddress || 'None'}</p>
+                <p>Chain ID: {(window.ethereum as any).chainId || 'Unknown'}</p>
               </>
             )}
           </div>

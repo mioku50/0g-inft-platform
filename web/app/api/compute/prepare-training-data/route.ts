@@ -1,4 +1,5 @@
 // web/app/api/compute/prepare-training-data/route.ts
+import { NextRequest, NextResponse } from 'next/server'
 export async function POST(request: NextRequest) {
   try {
     const { agentId, trainingData } = await request.json()
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
     
     // Сохраняем в 0G Storage
     const jsonl = formattedData
-      .map(item => JSON.stringify(item))
+      .map((item: any) => JSON.stringify(item))
       .join('\n')
     
     const uploadResponse = await fetch('/api/storage/upload', {

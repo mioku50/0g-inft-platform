@@ -145,12 +145,12 @@ function AccountChangeHandler() {
     };
 
     // Add listeners
-    window.ethereum.on('accountsChanged', handleAccountsChanged);
-    window.ethereum.on('chainChanged', handleChainChanged);
+    window.ethereum?.on?.('accountsChanged', handleAccountsChanged);
+    window.ethereum?.on?.('chainChanged', handleChainChanged);
 
     // Cleanup
     return () => {
-      if (window.ethereum.removeListener) {
+      if (window.ethereum?.removeListener) {
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
         window.ethereum.removeListener('chainChanged', handleChainChanged);
       }

@@ -22,11 +22,11 @@ export async function downloadFromStorageCached(rootHash: string): Promise<strin
   
   // Загружаем с ограничением
   return limit(async () => {
-    const indexer = new Indexer(process.env.NEXT_PUBLIC_0G_STORAGE_URL!)
-    const result = await indexer.download(rootHash, '', false)
+    const indexer = new Indexer(process.env?.NEXT_PUBLIC_0G_STORAGE_URL ?? '')
+    const result = await (indexer as any).download(rootHash, '', false)
     
     // Кешируем результат
     storageCache.set(rootHash, result)
-    return result
+    return result as string
   })
 }

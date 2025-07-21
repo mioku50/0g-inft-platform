@@ -1,7 +1,6 @@
 // lib/hooks/useAgentsOptimized.ts
 import { useState, useEffect, useCallback } from 'react'
 import { useAccount, usePublicClient } from 'wagmi'
-import { INFT_ABI } from '@/lib/contracts/abis'
 
 const CACHE_KEY = 'agents_cache'
 const CACHE_DURATION = 5 * 60 * 1000 // 5 минут
@@ -19,7 +18,7 @@ export function useAgentsOptimized() {
       if (cached) {
         const { data, timestamp } = JSON.parse(cached)
         if (Date.now() - timestamp < CACHE_DURATION) {
-          setAgents(data)
+          setAgents(applyModelVersion(data))
           setLoading(false)
           return true
         }
@@ -41,6 +40,13 @@ export function useAgentsOptimized() {
     }
   }, [address])
 
+  const applyModelVersion = useCallback((items: any[]) => {
+    return items.map((a) => {
+      const v = localStorage.getItem(`model_version_${a.id}`)
+      return { ...a, modelVersion: v ? Number(v) : 1 }
+    })
+  }, [])
+
   const loadAgents = useCallback(async (forceRefresh = false) => {
     if (!address || !publicClient) return
 
@@ -58,8 +64,9 @@ export function useAgentsOptimized() {
       if (!response.ok) throw new Error('Failed to fetch agents')
       
       const data = await response.json()
-      setAgents(data.agents || [])
-      saveToCache(data.agents || [])
+      const items = applyModelVersion(data.agents || [])
+      setAgents(items)
+      saveToCache(items)
     } catch (err) {
       console.error('Load agents error:', err)
       setError('Failed to load agents')

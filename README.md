@@ -2554,3 +2554,4 @@ const valid = await broker.inference.processResponse(
 
 Access the more details of interfaces via cloning the repo and opening [index.html](./docs/index.html) in browser.
 
+\n## Fine-Tuning workflow\n1. Upload dataset via /mint page to obtain root hash.\n2. Start fine-tune on /agents/[id]/fine-tune with base model and params.\n3. Service stores jobId and polls oracle.\n4. When completed, model info saved to data/models and metadata pushed to 0G Storage.\n\n### Env vars\n- NEXT_PUBLIC_COMPUTE_ORACLE_ADDRESS\n- OG_COMPUTE_PRIVATE_KEY\n

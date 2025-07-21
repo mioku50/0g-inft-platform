@@ -65,7 +65,10 @@ export async function uploadToStorage(file: File | Buffer | string, fileName = '
   return { rootHash: localHash }
 }
 
-export async function downloadFromStorage(rootHash: string): Promise<string> {
+export async function downloadFromStorage(
+  rootHash: string,
+  meta?: { contentType?: string }
+): Promise<any> {
   if (rootHash.startsWith('local://')) {
     const hash = rootHash.replace('local://', '')
     const file = path.join(METADATA_DIR, `${hash}.json`)
@@ -80,9 +83,12 @@ export async function downloadFromStorage(rootHash: string): Promise<string> {
     const indexer = new Indexer(indexerRpc)
     const err = await indexer.download(rootHash, tempFile, false)
     if (err) throw err
-    const content = await fs.readFile(tempFile, 'utf-8')
+    const content = await fs.readFile(tempFile)
     await fs.unlink(tempFile).catch(() => {})
-    return content
+    if (meta?.contentType) {
+      return new Blob([content], { type: meta.contentType })
+    }
+    return content.toString('utf-8')
   } catch (e: any) {
     if (e?.code === -32000) {
       const localPath = path.join(METADATA_DIR, `${rootHash}.json`)

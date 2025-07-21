@@ -1,5 +1,13 @@
 import React from 'react'
 
+const ALLOWED_IMAGE_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'image/svg+xml'
+]
+
 export interface AgentAvatarProps {
   agent: { metadata?: any; tokenId?: number }
   size?: number | 'small' | 'large'
@@ -15,7 +23,11 @@ export default function AgentAvatar({ agent, size = 'large' }: AgentAvatarProps)
     if (image.startsWith('http://') || image.startsWith('https://')) {
       src = image
     } else if (image.startsWith('data:')) {
-      if (image.length > 100 * 1024) {
+      const match = image.match(/^data:([^;]+);/)
+      const mime = match ? match[1] : ''
+      if (!ALLOWED_IMAGE_TYPES.includes(mime)) {
+        src = fallback
+      } else if (image.length > 100 * 1024) {
         src = fallback
       } else {
         src = image

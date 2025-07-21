@@ -586,3 +586,37 @@ export const ORACLE_ABI = [
     "type": "function"
   }
 ] as const;
+export const COMPUTE_ORACLE_ABI = [
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "datasetRoot", "type": "bytes32" },
+      { "internalType": "string", "name": "baseModel", "type": "string" },
+      { "internalType": "uint256", "name": "steps", "type": "uint256" },
+      { "internalType": "uint256", "name": "lr", "type": "uint256" }
+    ],
+    "name": "requestJob",
+    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "bytes32", "name": "jobId", "type": "bytes32" },
+      { "internalType": "bytes32", "name": "resultRoot", "type": "bytes32" }
+    ],
+    "name": "completeJob",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "bytes32", "name": "jobId", "type": "bytes32" }],
+    "name": "getJobStatus",
+    "outputs": [
+      { "internalType": "uint8", "name": "status", "type": "uint8" },
+      { "internalType": "bytes32", "name": "resultRoot", "type": "bytes32" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+] as const;

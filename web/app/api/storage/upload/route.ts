@@ -168,17 +168,19 @@ export async function POST(request: NextRequest) {
       type: file.type
     })
 
+    const mimeType = file.type || 'application/octet-stream'
     const buffer = Buffer.from(await file.arrayBuffer())
     
     try {
       const result = await uploadToStorage(buffer, file.name)
       if (result.rootHash.startsWith('local://')) {
-        return NextResponse.json({ ...result, local: true })
+        return NextResponse.json({ ...result, local: true, contentType: mimeType })
       }
       const cleanedHash = cleanRootHash(result.rootHash)
       return NextResponse.json({
         ...result,
-        rootHash: cleanedHash
+        rootHash: cleanedHash,
+        contentType: mimeType
       })
     } catch (error: any) {
       console.error('File upload failed:', error)
@@ -195,7 +197,8 @@ export async function POST(request: NextRequest) {
         size: file.size,
         segments: 1,
         local: true,
-        message: 'File stored locally'
+        message: 'File stored locally',
+        contentType: mimeType
       })
     }
     

@@ -17,7 +17,7 @@ beforeEach(async () => {
 })
 
 describe('fine tune flow', () => {
-  it('creates and completes job', async () => {
+  it('uploads dataset and completes job', async () => {
     vi.mock('ethers', async () => {
       const mod = await vi.importActual<any>('ethers')
       class FakeContract {
@@ -27,10 +27,22 @@ describe('fine tune flow', () => {
       }
       class FakeProvider {}
       class FakeWallet { constructor() {} connect() { return this } }
-      return { ...mod, Contract: FakeContract, JsonRpcProvider: FakeProvider, Wallet: FakeWallet }
+      const ethersMock: any = { ...mod, Contract: FakeContract, JsonRpcProvider: FakeProvider, Wallet: FakeWallet }
+      ethersMock.ethers = { ...mod.ethers, Contract: FakeContract, JsonRpcProvider: FakeProvider, Wallet: FakeWallet }
+      return ethersMock
     })
+
+    const { POST } = await import('../app/api/storage/upload-dataset/route')
     const { requestFineTune, pollJobStatus } = await import('../lib/services/fine-tune')
-    const jobId = await requestFineTune({ agentId: '1', datasetRoot: '0xdata', baseModel: 'm', steps: 1, lr: 1 })
+
+    const fd = new FormData()
+    fd.set('file', new File(['x'], 'd.json', { type: 'application/json' }))
+    const req = new (await import('next/server')).NextRequest('http://localhost', { method: 'POST', body: fd })
+    const uploadRes = await POST(req)
+    const uploadJson = await uploadRes.json()
+    expect(uploadJson.rootHash).toBe('0xres')
+
+    const jobId = await requestFineTune({ agentId: '1', datasetRoot: uploadJson.rootHash, baseModel: 'm', steps: 1, lr: 1 })
     expect(jobId).toBe('0xjob')
     await pollJobStatus()
     const jobs = JSON.parse(await fs.readFile(JOB_FILE, 'utf-8'))

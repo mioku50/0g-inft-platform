@@ -29,7 +29,6 @@ import {
   AlertCircle
 } from 'lucide-react'
 import Link from 'next/link'
-import { uploadToStorage } from '@/lib/storage/client-server'
 
 export default function FineTunePage() {
   const params = useParams()
@@ -66,7 +65,14 @@ export default function FineTunePage() {
 
     setUploading(true)
     try {
-      const result = await uploadToStorage(dataset, dataset.name)
+      const form = new FormData()
+      form.set('file', dataset)
+      const res = await fetch('/api/storage/upload-dataset', {
+        method: 'POST',
+        body: form
+      })
+      if (!res.ok) throw new Error('Upload failed')
+      const result = await res.json()
       setDatasetRoot(result.rootHash)
       toast({
         title: 'Success!',

@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
     const broker = await getBroker()
     const fineTuneService = new FineTuneService(broker)
     
-    const result = await fineTuneService.acknowledgeModel(taskId)
+    const resultPath = await fineTuneService.acknowledge(taskId)
+    const result = { success: true, path: resultPath }
     
     return NextResponse.json(result)
     

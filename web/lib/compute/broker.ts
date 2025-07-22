@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
-import { tasksPlugin } from '@0glabs/0g-serving-broker/plugins/tasks'
-import { inferencePlugin } from '@0glabs/0g-serving-broker/plugins/inference'
+import { tasksPlugin } from '../compute/broker-plugins/tasks'
+import { inferencePlugin } from '../compute/broker-plugins/inference'
 
 let broker: any
 
@@ -15,10 +15,11 @@ export async function getBroker() {
 
   const provider = new ethers.JsonRpcProvider(rpc)
   const wallet = new ethers.Wallet(pk, provider)
-  broker = await createZGComputeNetworkBroker(wallet)
-  // initialize broker plugins
-  broker.use(tasksPlugin())
-  broker.use(inferencePlugin())
+  broker = (createZGComputeNetworkBroker as any)({
+    rpcUrl: rpc,
+    privateKey: pk,
+    plugins: [tasksPlugin(), inferencePlugin()]
+  })
   await broker.init()
   return broker
 }

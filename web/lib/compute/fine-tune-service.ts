@@ -17,14 +17,34 @@ export class FineTuneService {
   }): Promise<string> {
     const dataSize = params.dataSize ?? calculateTokenSize(params.datasetRootHash)
     const configPath = await this.saveConfig({ steps: params.steps, learning_rate: params.learningRate })
-    const taskId = await this.broker.fineTuning.createTask(
-      PROVIDER,
-      params.baseModel,
-      dataSize,
-      params.datasetRootHash,
-      configPath
-    )
-    return taskId
+
+    if (this.broker?.tasks?.createTask) {
+      return await this.broker.tasks.createTask(
+        PROVIDER,
+        params.baseModel,
+        dataSize,
+        params.datasetRootHash,
+        configPath
+      )
+    }
+
+    if (this.broker?.inference?.getRequestHeaders) {
+      const headers = await this.broker.inference.getRequestHeaders(PROVIDER, '')
+      const resp = await fetch(`${PROVIDER}/fine-tune/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({
+          model: params.baseModel,
+          dataset: params.datasetRootHash,
+          dataSize,
+          trainingPath: configPath
+        })
+      })
+      const json = await resp.json().catch(() => ({}))
+      if (resp.ok && json.taskId) return json.taskId
+    }
+
+    throw new Error('fine-tune provider rejected request')
   }
 
   async getStatus(taskId: string) {

@@ -18,6 +18,7 @@
     "clean:contracts": "cd contracts && rm -rf cache artifacts",
     "check:health": "curl http://localhost:3000/api/storage/health | jq",
     "check:env": "node scripts/check-env.js"
+    ,"e2e:fine-tune": "pnpm --filter ./web run e2e:fine-tune"
   },
   "keywords": [
     "0g",

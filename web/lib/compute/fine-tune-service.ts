@@ -13,8 +13,9 @@ export class FineTuneService {
     baseModel: string
     steps: number
     learningRate: number
+    dataSize?: number
   }): Promise<string> {
-    const dataSize = calculateTokenSize(params.datasetRootHash)
+    const dataSize = params.dataSize ?? calculateTokenSize(params.datasetRootHash)
     const configPath = await this.saveConfig({ steps: params.steps, learning_rate: params.learningRate })
     const taskId = await this.broker.fineTuning.createTask(
       PROVIDER,

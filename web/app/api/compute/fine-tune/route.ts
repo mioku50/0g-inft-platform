@@ -7,14 +7,19 @@ export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
   try {
-    const { agentId, datasetRoot, baseModel, steps, learningRate } = await req.json()
+    const body = await req.json()
+    const { agentId, datasetRoot, baseModel, steps, learningRate, dataSize } = body
+    if (!datasetRoot) {
+      return NextResponse.json({ error: 'datasetRoot required' }, { status: 400 })
+    }
     const service = new FineTuneService(await getBroker())
     const taskId = await service.createTask({
       agentId,
       datasetRootHash: datasetRoot,
       baseModel,
       steps,
-      learningRate
+      learningRate,
+      dataSize
     })
     await saveTask(agentId, taskId)
     return NextResponse.json({ taskId })

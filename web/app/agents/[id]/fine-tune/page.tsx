@@ -46,7 +46,8 @@ export default function FineTunePage() {
   // States
   const [dataset, setDataset] = useState<File | null>(null)
   const [datasetRoot, setDatasetRoot] = useState('')
-  const [uploading, setUploading] = useState(false)
+  const [dataSize, setDataSize] = useState<number | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
   const [baseModel, setBaseModel] = useState('llama-3.3-70b')
   const [steps, setSteps] = useState(500)
   const [learningRate, setLearningRate] = useState(0.00005)
@@ -68,7 +69,8 @@ export default function FineTunePage() {
       return
     }
 
-    setUploading(true)
+    if (datasetRoot) return
+    setIsUploading(true)
     try {
       const form = new FormData()
       form.set('file', dataset)
@@ -78,7 +80,8 @@ export default function FineTunePage() {
       })
       if (!res.ok) throw new Error('Upload failed')
       const result = await res.json()
-      setDatasetRoot(result.rootHash)
+      setDatasetRoot(result.root)
+      setDataSize(result.size)
       toast({
         title: 'Success!',
         description: 'Dataset uploaded to 0G Storage'
@@ -91,7 +94,7 @@ export default function FineTunePage() {
         variant: 'destructive'
       })
     } finally {
-      setUploading(false)
+      setIsUploading(false)
     }
   }
 
@@ -142,6 +145,7 @@ export default function FineTunePage() {
         body: JSON.stringify({
           agentId: tokenId,
           datasetRoot,
+          dataSize,
           baseModel,
           steps,
           learningRate
@@ -364,10 +368,10 @@ export default function FineTunePage() {
                       {dataset && (
                         <Button 
                           onClick={handleDatasetUpload}
-                          disabled={uploading}
+                          disabled={isUploading}
                           className="w-full bg-purple-500 hover:bg-purple-600"
                         >
-                          {uploading ? (
+                          {isUploading ? (
                             <>
                               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                               Uploading to 0G Storage...
@@ -471,7 +475,7 @@ export default function FineTunePage() {
                 
                 <Button
                   onClick={startFineTuning}
-                  disabled={!datasetRoot || isStarting}
+                  disabled={!datasetRoot || isUploading || isStarting}
                   size="lg"
                   className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
                 >

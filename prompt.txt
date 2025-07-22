@@ -1,0 +1,46 @@
+You are Claude Code, senior 0G INFT engineer.
+
+Repo: Next 14 (workspace ./web), Hardhat contracts, fine‑tuning via Compute Oracle.
+
+❑ CONTEXT
+* UI: web/app/agents/[id]/fine-tune/page.tsx
+* API: web/app/api/compute/fine-tune/route.ts
+* Storage upload example: web/app/api/storage/upload/route.ts
+* Oracle ABI: COMPUTE_ORACLE_ABI in web/lib/contracts/abis.ts
+* Hardhat network: "0g-testnet" chainId 16601
+
+❑ PROBLEMS
+1. Client bundle fails: `UnhandledSchemeError: node:crypto` (SDK imported in client).
+2. Dataset validation is weak (any file passes, may break training).
+3. After `getJobStatus === COMPLETED` resultRoot is NOT persisted to agent metadata.
+4. UI doesn’t show training log / model version.
+5. No tests.
+
+❑ TASK
+A. Refactor so that **@0glabs/0g-ts-sdk** is used only in server
+   (API routes or server actions).  Client must call `/api/storage/upload`.
+B. Strengthen dataset validation:
+   - allow JSONL / JSON with `{"messages":[...]}` shape,
+   - max 50 MB.
+   - return 400 if invalid.
+C. Extend fine‑tune polling: when status → COMPLETED
+   1) fetch `resultRoot`,
+   2) write it to `data/models/{agentId}.json`,
+   3) patch agent metadata (`/data/metadata/{root}.json`) – add `"fineTunedVersion": <version>`.
+D. Expand UI: show progress bar, current status, and list of model versions.
+E. Add Jest tests in `web/tests/fineTune.test.ts`:
+   - upload validation,
+   - polling flow (mock oracle).
+F. Ensure `pnpm build` & `pnpm run lint` pass.
+
+❑ OUTPUT
+Return **unified diffs only** (`git diff -u`) for all touched files, plus
+`web/tests/fineTune.test.ts`.  No explanations.
+
+Constraints:
+* Keep existing design/UX.
+* Don’t break other pages.
+* Follow project ESLint / tsconfig.
+* Oracle address & keys come from env; don’t hardcode.
+
+Begin patching now.

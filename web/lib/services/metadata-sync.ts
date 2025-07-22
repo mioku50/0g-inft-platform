@@ -5,11 +5,11 @@ import { INFT_ABI } from '@/lib/contracts/abis'
 import { uploadToStorage } from '@/lib/storage/client-server'
 import fs from 'fs/promises'
 import path from 'path'
-import crypto from 'crypto'
 
 export class MetadataSyncService {
   private static instance: MetadataSyncService
   private syncInterval: NodeJS.Timeout | null = null
+  private retryInterval: NodeJS.Timeout | null = null // Добавили!
   private isSyncing = false
   
   static getInstance() {
@@ -19,8 +19,18 @@ export class MetadataSyncService {
     return this.instance
   }
   
+  // Новый метод для одиночного запуска
+  async syncOnce() {
+    if (this.isSyncing) {
+      console.log('[MetadataSync] Already syncing, skipping...')
+      return { skipped: true }
+    }
+    
+    return this.syncMissingMetadata()
+  }
+  
   async syncMissingMetadata() {
-    if (this.isSyncing) return
+    if (this.isSyncing) return { skipped: true }
     this.isSyncing = true
     
     console.log('[MetadataSync] Starting sync...')
@@ -38,8 +48,13 @@ export class MetadataSyncService {
       await fs.mkdir(metadataDir, { recursive: true })
       
       let fixedCount = 0
+      let processedCount = 0
       
-      for (let i = 0; i < Number(totalSupply); i++) {
+      // Ограничиваем количество токенов за раз
+      const maxTokensPerSync = 50 // Обрабатываем не более 50 токенов за раз
+      const tokensToProcess = Math.min(Number(totalSupply), maxTokensPerSync)
+      
+      for (let i = 0; i < tokensToProcess; i++) {
         try {
           const tokenId = await contract.tokenByIndex(i)
           let metadataHash = await contract.getEncryptedURI(tokenId)
@@ -67,6 +82,7 @@ export class MetadataSyncService {
           try {
             await fs.access(filePath)
             console.log(`[MetadataSync] Token #${tokenId} already has local metadata`)
+            processedCount++
             continue // Файл существует
           } catch {
             // Файл не существует, пробуем загрузить
@@ -112,74 +128,51 @@ export class MetadataSyncService {
             console.log(`[MetadataSync] Created fallback for token #${tokenId}`)
             fixedCount++
           }
+          
+          processedCount++
         } catch (error) {
           console.error(`[MetadataSync] Error processing token ${i}:`, error)
         }
       }
       
-      console.log(`[MetadataSync] Sync completed. Fixed ${fixedCount} tokens`)
+      console.log(`[MetadataSync] Sync completed. Fixed ${fixedCount} tokens, processed ${processedCount}/${tokensToProcess}`)
+      
+      return {
+        fixed: fixedCount,
+        processed: processedCount,
+        total: Number(totalSupply)
+      }
       
     } catch (error) {
       console.error('[MetadataSync] Sync error:', error)
+      return { error: error.message }
     } finally {
       this.isSyncing = false
     }
   }
   
+  // УДАЛИТЕ метод startAutoSync или закомментируйте его
+  /*
   startAutoSync(intervalMinutes = 5) {
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval)
-    }
-
-    // Первый запуск сразу
-    this.syncMissingMetadata()
-    this.retryFailedUploads().catch(console.error)
-
-    // Затем каждые N минут
-    this.syncInterval = setInterval(() => {
-      this.syncMissingMetadata()
-    }, intervalMinutes * 60 * 1000)
-
-    setInterval(() => {
-      this.retryFailedUploads().catch(console.error)
-    }, 30 * 60 * 1000)
-    
-    console.log(`[MetadataSync] Auto-sync started (every ${intervalMinutes} minutes)`)
+    // НЕ ИСПОЛЬЗУЙТЕ!
   }
+  */
   
   stopAutoSync() {
     if (this.syncInterval) {
       clearInterval(this.syncInterval)
       this.syncInterval = null
-      console.log('[MetadataSync] Auto-sync stopped')
     }
+    if (this.retryInterval) {
+      clearInterval(this.retryInterval)
+      this.retryInterval = null
+    }
+    console.log('[MetadataSync] All intervals stopped')
   }
 
-  async retryFailedUploads() {
-    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
-    const wallet = new ethers.Wallet(process.env.OG_STORAGE_PRIVATE_KEY!, provider)
-    const contract = new ethers.Contract(process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS!, INFT_ABI, wallet)
-    const total = await contract.totalSupply()
-    for (let i = 0; i < Number(total); i++) {
-      const tokenId = await contract.tokenByIndex(i)
-      const uri: string = await contract.getEncryptedURI(tokenId)
-      if (uri.startsWith('local://')) {
-        const hash = uri.replace('local://', '')
-        const filePath = path.join(process.cwd(), 'data', 'metadata', `${hash}.json`)
-        try {
-          const content = await fs.readFile(filePath, 'utf-8')
-          const { rootHash } = await uploadToStorage(content, `${hash}.json`)
-          if (!rootHash.startsWith('local://')) {
-            // Assume contract has setTokenURI or similar method
-            try {
-              await (contract as any).setTokenURI(tokenId, rootHash)
-            } catch {}
-          }
-        } catch (e) {
-          console.error('[MetadataSync] Retry upload failed:', e)
-        }
-      }
-    }
+  // Сделайте retryFailedUploads приватным или удалите
+  private async retryFailedUploads() {
+    // Этот метод тоже может быть проблемой
+    // Лучше вызывать его явно, а не по интервалу
   }
-
 }

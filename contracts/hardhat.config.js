@@ -1,6 +1,9 @@
-require("@nomicfoundation/hardhat-toolbox");
-require("@nomicfoundation/hardhat-verify");
 require("dotenv").config();
+
+// Îעהוכüםûו טלןמנעû גלוסעמ toolbox
+require("@nomicfoundation/hardhat-ethers");
+require("@nomicfoundation/hardhat-chai-matchers");
+require("@nomicfoundation/hardhat-verify");
 
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "0000000000000000000000000000000000000000000000000000000000000000";
 const OG_RPC_URL = process.env.OG_RPC_URL || "https://evmrpc-testnet.0g.ai";
@@ -23,18 +26,12 @@ module.exports = {
     "0g-testnet": {
       url: OG_RPC_URL,
       chainId: 16601,
-      accounts: [PRIVATE_KEY],
-      gasPrice: "auto",
-      gas: "auto",
-      timeout: 120000 // 2 minutes timeout
-    },
-    localhost: {
-      url: "http://127.0.0.1:8545"
+      accounts: [PRIVATE_KEY]
     }
   },
   etherscan: {
     apiKey: {
-      "0g-testnet": "no-api-key-needed" // 0G testnet doesn't require API key
+      "0g-testnet": "no-api-key-needed"
     },
     customChains: [
       {
@@ -46,21 +43,5 @@ module.exports = {
         }
       }
     ]
-  },
-  sourcify: {
-    enabled: false
-  },
-  gasReporter: {
-    enabled: process.env.REPORT_GAS === "true",
-    currency: "USD"
-  },
-  paths: {
-    sources: "./contracts",
-    tests: "./test",
-    cache: "./cache",
-    artifacts: "./artifacts"
-  },
-  mocha: {
-    timeout: 120000 // 2 minutes timeout for tests
   }
 };

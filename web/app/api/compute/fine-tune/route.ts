@@ -1,247 +1,123 @@
+// web/app/api/compute/fine-tune/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import fs from 'fs/promises'
-import path from 'path'
-import { ethers } from 'ethers'
-import { COMPUTE_ORACLE_ABI } from '@/lib/contracts/abis'
-
-export const runtime = 'nodejs'
-
-const JOB_FILE = path.join(process.cwd(), 'data', 'fineJobs.json')
-
-async function loadJobs(): Promise<Record<string, any>> {
-  try {
-    await fs.mkdir(path.dirname(JOB_FILE), { recursive: true })
-    const content = await fs.readFile(JOB_FILE, 'utf-8')
-    return JSON.parse(content)
-  } catch {
-    return {}
-  }
-}
-
-async function saveJobs(jobs: Record<string, any>) {
-  await fs.mkdir(path.dirname(JOB_FILE), { recursive: true })
-  await fs.writeFile(JOB_FILE, JSON.stringify(jobs, null, 2))
-}
+import { getBroker } from '@/lib/compute/broker'
+import { FineTuneService } from '@/lib/compute/fine-tune-service'
+import { calculateTokenSize } from '@/lib/compute/utils'
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { agentId, datasetRoot, baseModel, steps, lr } = body
-
-    // Validate inputs
-    if (!agentId || !datasetRoot || !baseModel || !steps || !lr) {
-      return NextResponse.json(
-        { error: 'Missing required parameters' },
-        { status: 400 }
-      )
+    const { agentId, datasetRoot, baseModel, steps, learningRate } = body
+    
+    console.log('Fine-tune request:', body)
+    
+    // Инициализируем сервисы
+    const broker = await getBroker()
+    const fineTuneService = new FineTuneService(broker)
+    
+    // Рассчитываем размер датасета
+    const dataSize = await calculateTokenSize(datasetRoot, baseModel)
+    console.log('Dataset size calculated:', dataSize, 'tokens')
+    
+    // Конфигурация обучения для 0G
+    const config = {
+      base_model: baseModel,
+      training_steps: steps,
+      learning_rate: learningRate,
+      batch_size: 4,
+      gradient_accumulation_steps: 4,
+      warmup_steps: Math.floor(steps * 0.1),
+      max_seq_length: 2048,
+      save_steps: Math.floor(steps / 4),
+      logging_steps: 10,
+      evaluation_strategy: "steps",
+      eval_steps: Math.floor(steps / 10)
     }
-
-    // Initialize provider and wallet
-    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
-    const privateKey = process.env.OG_COMPUTE_PRIVATE_KEY
     
-    if (!privateKey) {
-      return NextResponse.json(
-        { error: 'Server configuration error: missing private key' },
-        { status: 500 }
-      )
-    }
-
-    const wallet = new ethers.Wallet(privateKey, provider)
+    // Создаем задачу fine-tuning
+    const taskId = await fineTuneService.createTask({
+      model: baseModel,
+      datasetRootHash: datasetRoot,
+      configPath: config,
+      dataSize
+    })
     
-    // Use your existing deployed oracle
-    const oracleAddress = process.env.NEXT_PUBLIC_COMPUTE_ORACLE_ADDRESS || '0x4918c6bD0aAC81cB284A094a77Ef6E24CA04fA74'
+    console.log('Fine-tune task created with ID:', taskId)
     
-    const oracle = new ethers.Contract(
-      oracleAddress,
-      COMPUTE_ORACLE_ABI,
-      wallet
-    )
-
-    try {
-      // First simulate the transaction to get the job ID
-      const jobId = await oracle.requestJob.staticCall(
-        datasetRoot,
-        baseModel,
-        BigInt(steps),
-        BigInt(lr)
-      )
-
-      // Then execute the actual transaction
-      const tx = await oracle.requestJob(
-        datasetRoot,
-        baseModel,
-        BigInt(steps),
-        BigInt(lr)
-      )
+    // Сохраняем информацию о задаче
+    if (typeof window === 'undefined') {
+      const fs = require('fs').promises
+      const path = require('path')
+      const tasksFile = path.join(process.cwd(), 'data', 'agent-tasks.json')
       
-      console.log('Fine-tune transaction:', tx.hash)
+      let tasks = {}
+      try {
+        const content = await fs.readFile(tasksFile, 'utf-8')
+        tasks = JSON.parse(content)
+      } catch (e) {}
       
-      // Wait for confirmation
-      const receipt = await tx.wait()
-      
-      if (receipt.status !== 1) {
-        throw new Error('Transaction failed')
-      }
-
-      // Save job data
-      const jobs = await loadJobs()
-      jobs[jobId.toString()] = {
-        agentId,
-        datasetRoot,
+      if (!tasks[agentId]) tasks[agentId] = []
+      tasks[agentId].push({
+        taskId,
+        createdAt: new Date().toISOString(),
         baseModel,
         steps,
-        lr,
-        status: 'REQUESTED',
-        statusCode: 1, // Your contract uses 1 for REQUESTED
-        txHash: receipt.hash,
-        createdAt: new Date().toISOString()
-      }
-      await saveJobs(jobs)
-
-      return NextResponse.json({ 
-        jobId: jobId.toString(),
-        txHash: receipt.hash 
+        dataSize,
+        status: 'Init'
       })
-    } catch (error: any) {
-      console.error('Oracle transaction error:', error)
       
-      // Check if it's a specific contract error
-      if (error.reason) {
-        return NextResponse.json(
-          { error: `Contract error: ${error.reason}` },
-          { status: 400 }
-        )
-      }
-      
-      throw error
+      await fs.mkdir(path.dirname(tasksFile), { recursive: true })
+      await fs.writeFile(tasksFile, JSON.stringify(tasks, null, 2))
     }
+    
+    return NextResponse.json({ 
+      success: true,
+      taskId,
+      provider: '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
+      estimatedTime: '30-60 minutes',
+      dataSize,
+      config
+    })
+    
   } catch (error: any) {
     console.error('Fine-tune API error:', error)
     return NextResponse.json(
-      { error: error.message || 'Failed to start fine-tuning' },
+      { 
+        error: error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
       { status: 500 }
     )
   }
 }
 
+// GET для проверки статуса
 export async function GET(req: NextRequest) {
+  const taskId = req.nextUrl.searchParams.get('taskId')
+  if (!taskId) {
+    return NextResponse.json({ error: 'Task ID required' }, { status: 400 })
+  }
+  
   try {
-    const { searchParams } = new URL(req.url)
-    const id = searchParams.get('id')
+    const broker = await getBroker()
+    const fineTuneService = new FineTuneService(broker)
     
-    if (!id) {
-      return NextResponse.json(
-        { error: 'Job ID required' },
-        { status: 400 }
-      )
-    }
-
-    // Load jobs
-    const jobs = await loadJobs()
-    const job = jobs[id]
+    const status = await fineTuneService.getTaskStatus(taskId)
     
-    if (!job) {
-      return NextResponse.json(
-        { error: 'Job not found' },
-        { status: 404 }
-      )
+    // Автоматически подтверждаем когда модель готова
+    if (status.progress === 'Delivered' && !status.acknowledged) {
+      const ackResult = await fineTuneService.acknowledgeModel(taskId)
+      status.acknowledged = ackResult.success
     }
-
-    // If job is not completed, check oracle for updates
-    if (job.status !== 'COMPLETED') {
-      const oracleAddress = process.env.NEXT_PUBLIC_COMPUTE_ORACLE_ADDRESS || '0x4918c6bD0aAC81cB284A094a77Ef6E24CA04fA74'
-      
-      try {
-        const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
-        const oracle = new ethers.Contract(
-          oracleAddress,
-          COMPUTE_ORACLE_ABI,
-          provider
-        )
-        
-        // Вызываем getJobStatus
-        const result = await oracle.getJobStatus(id)
-        
-        // В вашем контракте getJobStatus возвращает (JobStatus status, bytes32 resultRoot)
-        // где JobStatus это enum: NONE(0), REQUESTED(1), COMPLETED(2)
-        let status, resultRoot
-        if (Array.isArray(result)) {
-          [status, resultRoot] = result
-        } else {
-          // Если возвращается объект
-          status = result.status
-          resultRoot = result.resultRoot
-        }
-        
-        // Преобразуем status в число
-        const statusNum = Number(status)
-        console.log('Job status from oracle:', statusNum, 'resultRoot:', resultRoot)
-        
-        // Обновляем статус в соответствии с вашим контрактом
-        // 0 = NONE, 1 = REQUESTED, 2 = COMPLETED
-        if (statusNum === 1) {
-          job.status = 'REQUESTED'
-          job.statusCode = 1
-        } else if (statusNum === 2) {
-          job.status = 'COMPLETED'
-          job.statusCode = 2
-          job.resultRoot = resultRoot
-          job.completedAt = new Date().toISOString()
-          
-          // Update agent metadata with new model version
-          try {
-            await updateAgentModel(job.agentId, job.baseModel, resultRoot)
-          } catch (error) {
-            console.error('Failed to update agent model:', error)
-          }
-        }
-        
-        // Сохраняем обновленный статус
-        jobs[id] = job
-        await saveJobs(jobs)
-        
-      } catch (error) {
-        console.error('Failed to check oracle status:', error)
-      }
-    }
-
-    return NextResponse.json(job)
+    
+    return NextResponse.json(status)
+    
   } catch (error: any) {
-    console.error('Get job status error:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to get job status' },
-      { status: 500 }
-    )
+    console.error('Status check error:', error)
+    return NextResponse.json({ 
+      error: error.message,
+      taskId,
+      progress: 'Error'
+    }, { status: 500 })
   }
-}
-
-// Helper function to update agent model after fine-tuning
-async function updateAgentModel(agentId: string, baseModel: string, resultRoot: string) {
-  const MODELS_DIR = path.join(process.cwd(), 'data', 'models')
-  await fs.mkdir(MODELS_DIR, { recursive: true })
-  
-  const modelFile = path.join(MODELS_DIR, `${agentId}.json`)
-  let models: any[] = []
-  
-  try {
-    const content = await fs.readFile(modelFile, 'utf-8')
-    models = JSON.parse(content)
-  } catch {
-    // File doesn't exist yet
-  }
-  
-  const version = models.length + 1
-  models.push({
-    version,
-    baseModel,
-    resultRoot,
-    createdAt: new Date().toISOString()
-  })
-  
-  await fs.writeFile(modelFile, JSON.stringify(models, null, 2))
-  
-  // Store version in a quick-access file
-  const versionFile = path.join(MODELS_DIR, `${agentId}.version`)
-  await fs.writeFile(versionFile, version.toString())
 }

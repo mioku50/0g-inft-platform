@@ -13,7 +13,13 @@ vi.mock('../lib/compute/fine-tune-service', () => ({
   }))
 }))
 
+vi.mock('../lib/storage/client-server', () => ({
+  uploadToStorage: vi.fn(async () => ({ rootHash: '0xabc' })),
+  headOnStorage: vi.fn(async () => false)
+}))
+
 import { POST } from '../app/api/compute/fine-tune/route'
+import { POST as uploadDataset } from '../app/api/storage/upload-dataset/route'
 
 describe('fine tune api', () => {
   it('returns taskId', async () => {
@@ -33,5 +39,17 @@ describe('fine tune api', () => {
     const json = await res.json()
     expect(json).toEqual({ success: true, taskId: 'X' })
     expect(createTaskMock).toHaveBeenCalled()
+  })
+
+  it('upload dataset returns root and size', async () => {
+    const file = new File([Buffer.from('x')], 'd.jsonl')
+    const form = new FormData()
+    form.append('file', file)
+
+    const req = new NextRequest('http://localhost', { method: 'POST', body: form })
+    const res = await uploadDataset(req)
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json).toEqual({ root: '0xabc', size: file.size })
   })
 })

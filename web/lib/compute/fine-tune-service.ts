@@ -18,7 +18,7 @@ export class FineTuneService {
     const dataSize = params.dataSize ?? calculateTokenSize(params.datasetRootHash)
     const configPath = await this.saveConfig({ steps: params.steps, learning_rate: params.learningRate })
 
-    if (this.broker?.tasks?.createTask) {
+    if (this.broker.tasks?.createTask) {
       return await this.broker.tasks.createTask(
         PROVIDER,
         params.baseModel,
@@ -28,7 +28,7 @@ export class FineTuneService {
       )
     }
 
-    if (this.broker?.inference?.getRequestHeaders) {
+    if (this.broker.inference?.getRequestHeaders) {
       const headers = await this.broker.inference.getRequestHeaders(PROVIDER, '')
       const resp = await fetch(`${PROVIDER}/fine-tune/create`, {
         method: 'POST',

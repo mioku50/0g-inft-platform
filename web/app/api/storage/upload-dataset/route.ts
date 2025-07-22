@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { uploadToStorage, headOnStorage } from '@/lib/storage/client-server'
 import crypto from 'crypto'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
   const data = await req.formData()

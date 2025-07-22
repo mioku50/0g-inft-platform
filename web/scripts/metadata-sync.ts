@@ -13,6 +13,4 @@ async function runMetadataSync() {
 const ONE_HOUR = 60 * 60 * 1000
 if (process.env.NODE_ENV === 'production') {
   setInterval(runMetadataSync, ONE_HOUR)
-} else {
-  runMetadataSync()
 }

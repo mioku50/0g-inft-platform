@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
 import { 
@@ -47,6 +47,17 @@ export default function FineTunePage() {
   const [dataset, setDataset] = useState<File | null>(null)
   const [datasetRoot, setDatasetRoot] = useState('')
   const [dataSize, setDataSize] = useState<number | null>(null)
+
+  useEffect(() => {
+    const cached = localStorage.getItem(`ds-${tokenId}`)
+    if (cached) {
+      try {
+        const { root, size } = JSON.parse(cached)
+        setDatasetRoot(root)
+        setDataSize(size)
+      } catch {}
+    }
+  }, [tokenId])
   const [isUploading, setIsUploading] = useState(false)
   const [baseModel, setBaseModel] = useState('llama-3.3-70b')
   const [steps, setSteps] = useState(500)
@@ -82,6 +93,7 @@ export default function FineTunePage() {
       const result = await res.json()
       setDatasetRoot(result.root)
       setDataSize(result.size)
+      localStorage.setItem(`ds-${tokenId}`, JSON.stringify({ root: result.root, size: result.size }))
       toast({
         title: 'Success!',
         description: 'Dataset uploaded to 0G Storage'

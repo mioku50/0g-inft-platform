@@ -21,8 +21,9 @@ export async function POST(req: NextRequest) {
       learningRate,
       dataSize
     })
+    if (!taskId) throw new Error('fine-tune provider rejected request')
     await saveTask(agentId, taskId)
-    return NextResponse.json({ taskId })
+    return NextResponse.json({ success: true, taskId })
   } catch (e: any) {
     console.error('fine-tune POST error', e)
     return NextResponse.json({ error: e.message }, { status: 500 })

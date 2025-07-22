@@ -1,10 +1,8 @@
-// web/scripts/metadata-sync.ts
-export {}
 import { MetadataSyncService } from '../lib/services/metadata-sync'
 
 const service = MetadataSyncService.getInstance()
 
-async function run() {
+async function runMetadataSync() {
   try {
     await service.syncOnce()
   } catch (e) {
@@ -12,5 +10,9 @@ async function run() {
   }
 }
 
-run()
-setInterval(run, 60 * 60 * 1000)
+const ONE_HOUR = 60 * 60 * 1000
+if (process.env.NODE_ENV === 'production') {
+  setInterval(runMetadataSync, ONE_HOUR)
+} else {
+  runMetadataSync()
+}

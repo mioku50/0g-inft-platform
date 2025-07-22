@@ -11,7 +11,8 @@ beforeEach(async () => {
   process.env.OG_COMPUTE_PRIVATE_KEY = '0x' + '1'.repeat(64)
   process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS = '0xagent'
   vi.mock('../lib/storage/client-server', () => ({
-    uploadToStorage: vi.fn(async () => ({ rootHash: '0xres' })),
+    uploadToStorage: vi.fn(async () => '0xres'),
+    headOnStorage: vi.fn(async () => false),
     downloadFromStorage: vi.fn(async () => '{"ok":true}')
   }))
 })
@@ -40,9 +41,9 @@ describe('fine tune flow', () => {
     const req = new (await import('next/server')).NextRequest('http://localhost', { method: 'POST', body: fd })
     const uploadRes = await POST(req)
     const uploadJson = await uploadRes.json()
-    expect(uploadJson.rootHash).toBe('0xres')
+    expect(uploadJson.root).toBe('0xres')
 
-    const jobId = await requestFineTune({ agentId: '1', datasetRoot: uploadJson.rootHash, baseModel: 'm', steps: 1, lr: 1 })
+    const jobId = await requestFineTune({ agentId: '1', datasetRoot: uploadJson.root, baseModel: 'm', steps: 1, lr: 1 })
     expect(jobId).toBe('0xjob')
     await pollJobStatus()
     const jobs = JSON.parse(await fs.readFile(JOB_FILE, 'utf-8'))

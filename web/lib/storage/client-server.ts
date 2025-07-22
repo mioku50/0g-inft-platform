@@ -97,3 +97,17 @@ export async function downloadFromStorage(
     return JSON.stringify({ name: 'Unknown Agent', description: 'Metadata not available', model: 'Unknown', error: 'metadata_not_found' })
   }
 }
+
+export async function headOnStorage(rootHash: string): Promise<boolean> {
+  const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
+  try {
+    const res = await fetch(`${indexerRpc}/api/v0/file/head`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ root: rootHash.replace(/^0x/, '') })
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}

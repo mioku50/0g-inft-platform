@@ -1,0 +1,89 @@
+diff --git a/web/app/agents/[id]/fine-tune/page.tsx b/web/app/agents/[id]/fine-tune/page.tsx
+@@
+-import { uploadToStorage } from '@/lib/storage/client-server'
++// upload теперь идёт через серверный route
+@@
+-  const [uploading, setUploading]   = useState(false)
++  const [uploading, setUploading]   = useState(false)
+@@
+-  // Upload dataset to 0G Storage
+-  const handleDatasetUpload = async () => {
+-    if (!dataset) { … }
+-
+-    setUploading(true)
+-    try {
+-      const result = await uploadToStorage(dataset, dataset.name)
+-      setDatasetRoot(result.rootHash)
++  // === Upload dataset via server‑side route ===============================
++  const handleDatasetUpload = async () => {
++    if (!dataset) {
++      toast({ title:'Error', description:'Please select a dataset file', variant:'destructive' })
++      return
++    }
++
++    setUploading(true)
++    try {
++      const formData = new FormData()
++      formData.append('file', dataset)
++
++      const res = await fetch('/api/storage/upload-dataset', {
++        method: 'POST',
++        body: formData,
++      })
++
++      if (!res.ok) {
++        throw new Error(await res.text())
++      }
++
++      const { rootHash } = await res.json()
++      setDatasetRoot(rootHash)
+       toast({
+         title: 'Success!',
+         description: 'Dataset uploaded to 0G Storage'
+       })
+     } catch (error) {
+@@
+-                      {uploading ? (
++                      {uploading ? (
+                           <>
+                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                             Uploading to 0G Storage...
+                           </>
+                         ) : (
+@@
+       </div>
+     </div>
+   )
+ }
++
+diff --git a/web/app/api/storage/upload-dataset/route.ts b/web/app/api/storage/upload-dataset/route.ts
+new file mode 100644
++import { NextRequest, NextResponse } from 'next/server'
++import { uploadToStorage } from '@/lib/storage/client-server'
++
++export const runtime = 'nodejs'
++
++export async function POST(req: NextRequest) {
++  try {
++    const formData = await req.formData()
++    const file = formData.get('file') as File | null
++
++    if (!file) {
++      return NextResponse.json({ error: 'file missing' }, { status: 400 })
++    }
++
++    const result = await uploadToStorage(file, file.name)
++    return NextResponse.json({ rootHash: result.rootHash })
++  } catch (e: any) {
++    console.error('upload‑dataset error', e)
++    return NextResponse.json({ error: 'upload failed' }, { status: 500 })
++  }
++}
++
+diff --git a/web/lib/storage/client-server.ts b/web/lib/storage/client-server.ts
+@@
+-// этот файл уже server‑only; добавим пометку, чтобы Next не тянул его в клиент
++/**
++ * NOTE: imported only from server routes / RSC – never from client.
++ */
+

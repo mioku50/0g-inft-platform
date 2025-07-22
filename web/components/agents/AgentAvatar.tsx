@@ -5,6 +5,7 @@ const ALLOWED_IMAGE_TYPES = [
   'image/jpeg',
   'image/webp',
   'image/gif',
+  'image/jpg',
   'image/svg+xml'
 ]
 

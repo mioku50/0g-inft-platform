@@ -4,3 +4,10 @@ web/.next
 **/.next
 web/.cache
 **/.cache
+web/prompt.txt
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+.cache/
+**/.cache/

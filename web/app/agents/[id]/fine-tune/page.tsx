@@ -26,7 +26,10 @@ import {
   FileUp,
   Bot,
   Check,
-  AlertCircle
+  AlertCircle,
+  Download,
+  FileCheck,
+  Activity
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -47,10 +50,12 @@ export default function FineTunePage() {
   const [baseModel, setBaseModel] = useState('llama-3.3-70b')
   const [steps, setSteps] = useState(500)
   const [learningRate, setLearningRate] = useState(0.00005)
-  const [jobId, setJobId] = useState<string | null>(null)
-  const [jobStatus, setJobStatus] = useState<string>('')
+  const [taskId, setTaskId] = useState<string | null>(null)
+  const [taskStatus, setTaskStatus] = useState<string>('')
+  const [taskProgress, setTaskProgress] = useState<any>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [isPolling, setIsPolling] = useState(false)
+  const [modelRootHash, setModelRootHash] = useState<string | null>(null)
 
   // Upload dataset to 0G Storage
   const handleDatasetUpload = async () => {
@@ -90,21 +95,40 @@ export default function FineTunePage() {
     }
   }
 
-  // Start fine-tuning
+  // Get status display info
+  const getStatusInfo = (status: string) => {
+    switch (status) {
+      case 'Init':
+        return { text: 'Initializing', color: 'text-yellow-400', icon: <Activity className="w-5 h-5" /> }
+      case 'SettingUp':
+        return { text: 'Setting up environment', color: 'text-orange-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
+      case 'SetUp':
+        return { text: 'Ready to train', color: 'text-blue-400', icon: <Check className="w-5 h-5" /> }
+      case 'Training':
+        return { text: 'Training in progress', color: 'text-purple-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
+      case 'Trained':
+        return { text: 'Training completed', color: 'text-green-400', icon: <Check className="w-5 h-5" /> }
+      case 'Delivering':
+        return { text: 'Uploading model', color: 'text-blue-400', icon: <Upload className="w-5 h-5" /> }
+      case 'Delivered':
+        return { text: 'Model ready for download', color: 'text-green-400', icon: <Download className="w-5 h-5" /> }
+      case 'UserAcknowledged':
+        return { text: 'Download confirmed', color: 'text-green-400', icon: <FileCheck className="w-5 h-5" /> }
+      case 'Finished':
+        return { text: 'Task completed!', color: 'text-green-500', icon: <Check className="w-5 h-5" /> }
+      case 'Failed':
+        return { text: 'Task failed', color: 'text-red-400', icon: <AlertCircle className="w-5 h-5" /> }
+      default:
+        return { text: status, color: 'text-gray-400', icon: <Activity className="w-5 h-5" /> }
+    }
+  }
+
+  // Start fine-tuning with 0G Compute Network
   const startFineTuning = async () => {
     if (!datasetRoot) {
       toast({
         title: 'Error',
         description: 'Please upload a dataset first',
-        variant: 'destructive'
-      })
-      return
-    }
-
-    if (!walletClient || !publicClient) {
-      toast({
-        title: 'Error',
-        description: 'Please connect your wallet',
         variant: 'destructive'
       })
       return
@@ -120,7 +144,7 @@ export default function FineTunePage() {
           datasetRoot,
           baseModel,
           steps,
-          lr: Math.floor(learningRate * 1e9)
+          learningRate
         })
       })
 
@@ -129,17 +153,17 @@ export default function FineTunePage() {
         throw new Error(error.error || 'Failed to start fine-tuning')
       }
 
-      const { jobId: newJobId } = await response.json()
-      setJobId(newJobId)
-      setJobStatus('REQUESTED')
+      const data = await response.json()
+      setTaskId(data.taskId)
+      setTaskStatus('Init')
       
       toast({
         title: 'Fine-tuning started!',
-        description: `Job ID: ${newJobId.slice(0, 8)}...`
+        description: `Task ID: ${data.taskId.slice(0, 8)}...`
       })
 
       // Start polling for status
-      startPolling(newJobId)
+      startPolling(data.taskId)
     } catch (error: any) {
       console.error('Fine-tuning error:', error)
       toast({
@@ -152,36 +176,84 @@ export default function FineTunePage() {
     }
   }
 
-  // Poll job status
-  const startPolling = (jobIdToCheck: string) => {
+  // Poll task status
+  const startPolling = (taskIdToCheck: string) => {
     setIsPolling(true)
     
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/compute/fine-tune?id=${jobIdToCheck}`)
+        const response = await fetch(`/api/compute/fine-tune?taskId=${taskIdToCheck}`)
         if (response.ok) {
           const data = await response.json()
-          setJobStatus(data.status || 'REQUESTED')
+          setTaskStatus(data.progress || data.status || 'Unknown')
+          setTaskProgress(data)
           
-          if (data.status === 'COMPLETED' || data.statusCode === 2) {
+          // Handle different states
+          if (data.progress === 'Delivered') {
+            // Auto-acknowledge when model is delivered
+            await acknowledgeModel(taskIdToCheck)
+          } else if (data.progress === 'Finished') {
             clearInterval(interval)
             setIsPolling(false)
+            setModelRootHash(data.modelRootHash)
+            
+            // Update agent metadata with new model
+            await updateAgentWithNewModel(data.modelRootHash)
+            
             toast({
               title: 'Training Complete!',
               description: 'Your agent has been successfully fine-tuned'
+            })
+          } else if (data.progress === 'Failed') {
+            clearInterval(interval)
+            setIsPolling(false)
+            toast({
+              title: 'Training Failed',
+              description: data.error || 'An error occurred during training',
+              variant: 'destructive'
             })
           }
         }
       } catch (error) {
         console.error('Polling error:', error)
       }
-    }, 5000) // Poll every 5 seconds
+    }, 10000) // Poll every 10 seconds
 
-    // Clean up interval after 30 minutes
+    // Clean up interval after 2 hours
     setTimeout(() => {
       clearInterval(interval)
       setIsPolling(false)
-    }, 30 * 60 * 1000)
+    }, 2 * 60 * 60 * 1000)
+  }
+
+  // Acknowledge model download
+  const acknowledgeModel = async (taskIdToAck: string) => {
+    try {
+      const response = await fetch('/api/compute/acknowledge-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: taskIdToAck })
+      })
+      
+      if (response.ok) {
+        console.log('Model acknowledged successfully')
+      }
+    } catch (error) {
+      console.error('Acknowledge error:', error)
+    }
+  }
+
+  // Update agent with new model
+  const updateAgentWithNewModel = async (modelHash: string) => {
+    try {
+      await fetch(`/api/agents/${tokenId}/update-model`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelRootHash: modelHash })
+      })
+    } catch (error) {
+      console.error('Failed to update agent:', error)
+    }
   }
 
   return (
@@ -200,57 +272,83 @@ export default function FineTunePage() {
             Fine-tune Agent #{tokenId}
           </h1>
           <p className="text-purple-200">
-            Train your agent with custom data
+            Train your agent with custom data using 0G Compute Network
           </p>
         </div>
 
         {/* Main Content */}
-        {jobId && jobStatus ? (
+        {taskId && taskStatus ? (
           // Training Progress View
           <Card className="bg-white/10 backdrop-blur-xl border-white/20 max-w-2xl mx-auto">
-            <div className="p-8 text-center">
-              <div className="w-24 h-24 mx-auto mb-6">
-                {jobStatus === 'COMPLETED' ? (
-                  <div className="w-full h-full rounded-full bg-green-500/20 flex items-center justify-center">
-                    <Check className="w-12 h-12 text-green-400" />
-                  </div>
-                ) : (
-                  <div className="w-full h-full rounded-full bg-purple-500/20 flex items-center justify-center">
-                    <Loader2 className="w-12 h-12 text-purple-400 animate-spin" />
-                  </div>
-                )}
+            <div className="p-8">
+              <div className="flex items-center justify-center mb-6">
+                <div className={`w-24 h-24 rounded-full bg-white/10 flex items-center justify-center ${
+                  taskStatus === 'Training' ? 'animate-pulse' : ''
+                }`}>
+                  {getStatusInfo(taskStatus).icon}
+                </div>
               </div>
               
-              <h2 className="text-3xl font-bold text-white mb-2">
-                {jobStatus === 'COMPLETED' ? 'Training Complete!' : 'Training in Progress...'}
+              <h2 className={`text-3xl font-bold text-center mb-4 ${getStatusInfo(taskStatus).color}`}>
+                {getStatusInfo(taskStatus).text}
               </h2>
               
-              <Alert className="bg-purple-500/10 border-purple-500/30 mt-6">
-                <AlertCircle className="h-4 w-4 text-purple-400" />
-                <AlertDescription className="text-purple-200">
-                  Job ID: <code className="bg-white/10 px-2 py-1 rounded text-xs">{jobId}</code>
-                  <br />
-                  Status: {jobStatus}
-                </AlertDescription>
-              </Alert>
+              {/* Progress Details */}
+              {taskProgress && (
+                <div className="space-y-4">
+                  <Alert className="bg-purple-500/10 border-purple-500/30">
+                    <AlertCircle className="h-4 w-4 text-purple-400" />
+                    <AlertDescription className="text-purple-200">
+                      <div className="space-y-2">
+                        <div>Task ID: <code className="bg-white/10 px-2 py-1 rounded text-xs">{taskId}</code></div>
+                        <div>Status: <span className={getStatusInfo(taskStatus).color}>{taskStatus}</span></div>
+                        {taskProgress.fee && (
+                          <div>Fee: {(Number(taskProgress.fee) / 1e9).toFixed(9)} OG</div>
+                        )}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
 
-              {jobStatus === 'COMPLETED' ? (
+                  {/* Training Logs */}
+                  {taskStatus === 'Training' && taskProgress.logs && (
+                    <Card className="bg-black/20 border-white/10 p-4">
+                      <h3 className="text-white font-medium mb-2">Training Progress</h3>
+                      <pre className="text-green-400 text-xs font-mono overflow-auto max-h-40">
+                        {taskProgress.logs}
+                      </pre>
+                    </Card>
+                  )}
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              {taskStatus === 'Finished' ? (
                 <div className="mt-8 space-y-4">
-                  <Link href={`/agent/${tokenId}/chat`}>
-                    <Button size="lg" className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600">
+                  <Link href={`/agent/${tokenId}`}>
+                    <Button size="lg" className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600">
                       <Bot className="mr-2 h-5 w-5" />
                       Chat with Enhanced Agent
                     </Button>
                   </Link>
                   <Link href="/agents">
-                    <Button size="lg" variant="outline" className="ml-4 border-purple-500/50 text-purple-300 hover:bg-purple-500/10">
-                      Back to Agents
+                    <Button size="lg" variant="outline" className="w-full border-purple-500/50 text-purple-300 hover:bg-purple-500/10">
+                      Back to My Agents
                     </Button>
                   </Link>
                 </div>
+              ) : taskStatus === 'Failed' ? (
+                <div className="mt-8">
+                  <Button 
+                    onClick={() => window.location.reload()}
+                    size="lg" 
+                    className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/50"
+                  >
+                    Try Again
+                  </Button>
+                </div>
               ) : (
-                <p className="text-purple-200 mt-4">
-                  This may take several minutes. You can safely leave this page.
+                <p className="text-purple-200 mt-6 text-center">
+                  This may take 30-60 minutes. You can safely leave this page and check back later.
                 </p>
               )}
             </div>
@@ -371,25 +469,27 @@ export default function FineTunePage() {
               </div>
             </Card>
 
-            {/* Start Training */}
-            <Card className="bg-gradient-to-br from-purple-500/20 to-pink-500/20 backdrop-blur-xl border-white/20">
+            {/* Start Training - Улучшенный дизайн */}
+            <Card className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 backdrop-blur-xl border-purple-500/30">
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-white mb-4">
                   Step 3: Start Training
                 </h3>
                 
-                <div className="space-y-3 mb-6">
-                  <div className="flex justify-between">
-                    <span className="text-purple-200">Model:</span>
-                    <span className="text-white font-medium">{baseModel}</span>
+                <div className="bg-black/30 rounded-lg p-4 space-y-3 mb-6">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300 font-medium">Model:</span>
+                    <span className="text-white font-semibold">{baseModel}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-purple-200">Steps:</span>
-                    <span className="text-white font-medium">{steps}</span>
+                  <div className="h-px bg-white/10"></div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300 font-medium">Steps:</span>
+                    <span className="text-white font-semibold">{steps}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-purple-200">Learning Rate:</span>
-                    <span className="text-white font-medium">{learningRate}</span>
+                  <div className="h-px bg-white/10"></div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300 font-medium">Learning Rate:</span>
+                    <span className="text-white font-semibold">{learningRate}</span>
                   </div>
                 </div>
                 
@@ -397,7 +497,7 @@ export default function FineTunePage() {
                   onClick={startFineTuning}
                   disabled={!datasetRoot || isStarting}
                   size="lg"
-                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
                 >
                   {isStarting ? (
                     <>
@@ -411,6 +511,10 @@ export default function FineTunePage() {
                     </>
                   )}
                 </Button>
+                
+                <p className="text-gray-400 text-sm text-center mt-4">
+                  Training will be performed on 0G Compute Network
+                </p>
               </div>
             </Card>
           </div>

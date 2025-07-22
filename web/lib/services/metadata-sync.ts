@@ -145,7 +145,7 @@ export class MetadataSyncService {
       
     } catch (error) {
       console.error('[MetadataSync] Sync error:', error)
-      return { error: error.message }
+      return { error: (error as any).message }
     } finally {
       this.isSyncing = false
     }

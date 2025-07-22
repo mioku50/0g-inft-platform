@@ -16,14 +16,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const mode = body.mode || 'single' // по умолчанию синхронный режим
     
-    const syncService = MetadataSyncService.getInstance()
+    const syncService: any = MetadataSyncService.getInstance()
     
     // Проверяем режим работы
     if (mode === 'single') {
       // Синхронный режим - ждем завершения
       console.log('[Sync API] Running sync in single mode')
       
-      const result = await syncService.syncOnce()
+      const result: any = await syncService.syncOnce()
       
       return NextResponse.json({
         success: true,
@@ -44,10 +44,10 @@ export async function POST(request: NextRequest) {
       
       // Запускаем синхронизацию в фоне
       syncService.syncMissingMetadata()
-        .then(result => {
+        .then((result: any) => {
           console.log('[Sync API] Background sync completed:', result)
         })
-        .catch(error => {
+        .catch((error: any) => {
           console.error('[Sync API] Background sync error:', error)
         })
       
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
       message: 'Use POST method to start sync',
       status: {
         isSyncing: syncService['isSyncing'] || false,
-        lastSync: syncService['lastSyncTime'] || null
+        lastSync: (syncService as any)['lastSyncTime'] || null
       },
       usage: {
         method: 'POST',

@@ -17,7 +17,7 @@ const nextConfig = {
       fs: false,
       net: false,
       tls: false,
-      crypto: isServer ? false : require.resolve('crypto-browserify'),
+      crypto: false,
       stream: isServer ? false : require.resolve('stream-browserify'),
       util: isServer ? false : require.resolve('util/'),
       buffer: isServer ? false : require.resolve('buffer/'),

@@ -1952,6 +1952,11 @@ NEXT_PUBLIC_TURBO_L1_RPC=https://evmrpc-testnet.0g.ai
 
 # Default network
 NEXT_PUBLIC_DEFAULT_NETWORK=turbo
+
+# 0G Compute / Storage
+NEXT_PUBLIC_OG_RPC=https://testnet-rpc.0g.ai
+OG_COMPUTE_PRIVATE_KEY=0x...
+OG_STORAGE_PRIVATE_KEY=0x...
 ```
 
 ## Advanced Usage

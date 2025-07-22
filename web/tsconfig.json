@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@0glabs/0g-serving-broker/plugins/tasks": ["./lib/compute/broker-plugins/tasks"],
+      "@0glabs/0g-serving-broker/plugins/inference": ["./lib/compute/broker-plugins/inference"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

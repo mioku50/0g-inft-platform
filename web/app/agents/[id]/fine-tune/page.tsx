@@ -163,7 +163,7 @@ export default function FineTunePage() {
       })
 
       // Start polling for status
-      startPolling(data.taskId)
+      pollStatus(data.taskId)
     } catch (error: any) {
       console.error('Fine-tuning error:', error)
       toast({
@@ -177,9 +177,9 @@ export default function FineTunePage() {
   }
 
   // Poll task status
-  const startPolling = (taskIdToCheck: string) => {
+  const pollStatus = (taskIdToCheck: string) => {
     setIsPolling(true)
-    
+
     const interval = setInterval(async () => {
       try {
         const response = await fetch(`/api/compute/fine-tune?taskId=${taskIdToCheck}`)
@@ -187,19 +187,12 @@ export default function FineTunePage() {
           const data = await response.json()
           setTaskStatus(data.progress || data.status || 'Unknown')
           setTaskProgress(data)
-          
-          // Handle different states
-          if (data.progress === 'Delivered') {
-            // Auto-acknowledge when model is delivered
-            await acknowledgeModel(taskIdToCheck)
-          } else if (data.progress === 'Finished') {
+
+          if (data.progress === 'Finished') {
             clearInterval(interval)
             setIsPolling(false)
             setModelRootHash(data.modelRootHash)
-            
-            // Update agent metadata with new model
             await updateAgentWithNewModel(data.modelRootHash)
-            
             toast({
               title: 'Training Complete!',
               description: 'Your agent has been successfully fine-tuned'
@@ -217,31 +210,14 @@ export default function FineTunePage() {
       } catch (error) {
         console.error('Polling error:', error)
       }
-    }, 10000) // Poll every 10 seconds
+    }, 10000)
 
-    // Clean up interval after 2 hours
     setTimeout(() => {
       clearInterval(interval)
       setIsPolling(false)
     }, 2 * 60 * 60 * 1000)
   }
 
-  // Acknowledge model download
-  const acknowledgeModel = async (taskIdToAck: string) => {
-    try {
-      const response = await fetch('/api/compute/acknowledge-model', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId: taskIdToAck })
-      })
-      
-      if (response.ok) {
-        console.log('Model acknowledged successfully')
-      }
-    } catch (error) {
-      console.error('Acknowledge error:', error)
-    }
-  }
 
   // Update agent with new model
   const updateAgentWithNewModel = async (modelHash: string) => {

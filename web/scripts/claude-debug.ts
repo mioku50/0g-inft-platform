@@ -37,6 +37,7 @@ async function main() {
   })
 
   // выводим поток в терминал
+  // @ts-ignore
   for await (const delta of stream) process.stdout.write(delta.content ?? "")
 }
 

@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const body: any = await req.json()
     const { agentId, datasetRoot, baseModel, steps, learningRate, dataSize } = body
     if (!datasetRoot) {
       return NextResponse.json({ error: 'datasetRoot required' }, { status: 400 })

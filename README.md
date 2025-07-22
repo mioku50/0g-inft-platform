@@ -2877,3 +2877,4 @@ const valid = await broker.inference.processResponse(
 
 Access the more details of interfaces via cloning the repo and opening [index.html](./docs/index.html) in browser.
 
+\n## Fine-tune via 0G Compute\nRun `pnpm e2e:fine-tune` to verify the flow end-to-end. This uploads a small dataset, creates a mock training task and polls until it finishes.

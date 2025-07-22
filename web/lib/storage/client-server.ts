@@ -14,6 +14,20 @@ export interface UploadResult {
 
 const METADATA_DIR = path.join(process.cwd(), 'data', 'metadata')
 
+export async function hashAndExists(buffer: Buffer) {
+  const tempDir = path.join(process.cwd(), 'tmp')
+  await fs.mkdir(tempDir, { recursive: true })
+  const tempFile = path.join(tempDir, `h-${Date.now()}`)
+  await fs.writeFile(tempFile, buffer)
+  const zgFile = await ZgFile.fromFilePath(tempFile)
+  const [tree] = await zgFile.merkleTree()
+  const root = tree!.rootHash() as string
+  await zgFile.close()
+  await fs.unlink(tempFile).catch(() => {})
+  const exists = await headOnStorage(root)
+  return { root, exists }
+}
+
 async function saveLocal(content: string): Promise<string> {
   await fs.mkdir(METADATA_DIR, { recursive: true })
   const hash = crypto.createHash('sha256').update(content).digest('hex')

@@ -15,7 +15,7 @@ vi.mock('../lib/compute/fine-tune-service', () => ({
 
 vi.mock('../lib/storage/client-server', () => ({
   uploadToStorage: vi.fn(async () => ({ rootHash: '0xabc' })),
-  headOnStorage: vi.fn(async () => false)
+  hashAndExists: vi.fn(async () => ({ root: '0xabc', exists: false }))
 }))
 
 import { POST } from '../app/api/compute/fine-tune/route'
@@ -50,6 +50,6 @@ describe('fine tune api', () => {
     const res = await uploadDataset(req)
     expect(res.status).toBe(200)
     const json = await res.json()
-    expect(json).toEqual({ root: '0xabc', size: file.size })
+    expect(json).toEqual({ root: '0xabc', size: file.size, uploaded: true })
   })
 })

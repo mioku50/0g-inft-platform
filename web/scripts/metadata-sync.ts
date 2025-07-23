@@ -10,7 +10,18 @@ async function runMetadataSync() {
   }
 }
 
+const FIVE_MIN = 5 * 60 * 1000
+let lastRun = 0
+async function runThrottled() {
+  const now = Date.now()
+  if (now - lastRun < FIVE_MIN) return
+  lastRun = now
+  await runMetadataSync()
+}
+
 const ONE_HOUR = 60 * 60 * 1000
 if (process.env.NODE_ENV === 'production') {
-  setInterval(runMetadataSync, ONE_HOUR)
+  setInterval(runThrottled, ONE_HOUR)
+} else {
+  runThrottled()
 }

@@ -7,6 +7,15 @@ import { POST as startFineTune, GET as getFineTune } from '../app/api/compute/fi
 import { NextRequest } from 'next/server'
 
 async function main() {
+  let call = 0
+  global.fetch = async (url: any) => {
+    if (typeof url === 'string' && url.includes('/fine-tune/create')) {
+      return new Response(JSON.stringify({ taskId: 'T1' }))
+    }
+    call++
+    const progress = call <= 3 ? { progress: 'Delivered' } : { progress: 'Finished', modelRootHash: '0xdeadbeef' }
+    return new Response(JSON.stringify(progress))
+  }
   const file = new File([Buffer.from('{"a":1}\n')], 'd.jsonl')
   const form = new FormData()
   form.append('file', file)

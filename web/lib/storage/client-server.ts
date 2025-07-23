@@ -14,18 +14,64 @@ export interface UploadResult {
 
 const METADATA_DIR = path.join(process.cwd(), 'data', 'metadata')
 
+// Minimal wrapper mimicking the Storage SDK client
+const client = {
+  async hashAndExists(buffer: Buffer) {
+    const tempDir = path.join(process.cwd(), 'tmp')
+    await fs.mkdir(tempDir, { recursive: true })
+    const tempFile = path.join(tempDir, `h-${Date.now()}`)
+    await fs.writeFile(tempFile, buffer)
+    const zgFile = await ZgFile.fromFilePath(tempFile)
+    const [tree] = await zgFile.merkleTree()
+    const root = tree!.rootHash() as string
+    await zgFile.close()
+    await fs.unlink(tempFile).catch(() => {})
+    const exists = await headOnStorage(root)
+    return { root, exists }
+  },
+  async upload(buffer: Buffer, fileName: string) {
+    const privateKey = process.env.OG_STORAGE_PRIVATE_KEY
+    if (!privateKey) throw new Error('OG_STORAGE_PRIVATE_KEY not configured')
+    const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
+    const evmRpc = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
+    const provider = new ethers.JsonRpcProvider(evmRpc)
+    const wallet = new ethers.Wallet(privateKey, provider)
+
+    const tempDir = path.join(process.cwd(), 'tmp')
+    await fs.mkdir(tempDir, { recursive: true })
+    const tempFile = path.join(tempDir, `${Date.now()}-${fileName}`)
+    await fs.writeFile(tempFile, buffer)
+
+    const zgFile = await ZgFile.fromFilePath(tempFile)
+    const [tree] = await zgFile.merkleTree()
+    const indexer = new Indexer(indexerRpc)
+
+    let lastErr: any
+    for (let i = 0; i < 3; i++) {
+      try {
+        const feeData = await provider.getFeeData()
+        const gasPrice = (feeData.gasPrice || ethers.parseUnits('1', 'gwei')) * BigInt(2 ** i)
+        const [tx, err] = await indexer.upload(zgFile, evmRpc, wallet, undefined, undefined, { gasPrice })
+        if (!err) {
+          await fs.unlink(tempFile).catch(() => {})
+          const size = zgFile.size()
+          await zgFile.close()
+          return { rootHash: tree!.rootHash() as string, txHash: tx, size, segments: Math.ceil(size / 256 / 1024) }
+        }
+        lastErr = err
+      } catch (e) {
+        lastErr = e
+      }
+    }
+
+    await fs.unlink(tempFile).catch(() => {})
+    await zgFile.close()
+    throw lastErr
+  }
+}
+
 export async function hashAndExists(buffer: Buffer) {
-  const tempDir = path.join(process.cwd(), 'tmp')
-  await fs.mkdir(tempDir, { recursive: true })
-  const tempFile = path.join(tempDir, `h-${Date.now()}`)
-  await fs.writeFile(tempFile, buffer)
-  const zgFile = await ZgFile.fromFilePath(tempFile)
-  const [tree] = await zgFile.merkleTree()
-  const root = tree!.rootHash() as string
-  await zgFile.close()
-  await fs.unlink(tempFile).catch(() => {})
-  const exists = await headOnStorage(root)
-  return { root, exists }
+  return client.hashAndExists(buffer)
 }
 
 async function saveLocal(content: string): Promise<string> {
@@ -37,46 +83,14 @@ async function saveLocal(content: string): Promise<string> {
 }
 
 export async function uploadToStorage(file: File | Buffer | string, fileName = 'metadata.json'): Promise<UploadResult> {
-  const privateKey = process.env.OG_STORAGE_PRIVATE_KEY
-  if (!privateKey) throw new Error('OG_STORAGE_PRIVATE_KEY not configured')
-  const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
-  const evmRpc = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
-  const provider = new ethers.JsonRpcProvider(evmRpc)
-  const wallet = new ethers.Wallet(privateKey, provider)
-
-  const tempDir = path.join(process.cwd(), 'tmp')
-  await fs.mkdir(tempDir, { recursive: true })
-  const tempFile = path.join(tempDir, `${Date.now()}-${fileName}`)
   const data = typeof file === 'string' ? Buffer.from(file) : Buffer.isBuffer(file) ? file : Buffer.from(await file.arrayBuffer())
-  await fs.writeFile(tempFile, data)
-
-  const zgFile = await ZgFile.fromFilePath(tempFile)
-  const [tree] = await zgFile.merkleTree()
-  const indexer = new Indexer(indexerRpc)
-
-  let lastErr: any
-  for (let i = 0; i < 3; i++) {
-    try {
-      const feeData = await provider.getFeeData()
-      const gasPrice = (feeData.gasPrice || ethers.parseUnits('1', 'gwei')) * BigInt(2 ** i)
-      const [tx, err] = await indexer.upload(zgFile, evmRpc, wallet, undefined, undefined, { gasPrice })
-      if (!err) {
-        await fs.unlink(tempFile).catch(() => {})
-        const size = zgFile.size()
-        await zgFile.close()
-        return { rootHash: tree!.rootHash() as string, txHash: tx, size, segments: Math.ceil(size / 256 / 1024) }
-      }
-      lastErr = err
-    } catch (e) {
-      lastErr = e
-    }
+  try {
+    return await client.upload(data, fileName)
+  } catch (err) {
+    const content = typeof file === 'string' ? file : data.toString()
+    const localHash = await saveLocal(content)
+    return { rootHash: localHash }
   }
-
-  await fs.unlink(tempFile).catch(() => {})
-  await zgFile.close()
-  const content = typeof file === 'string' ? file : data.toString()
-  const localHash = await saveLocal(content)
-  return { rootHash: localHash }
 }
 
 export async function downloadFromStorage(

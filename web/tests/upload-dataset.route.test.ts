@@ -17,6 +17,6 @@ describe('upload dataset api', () => {
     const res = await POST(req)
     expect(res.status).toBe(200)
     const json = await res.json()
-    expect(json).toEqual({ root: '0xabc', size: file.size, uploaded: true })
+    expect(json).toEqual({ rootHash: '0xabc', size: file.size, uploaded: true })
   })
 })

@@ -19,7 +19,7 @@
     "update-tokens": "ts-node --project tsconfig.scripts.json scripts/update-problematic-tokens.ts",
     "fix-missing": "ts-node --project tsconfig.scripts.json scripts/fix-all-missing-metadata.ts",
     "fix-specific-token": "ts-node --project tsconfig.scripts.json scripts/fix-specific-token.ts",
-    "e2e:fine-tune": "ts-node --project tsconfig.scripts.json scripts/e2e-fine-tune.ts",
+    "e2e:fine-tune": "bash ../scripts/test-fine-tune.sh",
     "test": "vitest run"
   },
   "dependencies": {

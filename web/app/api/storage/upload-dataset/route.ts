@@ -13,5 +13,5 @@ export async function POST(req: NextRequest) {
   if (!exists) {
     await uploadToStorage(buffer, file.name)
   }
-  return NextResponse.json({ root, size: buffer.length, uploaded: !exists })
+  return NextResponse.json({ rootHash: root, size: buffer.length, uploaded: !exists })
 }

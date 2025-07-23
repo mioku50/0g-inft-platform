@@ -1,10 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { keccak256, toUtf8Bytes } from 'ethers';
 import { useParams, useRouter } from 'next/navigation'
-import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
-import {
+import { useAccount } from 'wagmi'
+import { 
   Card,
   Button,
   Input,
@@ -30,17 +29,22 @@ import {
   AlertCircle,
   Download,
   FileCheck,
-  Activity
+  Activity,
+  Wallet,
+  Plus
 } from 'lucide-react'
 import Link from 'next/link'
-import { uploadDataset } from './actions'
+
+interface AccountInfo {
+  balance: string
+  exists: boolean
+  needsTopUp: boolean
+}
 
 export default function FineTunePage() {
   const params = useParams()
   const router = useRouter()
   const { address } = useAccount()
-  const publicClient = usePublicClient()
-  const { data: walletClient } = useWalletClient()
   const { toast } = useToast()
   
   const tokenId = params.id as string
@@ -49,17 +53,6 @@ export default function FineTunePage() {
   const [dataset, setDataset] = useState<File | null>(null)
   const [datasetRoot, setDatasetRoot] = useState('')
   const [dataSize, setDataSize] = useState<number | null>(null)
-
-  useEffect(() => {
-    const cached = localStorage.getItem(`ds-${tokenId}`)
-    if (cached) {
-      try {
-        const { root, size } = JSON.parse(cached)
-        setDatasetRoot(root)
-        setDataSize(size)
-      } catch {}
-    }
-  }, [tokenId])
   const [isUploading, setIsUploading] = useState(false)
   const [baseModel, setBaseModel] = useState('llama-3.3-70b')
   const [steps, setSteps] = useState(500)
@@ -70,11 +63,111 @@ export default function FineTunePage() {
   const [isStarting, setIsStarting] = useState(false)
   const [isPolling, setIsPolling] = useState(false)
   const [modelRootHash, setModelRootHash] = useState<string | null>(null)
+  
+  // Account management states
+  const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null)
+  const [isCheckingAccount, setIsCheckingAccount] = useState(true)
+  const [depositAmount, setDepositAmount] = useState('0.01')
+  const [isDepositing, setIsDepositing] = useState(false)
+
+  // Load cached dataset info
+  useEffect(() => {
+    const cached = localStorage.getItem(`ds-${tokenId}`)
+    if (cached) {
+      try {
+        const { root, size } = JSON.parse(cached)
+        setDatasetRoot(root)
+        setDataSize(size)
+      } catch {}
+    }
+  }, [tokenId])
+
+  // Check account status on mount
+  useEffect(() => {
+    if (address) {
+      checkAccountStatus()
+    }
+  }, [address])
+
+  const checkAccountStatus = async () => {
+    try {
+      setIsCheckingAccount(true)
+      const response = await fetch('/api/compute/account')
+      
+      if (response.ok) {
+        const data = await response.json()
+        setAccountInfo({
+          balance: data.account.balance,
+          exists: data.account.exists,
+          needsTopUp: data.recommendations.needsTopUp
+        })
+      } else {
+        console.warn('Could not fetch account info')
+        setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
+      }
+    } catch (error) {
+      console.error('Error checking account:', error)
+      setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
+    } finally {
+      setIsCheckingAccount(false)
+    }
+  }
+
+  const handleAccountSetup = async () => {
+    if (!depositAmount || parseFloat(depositAmount) <= 0) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a valid deposit amount',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    setIsDepositing(true)
+    try {
+      const response = await fetch('/api/compute/account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: depositAmount,
+          action: accountInfo?.exists ? 'deposit' : 'create'
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.details || 'Failed to setup account')
+      }
+
+      const data = await response.json()
+      toast({
+        title: 'Success!',
+        description: data.message
+      })
+
+      // Refresh account info
+      await checkAccountStatus()
+
+    } catch (error: any) {
+      console.error('Account setup error:', error)
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to setup account',
+        variant: 'destructive'
+      })
+    } finally {
+      setIsDepositing(false)
+    }
+  }
 
   // Upload dataset to 0G Storage
-const handleDatasetUpload = async () => {
+  const handleDatasetUpload = async () => {
     if (!dataset) {
-      toast({ title: 'Error', description: 'Please select a dataset file', variant: 'destructive' })
+      toast({
+        title: 'Error',
+        description: 'Please select a dataset file',
+        variant: 'destructive'
+      })
       return
     }
 
@@ -83,18 +176,26 @@ const handleDatasetUpload = async () => {
     try {
       const form = new FormData()
       form.set('file', dataset)
-      const result = await uploadDataset(form)
-      setDatasetRoot(result.rootHash)
+      const res = await fetch('/api/storage/upload-dataset', {
+        method: 'POST',
+        body: form
+      })
+      if (!res.ok) throw new Error('Upload failed')
+      const result = await res.json()
+      setDatasetRoot(result.root)
       setDataSize(result.size)
-      if (!result.uploaded) {
-        toast({ title: 'Dataset cached', description: 'Using previously uploaded file' })
-      } else {
-        toast({ title: 'Success!', description: 'Dataset uploaded to 0G Storage' })
-      }
-      localStorage.setItem(`ds-${tokenId}`, JSON.stringify({ root: result.rootHash, size: result.size }))
+      localStorage.setItem(`ds-${tokenId}`, JSON.stringify({ root: result.root, size: result.size }))
+      toast({
+        title: 'Success!',
+        description: 'Dataset uploaded to 0G Storage'
+      })
     } catch (error) {
       console.error('Upload error:', error)
-      toast({ title: 'Error', description: 'Failed to upload dataset', variant: 'destructive' })
+      toast({
+        title: 'Error',
+        description: 'Failed to upload dataset',
+        variant: 'destructive'
+      })
     } finally {
       setIsUploading(false)
     }
@@ -107,8 +208,6 @@ const handleDatasetUpload = async () => {
         return { text: 'Initializing', color: 'text-yellow-400', icon: <Activity className="w-5 h-5" /> }
       case 'SettingUp':
         return { text: 'Setting up environment', color: 'text-orange-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
-      case 'SetUp':
-        return { text: 'Ready to train', color: 'text-blue-400', icon: <Check className="w-5 h-5" /> }
       case 'Training':
         return { text: 'Training in progress', color: 'text-purple-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
       case 'Trained':
@@ -117,8 +216,6 @@ const handleDatasetUpload = async () => {
         return { text: 'Uploading model', color: 'text-blue-400', icon: <Upload className="w-5 h-5" /> }
       case 'Delivered':
         return { text: 'Model ready for download', color: 'text-green-400', icon: <Download className="w-5 h-5" /> }
-      case 'UserAcknowledged':
-        return { text: 'Download confirmed', color: 'text-green-400', icon: <FileCheck className="w-5 h-5" /> }
       case 'Finished':
         return { text: 'Task completed!', color: 'text-green-500', icon: <Check className="w-5 h-5" /> }
       case 'Failed':
@@ -128,66 +225,98 @@ const handleDatasetUpload = async () => {
     }
   }
 
-  // Start fine-tuning with 0G Compute Network
+  // Start fine-tuning with new API
   const startFineTuning = async () => {
-    if (!datasetRoot || !walletClient || !address) {
-      toast({ title: 'Error', description: 'Wallet not ready or dataset missing', variant: 'destructive' })
+    if (!datasetRoot) {
+      toast({
+        title: 'Error',
+        description: 'Please upload a dataset first',
+        variant: 'destructive'
+      })
       return
     }
+
+    if (accountInfo?.needsTopUp) {
+      toast({
+        title: 'Insufficient Balance',
+        description: 'Please deposit funds to your fine-tuning account first',
+        variant: 'destructive'
+      })
+      return
+    }
+
     setIsStarting(true)
     try {
-      const nonce = Date.now()
-      const trainingParams = { steps, learning_rate: learningRate }
-      const payload = {
-        datasetHash: datasetRoot,
-        preTrainedModelHash: baseModel,
-        trainingParams,
-        fee: 0,
-        nonce,
-      }
-      const hash = keccak256(toUtf8Bytes(JSON.stringify(payload)))
-      const signature = await walletClient.signMessage({ account: address, message: hash })
-      const res = await fetch(`/v1/user/${address}/task`, {
+      const response = await fetch('/api/compute/fine-tune', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, signature })
+        body: JSON.stringify({
+          agentId: tokenId,
+          datasetRoot,
+          dataSize,
+          baseModel,
+          steps,
+          learningRate
+        })
       })
-      if (!res.ok) throw new Error('failed to start task')
-      const data = await res.json().catch(() => ({}))
-      const id = data.taskId || payload.nonce.toString()
-      setTaskId(id)
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.details || 'Failed to start fine-tuning')
+      }
+
+      const data = await response.json()
+      setTaskId(data.taskId)
       setTaskStatus('Init')
-      toast({ title: 'Fine-tuning started!', description: `Task ID: ${id}` })
-      pollStatus(id)
+      
+      toast({
+        title: 'Fine-tuning started!',
+        description: `Task ID: ${data.taskId.slice(0, 8)}... (${data.estimatedTime})`
+      })
+
+      // Start polling for status
+      pollStatus(data.taskId)
     } catch (error: any) {
       console.error('Fine-tuning error:', error)
-      toast({ title: 'Error', description: error.message || 'Failed to start fine-tuning', variant: 'destructive' })
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to start fine-tuning',
+        variant: 'destructive'
+      })
     } finally {
       setIsStarting(false)
     }
   }
 
+  // Poll task status
   const pollStatus = (taskIdToCheck: string) => {
     setIsPolling(true)
 
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`/v1/user/${address}/task/${taskIdToCheck}`)
+        const response = await fetch(`/api/compute/fine-tune?taskId=${taskIdToCheck}`)
         if (response.ok) {
           const data = await response.json()
-          setTaskStatus(data.progress || data.status || 'Unknown')
+          setTaskStatus(data.progress || 'Unknown')
           setTaskProgress(data)
 
-          if (data.progress === 'Finished') {
+          if (data.isCompleted) {
             clearInterval(interval)
             setIsPolling(false)
-            setModelRootHash(data.modelRootHash)
-            await updateAgentWithNewModel(data.modelRootHash)
-            toast({ title: 'Training Complete!', description: 'Your agent has been successfully fine-tuned' })
-          } else if (data.progress === 'Failed') {
+            setModelRootHash(data.modelInfo?.rootHash)
+            await updateAgentWithNewModel(data.modelInfo?.rootHash)
+            toast({
+              title: 'Training Complete!',
+              description: 'Your agent has been successfully fine-tuned'
+            })
+          } else if (data.isFailed) {
             clearInterval(interval)
             setIsPolling(false)
-            toast({ title: 'Training Failed', description: data.error || 'An error occurred during training', variant: 'destructive' })
+            toast({
+              title: 'Training Failed',
+              description: 'An error occurred during training',
+              variant: 'destructive'
+            })
           }
         }
       } catch (error) {
@@ -203,6 +332,7 @@ const handleDatasetUpload = async () => {
 
   // Update agent with new model
   const updateAgentWithNewModel = async (modelHash: string) => {
+    if (!modelHash) return
     try {
       await fetch(`/api/agents/${tokenId}/update-model`, {
         method: 'POST',
@@ -213,6 +343,87 @@ const handleDatasetUpload = async () => {
       console.error('Failed to update agent:', error)
     }
   }
+
+  // Render account setup section
+  const renderAccountSetup = () => (
+    <Card className="bg-white/10 backdrop-blur-xl border-white/20 mb-6">
+      <div className="p-6">
+        <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
+          <Wallet className="mr-2 h-5 w-5" />
+          Fine-tuning Account Setup
+        </h3>
+        
+        {isCheckingAccount ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
+            <span className="ml-2 text-purple-200">Checking account status...</span>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {accountInfo ? (
+              <div className="bg-black/20 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-300">Current Balance:</span>
+                  <span className="text-white font-semibold">{accountInfo.balance} ETH</span>
+                </div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-gray-300">Account Status:</span>
+                  <Badge className={accountInfo.exists ? 'bg-green-500' : 'bg-red-500'}>
+                    {accountInfo.exists ? 'Active' : 'Not Created'}
+                  </Badge>
+                </div>
+                {accountInfo.needsTopUp && (
+                  <Alert className="bg-yellow-500/10 border-yellow-500/30 mt-3">
+                    <AlertCircle className="h-4 w-4 text-yellow-400" />
+                    <AlertDescription className="text-yellow-200">
+                      Insufficient balance for fine-tuning. Minimum required: 0.001 ETH
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            ) : null}
+            
+            {(!accountInfo?.exists || accountInfo?.needsTopUp) && (
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-purple-200">Deposit Amount (ETH)</Label>
+                  <Input
+                    type="number"
+                    step="0.001"
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    className="bg-white/10 border-white/20 text-white mt-2"
+                    min="0.001"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Recommended: 0.01 ETH (covers multiple fine-tuning sessions)
+                  </p>
+                </div>
+                
+                <Button
+                  onClick={handleAccountSetup}
+                  disabled={isDepositing}
+                  className="w-full bg-purple-500 hover:bg-purple-600"
+                >
+                  {isDepositing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {accountInfo?.exists ? 'Depositing...' : 'Creating Account...'}
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="mr-2 h-4 w-4" />
+                      {accountInfo?.exists ? 'Deposit Funds' : 'Create Account & Deposit'}
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  )
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900">
@@ -260,22 +471,12 @@ const handleDatasetUpload = async () => {
                       <div className="space-y-2">
                         <div>Task ID: <code className="bg-white/10 px-2 py-1 rounded text-xs">{taskId}</code></div>
                         <div>Status: <span className={getStatusInfo(taskStatus).color}>{taskStatus}</span></div>
-                        {taskProgress.fee && (
-                          <div>Fee: {(Number(taskProgress.fee) / 1e9).toFixed(9)} OG</div>
+                        {taskProgress.modelInfo && (
+                          <div>Model Hash: <code className="bg-white/10 px-2 py-1 rounded text-xs">{taskProgress.modelInfo.rootHash?.slice(0, 16)}...</code></div>
                         )}
                       </div>
                     </AlertDescription>
                   </Alert>
-
-                  {/* Training Logs */}
-                  {taskStatus === 'Training' && taskProgress.logs && (
-                    <Card className="bg-black/20 border-white/10 p-4">
-                      <h3 className="text-white font-medium mb-2">Training Progress</h3>
-                      <pre className="text-green-400 text-xs font-mono overflow-auto max-h-40">
-                        {taskProgress.logs}
-                      </pre>
-                    </Card>
-                  )}
                 </div>
               )}
 
@@ -314,6 +515,9 @@ const handleDatasetUpload = async () => {
         ) : (
           // Configuration Form
           <div className="max-w-2xl mx-auto space-y-6">
+            {/* Account Setup */}
+            {renderAccountSetup()}
+
             {/* Dataset Upload */}
             <Card className="bg-white/10 backdrop-blur-xl border-white/20">
               <div className="p-6">
@@ -427,7 +631,7 @@ const handleDatasetUpload = async () => {
               </div>
             </Card>
 
-            {/* Start Training - Улучшенный дизайн */}
+            {/* Start Training */}
             <Card className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 backdrop-blur-xl border-purple-500/30">
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-white mb-4">
@@ -449,11 +653,20 @@ const handleDatasetUpload = async () => {
                     <span className="text-gray-300 font-medium">Learning Rate:</span>
                     <span className="text-white font-semibold">{learningRate}</span>
                   </div>
+                  {accountInfo && (
+                    <>
+                      <div className="h-px bg-white/10"></div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-300 font-medium">Account Balance:</span>
+                        <span className="text-white font-semibold">{accountInfo.balance} ETH</span>
+                      </div>
+                    </>
+                  )}
                 </div>
                 
                 <Button
                   onClick={startFineTuning}
-                  disabled={!datasetRoot || isUploading || isStarting}
+                  disabled={!datasetRoot || isUploading || isStarting || accountInfo?.needsTopUp}
                   size="lg"
                   className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
                 >
@@ -469,6 +682,12 @@ const handleDatasetUpload = async () => {
                     </>
                   )}
                 </Button>
+                
+                {accountInfo?.needsTopUp && (
+                  <p className="text-red-400 text-sm text-center mt-2">
+                    Please deposit funds to your account first
+                  </p>
+                )}
                 
                 <p className="text-gray-400 text-sm text-center mt-4">
                   Training will be performed on 0G Compute Network

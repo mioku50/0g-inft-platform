@@ -1,7 +1,6 @@
-import { ethers } from 'ethers'
+import { Wallet, JsonRpcProvider } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
-import { tasksPlugin } from '../compute/broker-plugins/tasks'
-import { inferencePlugin } from '../compute/broker-plugins/inference'
+import { tasksPlugin } from './broker-plugins/tasks'
 
 let broker: any
 
@@ -18,13 +17,9 @@ export async function getBroker() {
   const pk = process.env.OG_COMPUTE_PRIVATE_KEY
   if (!pk) throw new Error('OG_COMPUTE_PRIVATE_KEY missing')
 
-  const provider = new ethers.JsonRpcProvider(rpc)
-  const wallet = new ethers.Wallet(pk, provider)
-  broker = (createZGComputeNetworkBroker as any)({
-    rpcUrl: rpc,
-    privateKey: pk,
-    plugins: [tasksPlugin(), inferencePlugin()]
-  })
-  await broker.init()
+  const signer = new Wallet(pk, new JsonRpcProvider(rpc))
+  broker = await createZGComputeNetworkBroker(signer)
+  broker.use(tasksPlugin())
+  await broker.initialize()
   return broker
 }

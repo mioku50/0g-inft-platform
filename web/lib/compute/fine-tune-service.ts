@@ -20,7 +20,7 @@ export class FineTuneService {
     const dataSize = params.dataSize ?? calculateTokenSize(params.datasetRootHash)
     const configPath = await this.saveConfig({ steps: params.steps, learning_rate: params.learningRate })
 
-    return await this.broker.tasks.createTask(
+    return await (this.broker.fineTuning || this.broker.tasks).createTask(
       PROVIDER,
       params.baseModel,
       dataSize,
@@ -30,14 +30,20 @@ export class FineTuneService {
   }
 
   async getStatus(taskId: string) {
-    return await this.broker.tasks.getTaskStatus(PROVIDER, taskId)
+    return await (this.broker.fineTuning || this.broker.tasks).getTask(
+      PROVIDER,
+      taskId
+    )
   }
 
   async acknowledge(taskId: string) {
     const dir = path.join(process.cwd(), 'data', 'models')
     await fs.mkdir(dir, { recursive: true })
     const out = path.join(dir, `${taskId}.bin`)
-    await this.broker.tasks.acknowledgeModel(PROVIDER, out)
+    await (this.broker.fineTuning || this.broker.tasks).acknowledgeModel(
+      PROVIDER,
+      out
+    )
     return out
   }
 

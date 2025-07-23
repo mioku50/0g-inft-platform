@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertCircle, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { NATIVE_SYMBOL } from '@/lib/constants';
 
 interface SystemStatus {
   network: {
@@ -149,7 +150,7 @@ export function SystemCheck() {
               </p>
               <p className={status.wallets.storage.sufficient ? 'text-green-600' : 'text-destructive'}>
                 Balance: {status.wallets.storage.balance}
-                {!status.wallets.storage.sufficient && ' (Insufficient - need 0.1+ ETH)'}
+                {!status.wallets.storage.sufficient && ` (Insufficient - need 0.1+ ${NATIVE_SYMBOL})`}
               </p>
             </div>
           )}
@@ -172,7 +173,7 @@ export function SystemCheck() {
               </p>
               <p className={status.wallets.compute.sufficient ? 'text-green-600' : 'text-destructive'}>
                 Balance: {status.wallets.compute.balance}
-                {!status.wallets.compute.sufficient && ' (Insufficient - need 0.1+ ETH)'}
+                {!status.wallets.compute.sufficient && ` (Insufficient - need 0.1+ ${NATIVE_SYMBOL})`}
               </p>
             </div>
           )}

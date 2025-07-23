@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getBroker } from '@/lib/compute/broker'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
-import { ethers } from 'ethers'
+import { parseEther, formatEther } from 'ethers'
+import { NATIVE_SYMBOL } from '@/lib/constants'
 
 export const runtime = 'nodejs'
 
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
         balance: balance,
         balanceWei: accountInfo?.balance?.toString() || '0',
         exists: accountExists,
-        pendingRefund: accountInfo ? ethers.utils.formatEther(accountInfo.pendingRefund || '0') : '0',
+        pendingRefund: accountInfo ? formatEther(accountInfo.pendingRefund || '0') : '0',
         nonce: accountInfo?.nonce?.toString() || '0',
         deliverables: accountInfo?.deliverables || [],
         refunds: accountInfo?.refunds || []
@@ -97,14 +98,14 @@ export async function POST(request: NextRequest) {
           broker.signer.address,
           FINE_TUNE_PROVIDER,
           'INFT Platform User',
-          { value: ethers.utils.parseEther(amount) }
+          { value: parseEther(amount) }
         )
-        message = `Account created with initial balance of ${amount} ETH`
+        message = `Account created with initial balance of ${amount} ${NATIVE_SYMBOL}`
       } catch (error: any) {
         if (error.message.includes('AccountExists')) {
           // Аккаунт уже существует, просто пополняем
           await fineTuneService.depositFunds(amount)
-          message = `Account already exists. Deposited ${amount} ETH`
+          message = `Account already exists. Deposited ${amount} ${NATIVE_SYMBOL}`
         } else {
           throw error
         }
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
     } else {
       // Пополнение существующего аккаунта
       await fineTuneService.depositFunds(amount)
-      message = `Deposited ${amount} ETH to existing account`
+      message = `Deposited ${amount} ${NATIVE_SYMBOL} to existing account`
     }
 
     // Получение обновленного баланса
@@ -137,7 +138,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { 
           error: 'Insufficient wallet balance for deposit',
-          details: 'Please ensure you have enough ETH in your wallet'
+          details: `Please ensure you have enough ${NATIVE_SYMBOL} in your wallet`
         },
         { status: 400 }
       )

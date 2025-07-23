@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getBroker } from '@/lib/compute/broker'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
-import { ethers } from 'ethers'
+import { NATIVE_SYMBOL } from '@/lib/constants'
 
 export const runtime = 'nodejs'
 
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
     // Проверка баланса
     const balance = await fineTuneService.getAccountBalance()
-    console.log('Account balance:', balance, 'ETH')
+    console.log('Account balance:', balance, NATIVE_SYMBOL)
 
     if (parseFloat(balance) < 0.001) {
       return NextResponse.json(
@@ -151,7 +151,7 @@ export async function GET(request: NextRequest) {
 
     // Если задача завершена, добавляем информацию о модели
     if (status.progress === 'Finished' && status.modelRootHash) {
-      response.modelInfo = {
+      ;(response as any).modelInfo = {
         rootHash: status.modelRootHash,
         downloadReady: true
       }

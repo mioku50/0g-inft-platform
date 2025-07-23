@@ -66,6 +66,9 @@ export class FineTuneService {
         ? { progress, modelRootHash: '0xmockmodel' }
         : { progress }
     }
+    if (this.broker.tasks?.getTaskStatus) {
+      return await this.broker.tasks.getTaskStatus(PROVIDER, taskId)
+    }
     return await this.broker.fineTuning.getTask(PROVIDER, taskId)
   }
 
@@ -76,7 +79,11 @@ export class FineTuneService {
     const dir = path.join(process.cwd(), 'data', 'models')
     await fs.mkdir(dir, { recursive: true })
     const out = path.join(dir, `${taskId}.bin`)
-    await this.broker.fineTuning.acknowledgeModel(PROVIDER, out)
+    if (this.broker.tasks?.acknowledgeModel) {
+      await this.broker.tasks.acknowledgeModel(PROVIDER, out)
+    } else {
+      await this.broker.fineTuning.acknowledgeModel(PROVIDER, out)
+    }
     return out
   }
 

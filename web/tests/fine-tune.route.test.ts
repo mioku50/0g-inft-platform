@@ -7,19 +7,15 @@ vi.mock('../lib/compute/broker', () => ({
 }))
 
 const createTaskMock = vi.fn(async () => 'X')
+const getStatusMock = vi.fn(async () => ({ progress: 'Finished', modelRootHash: '0x1' }))
 vi.mock('../lib/compute/fine-tune-service', () => ({
   FineTuneService: vi.fn().mockImplementation(() => ({
-    createTask: createTaskMock
+    createTask: createTaskMock,
+    getStatus: getStatusMock
   }))
 }))
 
-vi.mock('../lib/storage/client-server', () => ({
-  uploadToStorage: vi.fn(async () => ({ rootHash: '0xabc' })),
-  hashAndExists: vi.fn(async () => ({ root: '0xabc', exists: false }))
-}))
-
-import { POST } from '../app/api/compute/fine-tune/route'
-import { POST as uploadDataset } from '../app/api/storage/upload-dataset/route'
+import { POST, GET } from '../app/api/compute/fine-tune/route'
 
 describe('fine tune api', () => {
   it('returns taskId', async () => {
@@ -41,15 +37,11 @@ describe('fine tune api', () => {
     expect(createTaskMock).toHaveBeenCalled()
   })
 
-  it('upload dataset returns root and size', async () => {
-    const file = new File([Buffer.from('x')], 'd.jsonl')
-    const form = new FormData()
-    form.append('file', file)
-
-    const req = new NextRequest('http://localhost', { method: 'POST', body: form })
-    const res = await uploadDataset(req)
-    expect(res.status).toBe(200)
+  it('returns status', async () => {
+    const req = new NextRequest('http://localhost?taskId=1')
+    const res = await GET(req)
     const json = await res.json()
-    expect(json).toEqual({ root: '0xabc', size: file.size, uploaded: true })
+    expect(json).toEqual({ progress: 'Finished', modelRootHash: '0x1' })
+    expect(getStatusMock).toHaveBeenCalled()
   })
 })

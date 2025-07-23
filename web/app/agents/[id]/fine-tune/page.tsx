@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { keccak256, toUtf8Bytes } from 'ethers';
 import { useParams, useRouter } from 'next/navigation'
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
-import { 
+import {
   Card,
   Button,
   Input,
@@ -32,6 +33,7 @@ import {
   Activity
 } from 'lucide-react'
 import Link from 'next/link'
+import { uploadDataset } from './actions'
 
 export default function FineTunePage() {
   const params = useParams()
@@ -70,13 +72,9 @@ export default function FineTunePage() {
   const [modelRootHash, setModelRootHash] = useState<string | null>(null)
 
   // Upload dataset to 0G Storage
-  const handleDatasetUpload = async () => {
+const handleDatasetUpload = async () => {
     if (!dataset) {
-      toast({
-        title: 'Error',
-        description: 'Please select a dataset file',
-        variant: 'destructive'
-      })
+      toast({ title: 'Error', description: 'Please select a dataset file', variant: 'destructive' })
       return
     }
 
@@ -85,26 +83,18 @@ export default function FineTunePage() {
     try {
       const form = new FormData()
       form.set('file', dataset)
-      const res = await fetch('/api/storage/upload-dataset', {
-        method: 'POST',
-        body: form
-      })
-      if (!res.ok) throw new Error('Upload failed')
-      const result = await res.json()
-      setDatasetRoot(result.root)
+      const result = await uploadDataset(form)
+      setDatasetRoot(result.rootHash)
       setDataSize(result.size)
-      localStorage.setItem(`ds-${tokenId}`, JSON.stringify({ root: result.root, size: result.size }))
-      toast({
-        title: 'Success!',
-        description: 'Dataset uploaded to 0G Storage'
-      })
+      if (!result.uploaded) {
+        toast({ title: 'Dataset cached', description: 'Using previously uploaded file' })
+      } else {
+        toast({ title: 'Success!', description: 'Dataset uploaded to 0G Storage' })
+      }
+      localStorage.setItem(`ds-${tokenId}`, JSON.stringify({ root: result.rootHash, size: result.size }))
     } catch (error) {
       console.error('Upload error:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to upload dataset',
-        variant: 'destructive'
-      })
+      toast({ title: 'Error', description: 'Failed to upload dataset', variant: 'destructive' })
     } finally {
       setIsUploading(false)
     }
@@ -140,65 +130,49 @@ export default function FineTunePage() {
 
   // Start fine-tuning with 0G Compute Network
   const startFineTuning = async () => {
-    if (!datasetRoot) {
-      toast({
-        title: 'Error',
-        description: 'Please upload a dataset first',
-        variant: 'destructive'
-      })
+    if (!datasetRoot || !walletClient || !address) {
+      toast({ title: 'Error', description: 'Wallet not ready or dataset missing', variant: 'destructive' })
       return
     }
-
     setIsStarting(true)
     try {
-      const response = await fetch('/api/compute/fine-tune', {
+      const nonce = Date.now()
+      const trainingParams = { steps, learning_rate: learningRate }
+      const payload = {
+        datasetHash: datasetRoot,
+        preTrainedModelHash: baseModel,
+        trainingParams,
+        fee: 0,
+        nonce,
+      }
+      const hash = keccak256(toUtf8Bytes(JSON.stringify(payload)))
+      const signature = await walletClient.signMessage({ account: address, message: hash })
+      const res = await fetch(`/v1/user/${address}/task`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentId: tokenId,
-          datasetRoot,
-          dataSize,
-          baseModel,
-          steps,
-          learningRate
-        })
+        body: JSON.stringify({ ...payload, signature })
       })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to start fine-tuning')
-      }
-
-      const data = await response.json()
-      setTaskId(data.taskId)
+      if (!res.ok) throw new Error('failed to start task')
+      const data = await res.json().catch(() => ({}))
+      const id = data.taskId || payload.nonce.toString()
+      setTaskId(id)
       setTaskStatus('Init')
-      
-      toast({
-        title: 'Fine-tuning started!',
-        description: `Task ID: ${data.taskId.slice(0, 8)}...`
-      })
-
-      // Start polling for status
-      pollStatus(data.taskId)
+      toast({ title: 'Fine-tuning started!', description: `Task ID: ${id}` })
+      pollStatus(id)
     } catch (error: any) {
       console.error('Fine-tuning error:', error)
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to start fine-tuning',
-        variant: 'destructive'
-      })
+      toast({ title: 'Error', description: error.message || 'Failed to start fine-tuning', variant: 'destructive' })
     } finally {
       setIsStarting(false)
     }
   }
 
-  // Poll task status
   const pollStatus = (taskIdToCheck: string) => {
     setIsPolling(true)
 
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/compute/fine-tune?taskId=${taskIdToCheck}`)
+        const response = await fetch(`/v1/user/${address}/task/${taskIdToCheck}`)
         if (response.ok) {
           const data = await response.json()
           setTaskStatus(data.progress || data.status || 'Unknown')
@@ -209,18 +183,11 @@ export default function FineTunePage() {
             setIsPolling(false)
             setModelRootHash(data.modelRootHash)
             await updateAgentWithNewModel(data.modelRootHash)
-            toast({
-              title: 'Training Complete!',
-              description: 'Your agent has been successfully fine-tuned'
-            })
+            toast({ title: 'Training Complete!', description: 'Your agent has been successfully fine-tuned' })
           } else if (data.progress === 'Failed') {
             clearInterval(interval)
             setIsPolling(false)
-            toast({
-              title: 'Training Failed',
-              description: data.error || 'An error occurred during training',
-              variant: 'destructive'
-            })
+            toast({ title: 'Training Failed', description: data.error || 'An error occurred during training', variant: 'destructive' })
           }
         }
       } catch (error) {
@@ -233,7 +200,6 @@ export default function FineTunePage() {
       setIsPolling(false)
     }, 2 * 60 * 60 * 1000)
   }
-
 
   // Update agent with new model
   const updateAgentWithNewModel = async (modelHash: string) => {

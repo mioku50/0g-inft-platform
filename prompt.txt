@@ -1,46 +1,61 @@
-You are Claude Code, senior 0G INFT engineer.
+‼️ Reference docs are in /README.md (0G INFT Guide, Storage SDK, Compute). Follow the official APIs/events exactly.
+That breaks the whole fine‑tune flow.
 
-Repo: Next 14 (workspace ./web), Hardhat contracts, fine‑tuning via Compute Oracle.
+## Root cause
+`createZGComputeNetworkBroker()` already returns a broker instance
+with a modern plugin API; it **doesn’t expose `.use()`** anymore.
+We must register the **tasks** and **inference** plugins in the
+supported way *before* we call `.init()`, and then rely on the plugin
+APIs (`broker.tasks.createTask`, `broker.inference.getRequestHeaders`,
+etc.) everywhere else.
 
-❑ CONTEXT
-* UI: web/app/agents/[id]/fine-tune/page.tsx
-* API: web/app/api/compute/fine-tune/route.ts
-* Storage upload example: web/app/api/storage/upload/route.ts
-* Oracle ABI: COMPUTE_ORACLE_ABI in web/lib/contracts/abis.ts
-* Hardhat network: "0g-testnet" chainId 16601
+## Your job
+1. **Refactor `web/lib/compute/broker.ts`**  
+   * Import `tasksPlugin` and `inferencePlugin`
+     (see `web/lib/compute/broker-plugins/*.ts` if you need local shims).
+   * Instantiate the broker **with** these plugins, e.g.
 
-❑ PROBLEMS
-1. Client bundle fails: `UnhandledSchemeError: node:crypto` (SDK imported in client).
-2. Dataset validation is weak (any file passes, may break training).
-3. After `getJobStatus === COMPLETED` resultRoot is NOT persisted to agent metadata.
-4. UI doesn’t show training log / model version.
-5. No tests.
+     ```ts
+     const broker = createZGComputeNetworkBroker({
+       rpcUrl: process.env.NEXT_PUBLIC_OG_RPC!,
+       privateKey: process.env.OG_COMPUTE_PRIVATE_KEY!,
+       plugins: [
+         tasksPlugin(),
+         inferencePlugin()
+       ]
+     });
+     await broker.init();
+     export { broker };
+     ```
 
-❑ TASK
-A. Refactor so that **@0glabs/0g-ts-sdk** is used only in server
-   (API routes or server actions).  Client must call `/api/storage/upload`.
-B. Strengthen dataset validation:
-   - allow JSONL / JSON with `{"messages":[...]}` shape,
-   - max 50 MB.
-   - return 400 if invalid.
-C. Extend fine‑tune polling: when status → COMPLETED
-   1) fetch `resultRoot`,
-   2) write it to `data/models/{agentId}.json`,
-   3) patch agent metadata (`/data/metadata/{root}.json`) – add `"fineTunedVersion": <version>`.
-D. Expand UI: show progress bar, current status, and list of model versions.
-E. Add Jest tests in `web/tests/fineTune.test.ts`:
-   - upload validation,
-   - polling flow (mock oracle).
-F. Ensure `pnpm build` & `pnpm run lint` pass.
+   * Remove all obsolete `broker.use(...)` calls.
 
-❑ OUTPUT
-Return **unified diffs only** (`git diff -u`) for all touched files, plus
-`web/tests/fineTune.test.ts`.  No explanations.
+2. **Update call sites**
+   * `web/lib/compute/fine-tune-service.ts`
+   * `web/app/api/compute/fine-tune/route.ts`
+   Replace the old `.tasks?.createTask(...)` fallback code with the
+   new plugin API (or direct REST fallback if the plugin is undefined).
 
-Constraints:
-* Keep existing design/UX.
-* Don’t break other pages.
-* Follow project ESLint / tsconfig.
-* Oracle address & keys come from env; don’t hardcode.
+3. **Keep dataset upload working** (`web/app/api/storage/upload-dataset/route.ts`).
 
-Begin patching now.
+4. **Unit test**  
+   Update / add `web/tests/fine-tune.test.ts` so that:
+   * dataset upload returns `{ root, size }`
+   * fine‑tune POST returns `{ success: true, taskId }` (mock broker)
+
+5. **Success criteria (CI‑style)**  
+   * `pnpm -F web build` succeeds  
+   * `pnpm -F web dev` boots without runtime errors  
+   * `pnpm test` passes (use Vitest)  
+   * Manual check: uploading a JSONL file and pressing **Start
+     fine‑tune** shows status “Training in Progress…” instead of a 500.
+
+### Notes
+* Do **not** touch the INFT solidity contracts.
+* Environment variables already exist in the Codespaces settings
+  (`NEXT_PUBLIC_OG_RPC`, `OG_COMPUTE_PRIVATE_KEY`,
+  `OG_STORAGE_PRIVATE_KEY`).
+* Stay within the `web/` package; no monorepo tooling changes.
+
+Please open a PR to `codex/fix-broker-plugin-error` with concise summary
+and green checks for the three commands above.

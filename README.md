@@ -2878,4 +2878,25 @@ const valid = await broker.inference.processResponse(
 Access the more details of interfaces via cloning the repo and opening [index.html](./docs/index.html) in browser.
 
 \n## Fine-tune via 0G Compute Network
-Run `pnpm e2e:fine-tune` to verify the end-to-end fine-tuning flow. The script uploads a tiny dataset, starts a training task via the new broker and polls until the model is delivered and finished.
+Use `scripts/test-fine-tune.sh` to verify the complete workflow:
+
+```bash
+bash scripts/test-fine-tune.sh
+```
+
+The script uploads a dataset, creates a training task and waits until it finishes. A successful run prints `model downloaded`.
+
+Example API usage:
+
+```bash
+# Upload dataset
+curl -F file=@data.jsonl http://localhost:3000/api/storage/upload-dataset
+
+# Start fine tune
+curl -H 'Content-Type: application/json' \
+  -d '{"agentId":"1","datasetRoot":"<ROOT>","baseModel":"llama","steps":1,"learningRate":0.1}' \
+  http://localhost:3000/api/compute/fine-tune
+
+# Check status
+curl 'http://localhost:3000/api/compute/fine-tune?taskId=<TASK_ID>'
+```

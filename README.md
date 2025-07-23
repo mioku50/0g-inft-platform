@@ -2886,6 +2886,9 @@ bash scripts/test-fine-tune.sh
 
 The script uploads a dataset, creates a training task and waits until it finishes. A successful run prints `model downloaded`.
 
+Before running make sure `.env` contains the required variables shown in
+`web/.env.example`. Private keys must be provided via secrets.
+
 Example API usage:
 
 ```bash

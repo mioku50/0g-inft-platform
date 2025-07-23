@@ -119,7 +119,8 @@ export async function downloadFromStorage(
     return content.toString('utf-8')
   } catch (e: any) {
     if (e?.code === -32000) {
-      const localPath = path.join(METADATA_DIR, `${rootHash}.json`)
+      const cleanHash = rootHash.replace('local://', '')
+      const localPath = path.join(METADATA_DIR, `${cleanHash}.json`)
       try { return await fs.readFile(localPath, 'utf-8') } catch {}
     }
     return JSON.stringify({ name: 'Unknown Agent', description: 'Metadata not available', model: 'Unknown', error: 'metadata_not_found' })

@@ -240,7 +240,7 @@ export const DEFAULT_CAPABILITIES = [
 
 export const MARKETPLACE_FEE_PERCENTAGE = 2.5
 
-export const MIN_PRICE_WEI = BigInt('1000000000000000') // 0.001 ETH
+export const MIN_PRICE_WEI = BigInt('1000000000000000') // 0.001 OG
 
 export const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
 

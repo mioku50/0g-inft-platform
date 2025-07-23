@@ -1,6 +1,7 @@
 import { getBroker } from './broker'
 import fs from 'fs/promises'
 import path from 'path'
+import { parseEther, formatEther } from 'ethers'
 
 // Официальный провайдер 0G для Fine-tuning
 const FINE_TUNE_PROVIDER = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
@@ -224,7 +225,7 @@ export class FineTuneService {
           this.broker.signer.address,
           FINE_TUNE_PROVIDER,
           'INFT Platform User', // additionalInfo
-          { value: ethers.utils.parseEther('0.01') } // Начальный баланс
+          { value: parseEther('0.01') } // Начальный баланс
         )
         
         console.log('Fine-tuning account created')
@@ -271,7 +272,7 @@ export class FineTuneService {
         FINE_TUNE_PROVIDER
       )
       
-      return ethers.utils.formatEther(account.balance)
+      return formatEther(account.balance)
     } catch (error) {
       console.error('Error getting account balance:', error)
       return '0'
@@ -287,7 +288,7 @@ export class FineTuneService {
         this.broker.signer.address,
         FINE_TUNE_PROVIDER,
         0, // cancelRetrievingAmount
-        { value: ethers.utils.parseEther(amount) }
+        { value: parseEther(amount) }
       )
     } catch (error) {
       console.error('Error depositing funds:', error)

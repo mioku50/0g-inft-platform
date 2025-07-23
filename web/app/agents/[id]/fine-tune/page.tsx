@@ -18,6 +18,7 @@ import {
   AlertDescription,
   useToast
 } from '@/components/ui'
+import { NATIVE_SYMBOL } from '@/lib/constants'
 import { 
   Brain, 
   Upload, 
@@ -364,7 +365,7 @@ export default function FineTunePage() {
               <div className="bg-black/20 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-300">Current Balance:</span>
-                  <span className="text-white font-semibold">{accountInfo.balance} ETH</span>
+                  <span className="text-white font-semibold">{accountInfo.balance} {NATIVE_SYMBOL}</span>
                 </div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-300">Account Status:</span>
@@ -376,7 +377,7 @@ export default function FineTunePage() {
                   <Alert className="bg-yellow-500/10 border-yellow-500/30 mt-3">
                     <AlertCircle className="h-4 w-4 text-yellow-400" />
                     <AlertDescription className="text-yellow-200">
-                      Insufficient balance for fine-tuning. Minimum required: 0.001 ETH
+                      Insufficient balance for fine-tuning. Minimum required: 0.001 {NATIVE_SYMBOL}
                     </AlertDescription>
                   </Alert>
                 )}
@@ -386,7 +387,7 @@ export default function FineTunePage() {
             {(!accountInfo?.exists || accountInfo?.needsTopUp) && (
               <div className="space-y-3">
                 <div>
-                  <Label className="text-purple-200">Deposit Amount (ETH)</Label>
+                  <Label className="text-purple-200">Deposit Amount ({NATIVE_SYMBOL})</Label>
                   <Input
                     type="number"
                     step="0.001"
@@ -396,7 +397,7 @@ export default function FineTunePage() {
                     min="0.001"
                   />
                   <p className="text-xs text-gray-400 mt-1">
-                    Recommended: 0.01 ETH (covers multiple fine-tuning sessions)
+                    Recommended: 0.01 {NATIVE_SYMBOL} (covers multiple fine-tuning sessions)
                   </p>
                 </div>
                 
@@ -658,7 +659,7 @@ export default function FineTunePage() {
                       <div className="h-px bg-white/10"></div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-300 font-medium">Account Balance:</span>
-                        <span className="text-white font-semibold">{accountInfo.balance} ETH</span>
+                        <span className="text-white font-semibold">{accountInfo.balance} {NATIVE_SYMBOL}</span>
                       </div>
                     </>
                   )}

@@ -211,7 +211,6 @@ export async function getBroker() {
       }
     }
 
-    await broker.initialize()
     console.log('0G Compute broker initialized successfully')
     
     return broker

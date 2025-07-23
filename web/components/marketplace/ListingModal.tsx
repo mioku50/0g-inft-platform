@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useContractWrite, useWaitForTransaction } from 'wagmi'
 import { parseEther } from 'viem'
+import { NATIVE_SYMBOL } from '@/lib/constants'
 import {
   Dialog,
   DialogContent,
@@ -85,7 +86,7 @@ export function ListingModal({ tokenId, agentName, onClose, onSuccess }: Listing
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <Label htmlFor="price">
-              Price (ETH)
+              Price ({NATIVE_SYMBOL})
               <span className="text-xs text-gray-400 ml-2">
                 Marketplace fee: 2.5%
               </span>
@@ -101,12 +102,12 @@ export function ListingModal({ tokenId, agentName, onClose, onSuccess }: Listing
                 className="pr-12"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">
-                ETH
+                {NATIVE_SYMBOL}
               </span>
             </div>
             {price && (
               <p className="text-sm text-gray-400">
-                You'll receive: {(parseFloat(price) * 0.975).toFixed(4)} ETH after fees
+                You'll receive: {(parseFloat(price) * 0.975).toFixed(4)} {NATIVE_SYMBOL} after fees
               </p>
             )}
           </div>
@@ -134,7 +135,7 @@ export function ListingModal({ tokenId, agentName, onClose, onSuccess }: Listing
               Pricing Tips
             </h4>
             <ul className="text-xs text-gray-400 space-y-1">
-              <li>• Similar agents are priced between 0.01 - 0.05 ETH</li>
+              <li>• Similar agents are priced between 0.01 - 0.05 {NATIVE_SYMBOL}</li>
               <li>• Consider your agent's unique capabilities</li>
               <li>• You can adjust the price later</li>
             </ul>

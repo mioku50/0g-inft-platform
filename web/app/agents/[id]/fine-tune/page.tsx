@@ -69,6 +69,7 @@ export default function FineTunePage() {
   const [isCheckingAccount, setIsCheckingAccount] = useState(true)
   const [depositAmount, setDepositAmount] = useState('0.01')
   const [isDepositing, setIsDepositing] = useState(false)
+  const [backendError, setBackendError] = useState<string | null>(null)
 
   // Load cached dataset info
   useEffect(() => {
@@ -94,6 +95,15 @@ export default function FineTunePage() {
       setIsCheckingAccount(true)
       console.log('GET /api/compute/account')
       const response = await fetch('/api/compute/account')
+      if (response.status === 503) {
+        setBackendError('0G Compute backend isn\u2019t configured (RPC/PK/contract). Contact admin.')
+        toast({
+          variant: 'destructive',
+          description: '0G Compute backend isn\u2019t configured (RPC/PK/contract). Contact admin.'
+        })
+        setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
+        return
+      }
       const data = await response.json()
       console.log('GET /api/compute/account result', data)
       if (response.ok) {
@@ -102,6 +112,7 @@ export default function FineTunePage() {
           exists: data.exists,
           needsTopUp: parseFloat(data.balanceOG) < 0.001
         })
+        setBackendError(null)
       } else {
         console.warn('Could not fetch account info')
         toast({
@@ -443,6 +454,14 @@ export default function FineTunePage() {
           <p className="text-purple-200">
             Train your agent with custom data using 0G Compute Network
           </p>
+          {backendError && (
+            <Alert className="bg-red-500/10 border-red-500/30 mt-4">
+              <AlertCircle className="h-4 w-4 text-red-400" />
+              <AlertDescription className="text-red-200">
+                {backendError}
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
 
         {/* Main Content */}

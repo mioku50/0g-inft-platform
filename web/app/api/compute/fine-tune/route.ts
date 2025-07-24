@@ -1,8 +1,9 @@
 // app/api/compute/fine-tune/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getBroker, getSignerAddress } from '@/lib/compute/broker'
+import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
-import { NATIVE_SYMBOL, FINE_TUNE_PROVIDER } from '@/lib/constants'
+import { NATIVE_SYMBOL } from '@/lib/constants'
+import { FINE_TUNE_PROVIDER } from '@/lib/server/compute-env'
 
 export const runtime = 'nodejs'
 
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Инициализация broker и сервиса
-    const broker = await getBroker()
+    const broker = await getBrokerOrThrow()
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
@@ -111,12 +112,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const status =
+      error.message?.includes('Missing env') ||
+      error.message?.includes('Contract not deployed') ||
+      error.message?.includes('Failed to start')
+        ? 503
+        : 500
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to create fine-tuning task',
         details: error.message || 'Unknown error'
       },
-      { status: 500 }
+      { status }
     )
   }
 }
@@ -137,7 +144,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Инициализация сервиса
-    const broker = await getBroker()
+    const broker = await getBrokerOrThrow()
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
@@ -170,12 +177,18 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error getting fine-tuning status:', error)
+    const status =
+      error.message?.includes('Missing env') ||
+      error.message?.includes('Contract not deployed') ||
+      error.message?.includes('Failed to start')
+        ? 503
+        : 500
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to get task status',
         details: error.message || 'Unknown error'
       },
-      { status: 500 }
+      { status }
     )
   }
 }
@@ -196,7 +209,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Инициализация сервиса
-    const broker = await getBroker()
+    const broker = await getBrokerOrThrow()
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
@@ -214,12 +227,18 @@ export async function PUT(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error acknowledging model:', error)
+    const status =
+      error.message?.includes('Missing env') ||
+      error.message?.includes('Contract not deployed') ||
+      error.message?.includes('Failed to start')
+        ? 503
+        : 500
     return NextResponse.json(
-      { 
+      {
         error: 'Failed to acknowledge model delivery',
         details: error.message || 'Unknown error'
       },
-      { status: 500 }
+      { status }
     )
   }
 }

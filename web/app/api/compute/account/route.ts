@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getBroker, getSignerAddress } from '@/lib/compute/broker'
-import { FINE_TUNE_PROVIDER, toWei } from '@/lib/constants'
+import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
+import { toWei } from '@/lib/constants'
+import { FINE_TUNE_PROVIDER } from '@/lib/server/compute-env'
 
 export const runtime = 'nodejs'
 
@@ -14,7 +15,7 @@ type AccountResponse = {
 
 export async function GET(request: NextRequest) {
   try {
-    const broker = await getBroker()
+    const broker = await getBrokerOrThrow()
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) throw new Error('Signer not initialized')
     const exists = await broker.fineTuning.accountExists(signerAddress, FINE_TUNE_PROVIDER)
@@ -33,7 +34,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result)
   } catch (error: any) {
     console.error('[fine-tune][GET][error]', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    const status =
+      error.message?.includes('Missing env') ||
+      error.message?.includes('Contract not deployed') ||
+      error.message?.includes('Failed to start')
+        ? 503
+        : 500
+    return NextResponse.json({ error: error.message }, { status })
   }
 }
 
@@ -45,7 +52,7 @@ export async function POST(request: NextRequest) {
     if (!amount || isNaN(+amount) || Number(amount) <= 0) {
       return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
     }
-    const broker = await getBroker()
+    const broker = await getBrokerOrThrow()
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) throw new Error('Signer not initialized')
     let tx
@@ -74,14 +81,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result)
   } catch (e: any) {
     console.error('[fine-tune][POST][error]', e)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    const status =
+      e.message?.includes('Missing env') ||
+      e.message?.includes('Contract not deployed') ||
+      e.message?.includes('Failed to start')
+        ? 503
+        : 500
+    return NextResponse.json({ error: e.message }, { status })
   }
 }
 
 export async function DELETE(request: NextRequest) {
   console.log('[fine-tune][DELETE]')
   try {
-    const broker = await getBroker()
+    const broker = await getBrokerOrThrow()
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) throw new Error('Signer not initialized')
     const tx = await broker.fineTuning.requestRefundAll(signerAddress, FINE_TUNE_PROVIDER)
@@ -90,6 +103,12 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json(result)
   } catch (e: any) {
     console.error('[fine-tune][DELETE][error]', e)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    const status =
+      e.message?.includes('Missing env') ||
+      e.message?.includes('Contract not deployed') ||
+      e.message?.includes('Failed to start')
+        ? 503
+        : 500
+    return NextResponse.json({ error: e.message }, { status })
   }
 }

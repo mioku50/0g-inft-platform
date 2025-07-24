@@ -5,6 +5,11 @@ import { RPC_URL, FINE_TUNING_SERVING, FINE_TUNE_PROVIDER, OG_COMPUTE_PK } from 
 
 let broker: any
 
+export function getSignerAddress() {
+  if (!broker) return null
+  return broker.signerAddress || broker.signer?.address || null
+}
+
 export const weiToOg = (v: bigint) => formatEther(v)
 
 export async function getBroker() {
@@ -24,6 +29,8 @@ export async function getBroker() {
   }
 
   broker = await createZGComputeNetworkBroker(signer)
+  broker.signer = signer
+  broker.signerAddress = signer.address
   await addFineTuningSupport(broker, signer)
   return broker
 }
@@ -126,6 +133,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 function createMockBroker() {
   return {
     signer: { address: '0x0000000000000000000000000000000000000000' },
+    signerAddress: '0x0000000000000000000000000000000000000000',
     inference: {
       getServiceMetadata: async () => ({ endpoint: 'http://localhost:3080', model: 'mock' }),
       getRequestHeaders: async () => ({}),
@@ -156,4 +164,4 @@ function formatError(e: any) {
   )
 }
 
-export { broker, FINE_TUNE_PROVIDER }
+export { broker, FINE_TUNE_PROVIDER, getSignerAddress }

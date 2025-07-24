@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getBroker, FINE_TUNE_PROVIDER, weiToOg } from '@/lib/compute/broker'
+import { getBroker, getSignerAddress, weiToOg } from '@/lib/compute/broker'
+import { FINE_TUNE_PROVIDER } from '@/lib/constants'
 import { parseEther } from 'ethers'
 
 export const runtime = 'nodejs'
@@ -21,10 +22,12 @@ type AccountResponse = {
 export async function GET(request: NextRequest) {
   try {
     const broker = await getBroker()
-    const exists = await broker.fineTuning.accountExists(broker.signer.address, FINE_TUNE_PROVIDER)
+    const signerAddress = getSignerAddress()
+    if (!signerAddress) throw new Error('Signer not initialized')
+    const exists = await broker.fineTuning.accountExists(signerAddress, FINE_TUNE_PROVIDER)
     let acc: any = null
     if (exists) {
-      acc = await broker.fineTuning.getAccount(broker.signer.address, FINE_TUNE_PROVIDER)
+      acc = await broker.fineTuning.getAccount(signerAddress, FINE_TUNE_PROVIDER)
     }
     const result: AccountResponse = {
       success: true,
@@ -36,7 +39,7 @@ export async function GET(request: NextRequest) {
         nonce: acc ? acc.nonce.toString() : '0',
         deliverableCount: acc ? acc.deliverables.length : 0,
         provider: FINE_TUNE_PROVIDER,
-        address: broker.signer.address
+        address: signerAddress
       }
     }
     console.log('[fine-tune][GET]', { result })
@@ -53,13 +56,15 @@ export async function POST(request: NextRequest) {
   try {
     const { amount, action } = body as { amount: string; action: 'create' | 'deposit' }
     const broker = await getBroker()
+    const signerAddress = getSignerAddress()
+    if (!signerAddress) throw new Error('Signer not initialized')
     let tx
     if (action === 'create') {
-      tx = await broker.fineTuning.addAccount(broker.signer.address, FINE_TUNE_PROVIDER, 'INFT Platform User', { value: parseEther(amount) })
+      tx = await broker.fineTuning.addAccount(signerAddress, FINE_TUNE_PROVIDER, 'INFT Platform User', { value: parseEther(amount) })
     } else {
-      tx = await broker.fineTuning.depositFund(broker.signer.address, FINE_TUNE_PROVIDER, 0n, { value: parseEther(amount) })
+      tx = await broker.fineTuning.depositFund(signerAddress, FINE_TUNE_PROVIDER, 0n, { value: parseEther(amount) })
     }
-    const acc = await broker.fineTuning.getAccount(broker.signer.address, FINE_TUNE_PROVIDER)
+    const acc = await broker.fineTuning.getAccount(signerAddress, FINE_TUNE_PROVIDER)
     const result = { success: true, txHash: tx.hash, balance: weiToOg(acc.balance) }
     console.log('[fine-tune][POST]', { result })
     return NextResponse.json(result)
@@ -73,7 +78,9 @@ export async function DELETE(request: NextRequest) {
   console.log('[fine-tune][DELETE]')
   try {
     const broker = await getBroker()
-    const tx = await broker.fineTuning.requestRefundAll(broker.signer.address, FINE_TUNE_PROVIDER)
+    const signerAddress = getSignerAddress()
+    if (!signerAddress) throw new Error('Signer not initialized')
+    const tx = await broker.fineTuning.requestRefundAll(signerAddress, FINE_TUNE_PROVIDER)
     const result = { success: true, txHash: tx.hash }
     console.log('[fine-tune][DELETE]', { result })
     return NextResponse.json(result)

@@ -1,8 +1,8 @@
 // app/api/compute/fine-tune/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getBroker } from '@/lib/compute/broker'
+import { getBroker, getSignerAddress } from '@/lib/compute/broker'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
-import { NATIVE_SYMBOL } from '@/lib/constants'
+import { NATIVE_SYMBOL, FINE_TUNE_PROVIDER } from '@/lib/constants'
 
 export const runtime = 'nodejs'
 
@@ -39,7 +39,8 @@ export async function POST(request: NextRequest) {
 
     // Инициализация broker и сервиса
     const broker = await getBroker()
-    if (!broker.signer) {
+    const signerAddress = getSignerAddress()
+    if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }
     const fineTuneService = new FineTuneService(broker)
@@ -137,7 +138,8 @@ export async function GET(request: NextRequest) {
 
     // Инициализация сервиса
     const broker = await getBroker()
-    if (!broker.signer) {
+    const signerAddress = getSignerAddress()
+    if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }
     const fineTuneService = new FineTuneService(broker)
@@ -195,7 +197,8 @@ export async function PUT(request: NextRequest) {
 
     // Инициализация сервиса
     const broker = await getBroker()
-    if (!broker.signer) {
+    const signerAddress = getSignerAddress()
+    if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }
     const fineTuneService = new FineTuneService(broker)

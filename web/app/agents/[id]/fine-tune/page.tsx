@@ -104,10 +104,12 @@ export default function FineTunePage() {
         })
       } else {
         console.warn('Could not fetch account info')
+        toast({ variant: 'destructive', description: data.error || 'Failed to fetch account info' })
         setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
       }
     } catch (error) {
       console.error('Error checking account:', error)
+      toast({ variant: 'destructive', description: 'Failed to fetch account info' })
       setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
     } finally {
       setIsCheckingAccount(false)

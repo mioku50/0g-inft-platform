@@ -11,6 +11,13 @@ export const runtime = 'nodejs'
  * POST /api/compute/fine-tune - Создание задачи fine-tuning
  */
 export async function POST(request: NextRequest) {
+  let broker: any
+  try {
+    broker = await getBrokerOrThrow()
+  } catch (e) {
+    console.error('[compute/fine-tune][POST] broker init error', e)
+    return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
+  }
   try {
     const body = await request.json()
     const {
@@ -38,46 +45,46 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Инициализация broker и сервиса
-    const broker = await getBrokerOrThrow()
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }
     const fineTuneService = new FineTuneService(broker)
 
-    // Инициализация аккаунта (если нужно)
-    try {
-      await fineTuneService.initializeAccount()
-    } catch (error) {
-      console.warn('Account initialization warning:', error)
-      // Продолжаем выполнение, аккаунт может уже существовать
+    const exists = await broker.fineTuning.accountExists(signerAddress, FINE_TUNE_PROVIDER)
+    if (!exists) {
+      return NextResponse.json(
+        { error: 'Fine-tune account not found' },
+        { status: 400 }
+      )
     }
 
-    // Проверка баланса
-    const balance = await fineTuneService.getAccountBalance()
+    const acc = await broker.fineTuning.getAccount(signerAddress, FINE_TUNE_PROVIDER)
+    const balance = acc.balance
     console.log('Account balance:', balance, NATIVE_SYMBOL)
 
     if (parseFloat(balance) < 0.001) {
       return NextResponse.json(
-        { 
-          error: 'Insufficient balance for fine-tuning. Please deposit funds.',
-          currentBalance: balance,
-          requiredMinimum: '0.001'
-        },
+        { error: 'Insufficient balance for fine-tuning' },
         { status: 400 }
       )
     }
 
     // Создание задачи fine-tuning
-    const taskId = await fineTuneService.createTask({
-      agentId,
-      datasetRootHash,
-      baseModel,
-      steps: steps || 500,
-      learningRate: learningRate || 0.00005,
-      dataSize
-    })
+    let taskId: string
+    try {
+      taskId = await fineTuneService.createTask({
+        agentId,
+        datasetRootHash,
+        baseModel,
+        steps: steps || 500,
+        learningRate: learningRate || 0.00005,
+        dataSize
+      })
+    } catch (provErr) {
+      console.error('[fine-tune][POST] provider error', provErr)
+      return NextResponse.json({ error: 'provider unavailable' }, { status: 503 })
+    }
 
     console.log('Fine-tuning task created:', taskId)
 
@@ -90,40 +97,21 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Fine-tuning creation error:', error)
-    
-    // Обработка специфических ошибок
-    if (error.message.includes('insufficient balance')) {
-      return NextResponse.json(
-        { 
-          error: 'Insufficient balance for fine-tuning operation',
-          details: error.message
-        },
-        { status: 400 }
-      )
-    }
 
-    if (error.message.includes('provider not available')) {
-      return NextResponse.json(
-        { 
-          error: 'Fine-tuning provider is currently unavailable',
-          details: 'Please try again later'
-        },
-        { status: 503 }
-      )
+    const msg = error.message
+    if (
+      msg?.includes('Missing env') ||
+      msg?.includes('Contract not deployed') ||
+      msg?.includes('Failed to start')
+    ) {
+      return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
     }
-
-    const status =
-      error.message?.includes('Missing env') ||
-      error.message?.includes('Contract not deployed') ||
-      error.message?.includes('Failed to start')
-        ? 503
-        : 500
     return NextResponse.json(
       {
         error: 'Failed to create fine-tuning task',
-        details: error.message || 'Unknown error'
+        details: msg || 'Unknown error'
       },
-      { status }
+      { status: 500 }
     )
   }
 }
@@ -132,6 +120,13 @@ export async function POST(request: NextRequest) {
  * GET /api/compute/fine-tune?taskId=... - Получение статуса задачи
  */
 export async function GET(request: NextRequest) {
+  let broker: any
+  try {
+    broker = await getBrokerOrThrow()
+  } catch (e) {
+    console.error('[compute/fine-tune][GET] broker init error', e)
+    return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
+  }
   try {
     const { searchParams } = new URL(request.url)
     const taskId = searchParams.get('taskId')
@@ -143,8 +138,6 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Инициализация сервиса
-    const broker = await getBrokerOrThrow()
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
@@ -177,18 +170,20 @@ export async function GET(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error getting fine-tuning status:', error)
-    const status =
-      error.message?.includes('Missing env') ||
-      error.message?.includes('Contract not deployed') ||
-      error.message?.includes('Failed to start')
-        ? 503
-        : 500
+    const msg = error.message
+    if (
+      msg?.includes('Missing env') ||
+      msg?.includes('Contract not deployed') ||
+      msg?.includes('Failed to start')
+    ) {
+      return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
+    }
     return NextResponse.json(
       {
         error: 'Failed to get task status',
-        details: error.message || 'Unknown error'
+        details: msg || 'Unknown error'
       },
-      { status }
+      { status: 500 }
     )
   }
 }
@@ -197,6 +192,13 @@ export async function GET(request: NextRequest) {
  * PUT /api/compute/fine-tune - Подтверждение получения модели
  */
 export async function PUT(request: NextRequest) {
+  let broker: any
+  try {
+    broker = await getBrokerOrThrow()
+  } catch (e) {
+    console.error('[compute/fine-tune][PUT] broker init error', e)
+    return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
+  }
   try {
     const body = await request.json()
     const { taskId } = body
@@ -208,8 +210,6 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Инициализация сервиса
-    const broker = await getBrokerOrThrow()
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
@@ -227,18 +227,20 @@ export async function PUT(request: NextRequest) {
 
   } catch (error: any) {
     console.error('Error acknowledging model:', error)
-    const status =
-      error.message?.includes('Missing env') ||
-      error.message?.includes('Contract not deployed') ||
-      error.message?.includes('Failed to start')
-        ? 503
-        : 500
+    const msg = error.message
+    if (
+      msg?.includes('Missing env') ||
+      msg?.includes('Contract not deployed') ||
+      msg?.includes('Failed to start')
+    ) {
+      return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
+    }
     return NextResponse.json(
       {
         error: 'Failed to acknowledge model delivery',
-        details: error.message || 'Unknown error'
+        details: msg || 'Unknown error'
       },
-      { status }
+      { status: 500 }
     )
   }
 }

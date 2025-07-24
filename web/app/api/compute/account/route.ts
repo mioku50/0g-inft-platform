@@ -2,7 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getBroker, FINE_TUNE_PROVIDER } from '@/lib/compute/broker'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
-import { parseEther, formatEther } from 'ethers'
+import { parseEther } from 'ethers'
+import { weiToOg } from '@/lib/compute/broker'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 
 export const runtime = 'nodejs'
@@ -13,6 +14,9 @@ export const runtime = 'nodejs'
 export async function GET(request: NextRequest) {
   try {
     const broker = await getBroker()
+    if (!broker.signer) {
+      return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
+    }
     const fineTuneService = new FineTuneService(broker)
 
     // Получение баланса
@@ -43,7 +47,7 @@ export async function GET(request: NextRequest) {
         balance: balance,
         balanceWei: accountInfo?.balance?.toString() || '0',
         exists: accountExists,
-        pendingRefund: accountInfo ? formatEther(accountInfo.pendingRefund || '0') : '0',
+        pendingRefund: accountInfo ? weiToOg(accountInfo.pendingRefund || BigInt(0)) : '0',
         nonce: accountInfo?.nonce?.toString() || '0',
         deliverables: accountInfo?.deliverables || [],
         refunds: accountInfo?.refunds || []
@@ -85,6 +89,9 @@ export async function POST(request: NextRequest) {
     }
 
     const broker = await getBroker()
+    if (!broker.signer) {
+      return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
+    }
     const fineTuneService = new FineTuneService(broker)
 
     let transactionHash = ''
@@ -104,7 +111,8 @@ export async function POST(request: NextRequest) {
       } catch (error: any) {
         if (error.message.includes('AccountExists')) {
           // Аккаунт уже существует, просто пополняем
-          await fineTuneService.depositFunds(amount)
+          const tx = await fineTuneService.depositFunds(amount)
+          transactionHash = tx?.hash || ''
           message = `Account already exists. Deposited ${amount} ${NATIVE_SYMBOL}`
         } else {
           throw error

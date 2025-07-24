@@ -1,6 +1,6 @@
 // lib/compute/fine-tune-service.ts
-import { getBroker, FINE_TUNE_PROVIDER } from './broker'
-import { parseEther, formatEther } from 'ethers'
+import { getBroker, FINE_TUNE_PROVIDER, weiToOg } from './broker'
+import { parseEther } from 'ethers'
 
 // Маппинг моделей согласно официальной документации
 const MODEL_MAPPING = {
@@ -171,9 +171,14 @@ export class FineTuneService {
    */
   async acknowledge(taskId: string): Promise<string> {
     try {
+      const acc = await this.broker.fineTuning.getAccount(
+        this.broker.signer.address,
+        FINE_TUNE_PROVIDER
+      )
+      const idx = acc && acc.deliverables ? acc.deliverables.length - 1 : 0
       await this.broker.fineTuning.acknowledgeDeliverable(
         FINE_TUNE_PROVIDER,
-        0 // Индекс deliverable
+        idx
       )
 
       return `Model acknowledged for task ${taskId}`
@@ -230,8 +235,8 @@ export class FineTuneService {
         FINE_TUNE_PROVIDER
       )
       
-      if (account && account.balance) {
-        return formatEther(account.balance)
+      if (account && account.balance !== undefined) {
+        return weiToOg(account.balance)
       }
       
       return '0'
@@ -244,14 +249,15 @@ export class FineTuneService {
   /**
    * Пополнение баланса аккаунта
    */
-  async depositFunds(amount: string): Promise<void> {
+  async depositFunds(amount: string) {
     try {
-      await this.broker.fineTuning.depositFund(
+      const tx = await this.broker.fineTuning.depositFund(
         this.broker.signer.address,
         FINE_TUNE_PROVIDER,
-        0, // cancelRetrievingAmount
+        0,
         { value: parseEther(amount) }
       )
+      return tx
     } catch (error) {
       console.error('Error depositing funds:', error)
       throw error

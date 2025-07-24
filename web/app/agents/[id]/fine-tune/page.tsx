@@ -95,46 +95,37 @@ export default function FineTunePage() {
       setIsCheckingAccount(true)
       console.log('GET /api/compute/account')
       const response = await fetch('/api/compute/account')
+      const data = await response.json().catch(() => ({}))
       if (response.status === 503) {
-        setBackendError('0G Compute backend isn\u2019t configured (RPC/PK/contract). Contact admin.')
+        setBackendError('Backend misconfigured')
+        setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
+        return
+      }
+      if (!response.ok) {
         toast({
           variant: 'destructive',
-          description: '0G Compute backend isn\u2019t configured (RPC/PK/contract). Contact admin.'
+          description: data.details || data.error || 'Failed to fetch account info',
+          action: (
+            <Button variant="outline" onClick={checkAccountStatus}>Повторить</Button>
+          )
         })
         setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
         return
       }
-      const data = await response.json()
       console.log('GET /api/compute/account result', data)
-      if (response.ok) {
-        setAccountInfo({
-          balance: data.balanceOG,
-          exists: data.exists,
-          needsTopUp: parseFloat(data.balanceOG) < 0.001
-        })
-        setBackendError(null)
-      } else {
-        console.warn('Could not fetch account info')
-        toast({
-          variant: 'destructive',
-          description: data.error || 'Failed to fetch account info',
-          action: (
-            <Button variant="outline" onClick={checkAccountStatus}>
-              Повторить
-            </Button>
-          )
-        })
-        setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
-      }
-    } catch (error) {
+      setAccountInfo({
+        balance: data.balanceOG,
+        exists: data.exists,
+        needsTopUp: parseFloat(data.balanceOG) < 0.001
+      })
+      setBackendError(null)
+    } catch (error: any) {
       console.error('Error checking account:', error)
       toast({
         variant: 'destructive',
-        description: 'Failed to fetch account info',
+        description: error.details || error.message || 'Failed to fetch account info',
         action: (
-          <Button variant="outline" onClick={checkAccountStatus}>
-            Повторить
-          </Button>
+          <Button variant="outline" onClick={checkAccountStatus}>Повторить</Button>
         )
       })
       setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
@@ -162,9 +153,22 @@ export default function FineTunePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: depositAmount, action })
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       console.log('POST /api/compute/account result', data)
-      if (!res.ok) throw data
+
+      if (res.status === 503) {
+        setBackendError('Backend misconfigured')
+        return
+      }
+
+      if (!res.ok) {
+        toast({
+          variant: 'destructive',
+          description: data.details || data.error || 'Account setup failed'
+        })
+        return
+      }
+
       await checkAccountStatus()
     } catch (error: any) {
       console.error('Account setup error:', error)
@@ -222,7 +226,9 @@ export default function FineTunePage() {
   const getStatusInfo = (status: string) => {
     switch (status) {
       case 'Init':
+        return { text: 'Init', color: 'text-purple-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
       case 'SettingUp':
+        return { text: 'Setting Up', color: 'text-purple-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
       case 'Training':
         return { text: 'Training', color: 'text-purple-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
       case 'Delivering':
@@ -455,11 +461,14 @@ export default function FineTunePage() {
             Train your agent with custom data using 0G Compute Network
           </p>
           {backendError && (
-            <Alert className="bg-red-500/10 border-red-500/30 mt-4">
+            <Alert className="bg-red-500/10 border-red-500/30 mt-4 flex items-center gap-4">
               <AlertCircle className="h-4 w-4 text-red-400" />
-              <AlertDescription className="text-red-200">
+              <AlertDescription className="text-red-200 flex-1">
                 {backendError}
               </AlertDescription>
+              <Button size="sm" variant="outline" onClick={checkAccountStatus}>
+                Повторить
+              </Button>
             </Alert>
           )}
         </div>

@@ -11,10 +11,6 @@ export function requireEnv(name: string): string {
   return v
 }
 
-export const RPC_URL = requireEnv('NEXT_PUBLIC_0G_RPC_URL')
-export const FINE_TUNING_SERVING = requireEnv('NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS')
-export const FINE_TUNE_PROVIDER = requireEnv('NEXT_PUBLIC_FINE_TUNE_PROVIDER')
-export const PK = requireEnv('OG_COMPUTE_PRIVATE_KEY')
 
 export const toWei = (v: string | number | bigint) => parseEther(String(v))
 export const fromWei = (v: any) => formatEther(BigInt(v?.toString?.() ?? v ?? 0n))

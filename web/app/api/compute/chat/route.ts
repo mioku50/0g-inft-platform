@@ -6,6 +6,7 @@ if (!(process as any).versions?.node) {
 // web/app/api/compute/chat/route.ts - обновленная версия с acknowledge
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
+import { RPC_URL, PK } from '@/lib/server/compute-env'
 import crypto from 'crypto'
 
 const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
@@ -26,9 +27,8 @@ export async function POST(request: NextRequest) {
     console.log('\n=== 0G Compute Request ===')
     console.log('Message:', message)
     
-    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
-    const privateKey = process.env.OG_COMPUTE_PRIVATE_KEY || ''
-    const wallet = new ethers.Wallet(privateKey, provider)
+    const provider = new ethers.JsonRpcProvider(RPC_URL)
+    const wallet = new ethers.Wallet(PK, provider)
     
     let servicesCount = 0
     let servicesInfo: any[] = []

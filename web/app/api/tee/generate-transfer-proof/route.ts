@@ -1,6 +1,7 @@
 // web/app/api/tee/generate-transfer-proof/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
+import { RPC_URL, PK } from '@/lib/server/compute-env'
 const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
 
 const OFFICIAL_CONTRACTS = {
@@ -15,8 +16,8 @@ export async function POST(request: NextRequest) {
     console.log('Generating TEE transfer proof for token:', tokenId)
     
     // Подключаемся к 0G Compute
-    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
-    const wallet = new ethers.Wallet(process.env.OG_COMPUTE_PRIVATE_KEY!, provider)
+    const provider = new ethers.JsonRpcProvider(RPC_URL)
+    const wallet = new ethers.Wallet(PK, provider)
     
     const broker = await createZGComputeNetworkBroker(
       wallet,

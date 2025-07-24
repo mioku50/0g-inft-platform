@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
 
     // Инициализация broker и сервиса
     const broker = await getBroker()
+    if (!broker?.signer?.address) throw new Error('Broker signer unavailable')
     const fineTuneService = new FineTuneService(broker)
 
     // Инициализация аккаунта (если нужно)
@@ -133,6 +134,7 @@ export async function GET(request: NextRequest) {
 
     // Инициализация сервиса
     const broker = await getBroker()
+    if (!broker?.signer?.address) throw new Error('Broker signer unavailable')
     const fineTuneService = new FineTuneService(broker)
 
     // Получение статуса задачи
@@ -188,6 +190,7 @@ export async function PUT(request: NextRequest) {
 
     // Инициализация сервиса
     const broker = await getBroker()
+    if (!broker?.signer?.address) throw new Error('Broker signer unavailable')
     const fineTuneService = new FineTuneService(broker)
 
     // Подтверждение получения модели
@@ -210,3 +213,4 @@ export async function PUT(request: NextRequest) {
     )
   }
 }
+

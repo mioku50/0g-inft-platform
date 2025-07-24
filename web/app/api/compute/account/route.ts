@@ -14,6 +14,7 @@ const FINE_TUNE_PROVIDER = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
 export async function GET(request: NextRequest) {
   try {
     const broker = await getBroker()
+    if (!broker?.signer?.address) throw new Error('Broker signer unavailable')
     const fineTuneService = new FineTuneService(broker)
 
     // Получение баланса
@@ -86,6 +87,7 @@ export async function POST(request: NextRequest) {
     }
 
     const broker = await getBroker()
+    if (!broker?.signer?.address) throw new Error('Broker signer unavailable')
     const fineTuneService = new FineTuneService(broker)
 
     let transactionHash = ''
@@ -160,6 +162,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const broker = await getBroker()
+    if (!broker?.signer?.address) throw new Error('Broker signer unavailable')
 
     // Запрос возврата всех доступных средств
     await broker.fineTuning.requestRefundAll(
@@ -184,3 +187,4 @@ export async function DELETE(request: NextRequest) {
     )
   }
 }
+

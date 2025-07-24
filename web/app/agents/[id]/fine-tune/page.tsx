@@ -70,6 +70,9 @@ export default function FineTunePage() {
   const [isCheckingAccount, setIsCheckingAccount] = useState(true)
   const [depositAmount, setDepositAmount] = useState('0.01')
   const [isDepositing, setIsDepositing] = useState(false)
+  const balanceDisplay = accountInfo
+    ? Number(accountInfo.balance).toFixed(3) + ' OG'
+    : '0 OG'
 
   // Load cached dataset info
   useEffect(() => {
@@ -365,7 +368,7 @@ export default function FineTunePage() {
               <div className="bg-black/20 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-300">Current Balance:</span>
-                  <span className="text-white font-semibold">{accountInfo.balance} {NATIVE_SYMBOL}</span>
+                  <span className="text-white font-semibold">{balanceDisplay}</span>
                 </div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-300">Account Status:</span>
@@ -659,7 +662,7 @@ export default function FineTunePage() {
                       <div className="h-px bg-white/10"></div>
                       <div className="flex justify-between items-center">
                         <span className="text-gray-300 font-medium">Account Balance:</span>
-                        <span className="text-white font-semibold">{accountInfo.balance} {NATIVE_SYMBOL}</span>
+                        <span className="text-white font-semibold">{balanceDisplay}</span>
                       </div>
                     </>
                   )}

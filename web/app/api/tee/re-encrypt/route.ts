@@ -1,6 +1,6 @@
 // web/app/api/tee/re-encrypt/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { ethers } from 'ethers'
+import { ethers, keccak256, randomBytes } from 'ethers'
 import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     ))
     
     // 4. Генерируем proof для контракта
-    const proof = ethers.keccak256(
+    const proof = keccak256(
       ethers.AbiCoder.defaultAbiCoder().encode(
         ['address', 'address', 'uint256', 'bytes32'],
         [oldOwner, newOwner, tokenId, ethers.id(encrypted)]
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     )
     
     // 5. Сохраняем новые зашифрованные данные
-    const newMetadataHash = ethers.keccak256(ethers.toUtf8Bytes(encrypted))
+    const newMetadataHash = keccak256(ethers.toUtf8Bytes(encrypted))
     
     return NextResponse.json({
       success: true,
@@ -53,3 +53,4 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+

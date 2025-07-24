@@ -1,4 +1,4 @@
-import { Wallet, JsonRpcProvider } from 'ethers'
+import { ethers } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 
 let broker: any
@@ -37,11 +37,14 @@ export async function getBroker() {
   if (!pk) throw new Error('OG_COMPUTE_PRIVATE_KEY missing')
 
   try {
-    const signer = new Wallet(pk, new JsonRpcProvider(rpc))
+    const signer = new ethers.Wallet(pk, new ethers.JsonRpcProvider(rpc))
     console.log('Initializing 0G Compute broker with signer:', signer.address)
 
     // Инициализация основного broker для compute/inference
     broker = await createZGComputeNetworkBroker(signer)
+    if (!broker?.signer || !broker?.inference) {
+      throw new Error('Broker init failed')
+    }
     
     // Проверяем доступность inference API
     if (!broker.inference) {
@@ -77,9 +80,6 @@ export async function getBroker() {
     // Добавляем функциональность Fine-tuning
     if (!broker.fineTuning) {
       console.log('Adding fine-tuning functionality')
-      
-      // Импортируем контракт fine-tuning
-      const { ethers } = await import('ethers')
       
       // ABI для Fine-tuning контракта (упрощенная версия основных функций)
       const FINE_TUNING_ABI = [
@@ -118,9 +118,9 @@ export async function getBroker() {
               return {
                 user,
                 provider,
-                nonce: ethers.BigNumber.from(0),
-                balance: ethers.BigNumber.from(0),
-                pendingRefund: ethers.BigNumber.from(0),
+                nonce: 0n,
+                balance: 0n,
+                pendingRefund: 0n,
                 refunds: [],
                 additionalInfo: '',
                 providerSigner: provider,

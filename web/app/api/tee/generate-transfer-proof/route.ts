@@ -1,6 +1,6 @@
 // web/app/api/tee/generate-transfer-proof/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { ethers } from 'ethers'
+import { ethers, keccak256, randomBytes, solidityPacked } from 'ethers'
 const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
 
 const OFFICIAL_CONTRACTS = {
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       to: to,
       oldDataHash: oldDataHash,
       timestamp: Math.floor(Date.now() / 1000),
-      nonce: ethers.hexlify(ethers.randomBytes(16))
+      nonce: ethers.hexlify(randomBytes(16))
     }
     
     // Получаем метаданные сервиса
@@ -98,15 +98,15 @@ Return a JSON object with these exact fields:
       console.error('Failed to parse TEE response, generating deterministic proof')
       
       // Генерируем детерминированный proof на основе входных данных
-      const dataToHash = ethers.solidityPacked(
+      const dataToHash = solidityPacked(
         ['uint256', 'address', 'address', 'uint256'],
         [tokenId, from, to, teeOperation.timestamp]
       )
-      
+
       proofData = {
-        newDataHash: ethers.keccak256(dataToHash),
-        sealedKey: ethers.hexlify(ethers.randomBytes(32)),
-        attestation: ethers.hexlify(ethers.randomBytes(64))
+        newDataHash: keccak256(dataToHash),
+        sealedKey: ethers.hexlify(randomBytes(32)),
+        attestation: ethers.hexlify(randomBytes(64))
       }
     }
     
@@ -143,3 +143,4 @@ Return a JSON object with these exact fields:
     )
   }
 }
+

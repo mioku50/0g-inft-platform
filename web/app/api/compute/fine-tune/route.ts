@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     // Инициализация broker и сервиса
     const broker = await getBroker()
-    const signerAddress = getSignerAddress()
+    const signerAddress = getSignerAddress(broker)
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }
@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
 
     // Инициализация сервиса
     const broker = await getBroker()
-    const signerAddress = getSignerAddress()
+    const signerAddress = getSignerAddress(broker)
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }
@@ -197,7 +197,7 @@ export async function PUT(request: NextRequest) {
 
     // Инициализация сервиса
     const broker = await getBroker()
-    const signerAddress = getSignerAddress()
+    const signerAddress = getSignerAddress(broker)
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }

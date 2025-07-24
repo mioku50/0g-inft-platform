@@ -98,18 +98,34 @@ export default function FineTunePage() {
       console.log('GET /api/compute/account result', data)
       if (response.ok) {
         setAccountInfo({
-          balance: data.account.balance,
-          exists: data.account.exists,
-          needsTopUp: data.recommendations.needsTopUp
+          balance: data.balanceOG,
+          exists: data.exists,
+          needsTopUp: parseFloat(data.balanceOG) < 0.001
         })
       } else {
         console.warn('Could not fetch account info')
-        toast({ variant: 'destructive', description: data.error || 'Failed to fetch account info' })
+        toast({
+          variant: 'destructive',
+          description: data.error || 'Failed to fetch account info',
+          action: (
+            <Button variant="outline" onClick={checkAccountStatus}>
+              Повторить
+            </Button>
+          )
+        })
         setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
       }
     } catch (error) {
       console.error('Error checking account:', error)
-      toast({ variant: 'destructive', description: 'Failed to fetch account info' })
+      toast({
+        variant: 'destructive',
+        description: 'Failed to fetch account info',
+        action: (
+          <Button variant="outline" onClick={checkAccountStatus}>
+            Повторить
+          </Button>
+        )
+      })
       setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
     } finally {
       setIsCheckingAccount(false)
@@ -195,24 +211,25 @@ export default function FineTunePage() {
   const getStatusInfo = (status: string) => {
     switch (status) {
       case 'Init':
-        return { text: 'Initializing', color: 'text-yellow-400', icon: <Activity className="w-5 h-5" /> }
       case 'SettingUp':
-        return { text: 'Setting up environment', color: 'text-orange-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
       case 'Training':
-        return { text: 'Training in progress', color: 'text-purple-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
-      case 'Trained':
-        return { text: 'Training completed', color: 'text-green-400', icon: <Check className="w-5 h-5" /> }
+        return { text: 'Training', color: 'text-purple-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
       case 'Delivering':
-        return { text: 'Uploading model', color: 'text-blue-400', icon: <Upload className="w-5 h-5" /> }
-      case 'Delivered':
-        return { text: 'Model ready for download', color: 'text-green-400', icon: <Download className="w-5 h-5" /> }
+        return { text: 'Delivering', color: 'text-blue-400', icon: <Upload className="w-5 h-5" /> }
       case 'Finished':
-        return { text: 'Task completed!', color: 'text-green-500', icon: <Check className="w-5 h-5" /> }
+        return { text: 'Finished', color: 'text-green-500', icon: <Check className="w-5 h-5" /> }
       case 'Failed':
-        return { text: 'Task failed', color: 'text-red-400', icon: <AlertCircle className="w-5 h-5" /> }
+        return { text: 'Failed', color: 'text-red-400', icon: <AlertCircle className="w-5 h-5" /> }
       default:
         return { text: status, color: 'text-gray-400', icon: <Activity className="w-5 h-5" /> }
     }
+  }
+
+  const getAccountStatusLabel = () => {
+    if (!accountInfo) return ''
+    if (!accountInfo.exists) return 'NotCreated'
+    if (parseFloat(accountInfo.balance) === 0) return 'Created (0 OG)'
+    return 'Ready'
   }
 
   // Start fine-tuning
@@ -343,12 +360,16 @@ export default function FineTunePage() {
                 </div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-300">Account Status:</span>
-                  <Badge className={accountInfo.exists ? 'bg-green-500' : 'bg-red-500'}>
-                    {accountInfo.exists
-                      ? parseFloat(accountInfo.balance) === 0
-                        ? 'Created / 0 OG'
-                        : 'Active'
-                      : 'Not Created'}
+                  <Badge
+                    className={
+                      !accountInfo.exists
+                        ? 'bg-red-500'
+                        : parseFloat(accountInfo.balance) === 0
+                        ? 'bg-yellow-500'
+                        : 'bg-green-500'
+                    }
+                  >
+                    {getAccountStatusLabel()}
                   </Badge>
                 </div>
                 {accountInfo.needsTopUp && (

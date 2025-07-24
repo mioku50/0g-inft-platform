@@ -10,6 +10,9 @@ import crypto from 'crypto'
 
 const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
 
+const ackCache = new Map<string, number>()
+const ACK_TTL = 5 * 60 * 1000
+
 const OFFICIAL_CONTRACTS = {
   ledger: '0x1a85Dd32da10c170F4f138d082DDc496ab3E5BAa',
   inference: '0x5299bd255B76305ae08d7F95B270A485c6b95D54',
@@ -64,22 +67,27 @@ export async function POST(request: NextRequest) {
         
         try {
           // ВАЖНО: Acknowledge провайдера перед использованием
-          try {
-            console.log('Acknowledging provider...')
-            const ackTx = await broker.inference.acknowledgeProviderSigner(service.provider)
-            console.log('Acknowledge tx:', ackTx.hash)
-            
-            // Ждем подтверждения транзакции
-            console.log('Waiting for transaction confirmation...')
-            await ackTx.wait()
-            console.log('Provider acknowledged successfully!')
-          } catch (ackError: any) {
-            // Если уже acknowledged, продолжаем
-            if (ackError.message.includes('already acknowledged')) {
-              console.log('Provider already acknowledged')
-            } else {
-              console.log('Acknowledge error:', ackError.message)
-              // Продолжаем попытку даже если acknowledge не удался
+          const lastAck = ackCache.get(service.provider)
+          const now = Date.now()
+          if (!lastAck || now - lastAck > ACK_TTL) {
+            try {
+              console.log('Acknowledging provider...')
+              const ackTx = await broker.inference.acknowledgeProviderSigner(service.provider)
+              console.log('Acknowledge tx:', ackTx.hash)
+              try {
+                await ackTx?.wait?.()
+              } catch (waitErr: any) {
+                console.log('ack wait error:', waitErr?.message)
+              }
+              ackCache.set(service.provider, now)
+              console.log('Provider acknowledged successfully!')
+            } catch (ackError: any) {
+              if (ackError.message.includes('already acknowledged')) {
+                console.log('Provider already acknowledged')
+                ackCache.set(service.provider, now)
+              } else {
+                console.log('Acknowledge error:', ackError.message)
+              }
             }
           }
           
@@ -106,15 +114,19 @@ export async function POST(request: NextRequest) {
           
           // Используем OpenAI SDK
           const OpenAI = require('openai')
-          const openai = new OpenAI({ 
-            baseURL: metadata.endpoint, 
-            apiKey: '' 
+          const openai = new OpenAI({
+            baseURL: metadata.endpoint,
+            apiKey: ''
           })
-          
+
           try {
+            const controller = new AbortController()
+            const t = setTimeout(() => controller.abort(), 15000)
             const completion = await openai.chat.completions.create(requestBody, {
-              headers: headers
+              headers: headers,
+              signal: controller.signal
             })
+            clearTimeout(t)
             
             console.log('✅ Success with service:', service.model)
             
@@ -145,14 +157,18 @@ export async function POST(request: NextRequest) {
             
             // Пробуем альтернативный подход с fetch
             try {
+              const controller = new AbortController()
+              const t2 = setTimeout(() => controller.abort(), 15000)
               const response = await fetch(`${metadata.endpoint}/chat/completions`, {
                 method: 'POST',
                 headers: {
                   ...headers,
                   'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify(requestBody),
+                signal: controller.signal
               })
+              clearTimeout(t2)
               
               if (response.ok) {
                 const data = await response.json()

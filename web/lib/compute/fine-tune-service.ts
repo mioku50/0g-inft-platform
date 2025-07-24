@@ -1,6 +1,6 @@
 // lib/compute/fine-tune-service.ts
-import { getBroker, FINE_TUNE_PROVIDER, weiToOg } from './broker'
-import { parseEther } from 'ethers'
+import { getBroker, FINE_TUNE_PROVIDER } from './broker'
+import { toWei, fromWei } from '@/lib/constants'
 
 // Маппинг моделей согласно официальной документации
 const MODEL_MAPPING = {
@@ -212,7 +212,7 @@ export class FineTuneService {
           this.broker.signer.address,
           FINE_TUNE_PROVIDER,
           'INFT Platform User',
-          { value: parseEther('0.01') }
+          { value: toWei('0.01') }
         )
         
         console.log('Fine-tuning account created')
@@ -241,7 +241,7 @@ export class FineTuneService {
       )
       
       if (account && account.balance !== undefined) {
-        return weiToOg(account.balance)
+        return fromWei(account.balance)
       }
       
       return '0'
@@ -260,7 +260,7 @@ export class FineTuneService {
         this.broker.signer.address,
         FINE_TUNE_PROVIDER,
         0n,
-        { value: parseEther(amount) }
+        { value: toWei(amount) }
       )
       return tx
     } catch (error) {

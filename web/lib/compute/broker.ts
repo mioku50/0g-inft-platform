@@ -1,16 +1,16 @@
-import { Wallet, JsonRpcProvider, Contract, formatEther } from 'ethers'
+import { Wallet, JsonRpcProvider, Contract } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { FINE_TUNING_SERVING_ABI } from '@/lib/contracts/abis'
-import { RPC_URL, FINE_TUNING_SERVING, FINE_TUNE_PROVIDER, OG_COMPUTE_PK } from '@/lib/constants'
+import { RPC_URL, FINE_TUNING_SERVING, FINE_TUNE_PROVIDER, PK, fromWei } from '@/lib/constants'
 
 let broker: any
 
-export function getSignerAddress() {
-  if (!broker) return null
-  return broker.signerAddress || broker.signer?.address || null
+export function getSignerAddress(b?: any) {
+  const br = b || broker
+  if (!br) return null
+  return br.signerAddress || br.signer?.address || null
 }
 
-export const weiToOg = (v: bigint) => formatEther(v)
 
 export async function getBroker() {
   if (broker) return broker
@@ -21,11 +21,14 @@ export async function getBroker() {
   }
 
   const provider = new JsonRpcProvider(RPC_URL)
-  const signer = new Wallet(OG_COMPUTE_PK, provider)
+  const signer = new Wallet(PK, provider)
 
   const code = await provider.getCode(FINE_TUNING_SERVING)
-  if (!code || code === '0x') {
-    throw new Error(`FineTuningServing not deployed at ${FINE_TUNING_SERVING}`)
+  const deployed = code && code !== '0x'
+  if (!deployed) {
+    console.warn(`FineTuningServing not deployed at ${FINE_TUNING_SERVING}, using mock broker`)
+    broker = createMockBroker()
+    return broker
   }
 
   broker = await createZGComputeNetworkBroker(signer)
@@ -51,8 +54,10 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       try {
         const acc = await contract.getAccount(user, provider)
         return {
-          balance: BigInt(acc.balance),
-          pendingRefund: BigInt(acc.pendingRefund),
+          balanceWei: acc.balance.toString(),
+          balance: fromWei(acc.balance),
+          pendingRefundWei: acc.pendingRefund.toString(),
+          pendingRefund: fromWei(acc.pendingRefund),
           deliverables: acc.deliverables || [],
           nonce: acc.nonce ? BigInt(acc.nonce) : 0n,
           refunds: acc.refunds || []
@@ -164,4 +169,4 @@ function formatError(e: any) {
   )
 }
 
-export { broker, FINE_TUNE_PROVIDER, getSignerAddress }
+export { broker, FINE_TUNE_PROVIDER }

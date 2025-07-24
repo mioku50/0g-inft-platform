@@ -1,150 +1,84 @@
-// app/api/compute/account/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getBroker, FINE_TUNE_PROVIDER } from '@/lib/compute/broker'
-import { parseEther, formatEther } from 'ethers'
-import { NATIVE_SYMBOL } from '@/lib/constants'
+import { getBroker, FINE_TUNE_PROVIDER, weiToOg } from '@/lib/compute/broker'
+import { parseEther } from 'ethers'
 
 export const runtime = 'nodejs'
 
-/**
- * GET /api/compute/account - Получение информации об аккаунте
- */
+type AccountResponse = {
+  success: true
+  account: {
+    exists: boolean
+    balance: string
+    balanceWei: string
+    pendingRefund: string
+    nonce: string
+    deliverableCount: number
+    provider: string
+    address: string
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const broker = await getBroker()
-    if (!broker.signer) {
-      return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
-    }
-
-    const exists = await broker.fineTuning.accountExists(
-      broker.signer.address,
-      FINE_TUNE_PROVIDER
-    )
-
-    let balance = 0n
-    let nonce = 0n
-    let deliverablesLen = 0
-
+    const exists = await broker.fineTuning.accountExists(broker.signer.address, FINE_TUNE_PROVIDER)
+    let acc: any = null
     if (exists) {
-      const info = await broker.fineTuning.getAccount(
-        broker.signer.address,
-        FINE_TUNE_PROVIDER
-      )
-      balance = info.balance
-      nonce = info.nonce
-      deliverablesLen = info.deliverables.length
+      acc = await broker.fineTuning.getAccount(broker.signer.address, FINE_TUNE_PROVIDER)
     }
-
-    return NextResponse.json({
-      exists,
-      balance: formatEther(balance),
-      nonce: nonce.toString(),
-      deliverables: deliverablesLen
-    })
-
+    const result: AccountResponse = {
+      success: true,
+      account: {
+        exists,
+        balance: acc ? weiToOg(acc.balance) : '0',
+        balanceWei: acc ? acc.balance.toString() : '0',
+        pendingRefund: acc ? weiToOg(acc.pendingRefund) : '0',
+        nonce: acc ? acc.nonce.toString() : '0',
+        deliverableCount: acc ? acc.deliverables.length : 0,
+        provider: FINE_TUNE_PROVIDER,
+        address: broker.signer.address
+      }
+    }
+    console.log('[fine-tune][GET]', { result })
+    return NextResponse.json(result)
   } catch (error: any) {
-    console.error('Error getting account info:', error)
-    return NextResponse.json(
-      { 
-        error: 'Failed to get account information',
-        details: error.message || 'Unknown error'
-      },
-      { status: 500 }
-    )
+    console.error('[fine-tune][GET][error]', error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
 
-/**
- * POST /api/compute/account - Создание или пополнение аккаунта
- */
 export async function POST(request: NextRequest) {
+  const body = await request.json()
+  console.log('[fine-tune][POST]', { body })
   try {
-    const body = await request.json()
-    const { amount, action = 'deposit' } = body
-
-    if (!amount || parseFloat(amount) <= 0) {
-      return NextResponse.json(
-        { error: 'Invalid amount. Must be greater than 0' },
-        { status: 400 }
-      )
-    }
-
+    const { amount, action } = body as { amount: string; action: 'create' | 'deposit' }
     const broker = await getBroker()
-    if (!broker.signer) {
-      return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
-    }
-
     let tx
     if (action === 'create') {
-      tx = await broker.fineTuning.addAccount(
-        broker.signer.address,
-        FINE_TUNE_PROVIDER,
-        'INFT Platform User',
-        { value: parseEther(amount) }
-      )
+      tx = await broker.fineTuning.addAccount(broker.signer.address, FINE_TUNE_PROVIDER, 'INFT Platform User', { value: parseEther(amount) })
     } else {
-      tx = await broker.fineTuning.depositFund(
-        broker.signer.address,
-        FINE_TUNE_PROVIDER,
-        0n,
-        { value: parseEther(amount) }
-      )
+      tx = await broker.fineTuning.depositFund(broker.signer.address, FINE_TUNE_PROVIDER, 0n, { value: parseEther(amount) })
     }
-
-    const info = await broker.fineTuning.getAccount(
-      broker.signer.address,
-      FINE_TUNE_PROVIDER
-    )
-
-    return NextResponse.json({
-      balance: formatEther(info.balance)
-    })
-
+    const acc = await broker.fineTuning.getAccount(broker.signer.address, FINE_TUNE_PROVIDER)
+    const result = { success: true, txHash: tx.hash, balance: weiToOg(acc.balance) }
+    console.log('[fine-tune][POST]', { result })
+    return NextResponse.json(result)
   } catch (e: any) {
-    console.error('depositFund error', {
-      message: e.message,
-      code: e.code,
-      reason: e.reason,
-      data: e.data
-    })
-    return NextResponse.json(
-      { error: e.message, code: e.code, reason: e.reason },
-      { status: 500 }
-    )
+    console.error('[fine-tune][POST][error]', e)
+    return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
 
-/**
- * DELETE /api/compute/account - Запрос возврата средств
- */
 export async function DELETE(request: NextRequest) {
+  console.log('[fine-tune][DELETE]')
   try {
     const broker = await getBroker()
-
-    // Запрос возврата всех доступных средств
-    const tx = await broker.fineTuning.requestRefundAll(
-      broker.signer.address,
-      FINE_TUNE_PROVIDER
-    )
-    await tx.wait()
-
-    return NextResponse.json({
-      success: true,
-      message: 'Refund request submitted. Processing may take some time.',
-      transaction: tx?.hash || '',
-      note: 'Refunds are processed automatically after the lock period expires'
-    })
-
+    const tx = await broker.fineTuning.requestRefundAll(broker.signer.address, FINE_TUNE_PROVIDER)
+    const result = { success: true, txHash: tx.hash }
+    console.log('[fine-tune][DELETE]', { result })
+    return NextResponse.json(result)
   } catch (e: any) {
-    console.error('requestRefundAll error', {
-      message: e.message,
-      code: e.code,
-      reason: e.reason,
-      data: e.data
-    })
-    return NextResponse.json(
-      { error: e.message, code: e.code, reason: e.reason },
-      { status: 500 }
-    )
+    console.error('[fine-tune][DELETE][error]', e)
+    return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

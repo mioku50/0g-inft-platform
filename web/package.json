@@ -3,24 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "type-check": "tsc -p tsconfig.json --noEmit",
+    "lint": "next lint",
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "type-check": "tsc --noEmit",
-    "check-balance": "ts-node --project tsconfig.scripts.json scripts/check-storage-balance.ts",
-    "fund-storage": "ts-node --project tsconfig.scripts.json scripts/check-storage-balance.ts fund",
-    "health-check": "ts-node --project tsconfig.scripts.json scripts/health-check.ts",
-    "init-compute": "ts-node --project tsconfig.scripts.json scripts/health-check.ts init-compute",
-    "check-metadata": "ts-node --project tsconfig.scripts.json scripts/check-metadata.ts",
-    "debug-metadata": "ts-node --project tsconfig.scripts.json scripts/debug-token-metadata.ts",
-    "fix-metadata": "ts-node --project tsconfig.scripts.json scripts/fix-metadata-urls.ts",
-    "fix-metadata-locally": "ts-node --project tsconfig.scripts.json scripts/fix-metadata-locally.ts",
-    "update-tokens": "ts-node --project tsconfig.scripts.json scripts/update-problematic-tokens.ts",
-    "fix-missing": "ts-node --project tsconfig.scripts.json scripts/fix-all-missing-metadata.ts",
-    "fix-specific-token": "ts-node --project tsconfig.scripts.json scripts/fix-specific-token.ts",
-    "e2e:fine-tune": "ts-node --project tsconfig.scripts.json scripts/e2e-fine-tune.ts",
-    "test": "vitest run"
+    "start": "next start"
   },
   "dependencies": {
     "@0glabs/0g-serving-broker": "0.2.14",

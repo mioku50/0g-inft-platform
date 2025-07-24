@@ -252,7 +252,7 @@ export default function FineTunePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           agentId: tokenId,
-          datasetRoot,
+          datasetRootHash: datasetRoot,
           dataSize,
           baseModel,
           steps,

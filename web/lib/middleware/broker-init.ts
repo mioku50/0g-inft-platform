@@ -1,6 +1,7 @@
 // lib/middleware/broker-init.ts
 import { getBroker } from '@/lib/compute/broker'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
+import React from 'react'
 
 let isInitialized = false
 let initPromise: Promise<any> | null = null

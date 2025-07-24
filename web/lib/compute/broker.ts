@@ -1,8 +1,7 @@
 // lib/compute/broker.ts
-import { Wallet, JsonRpcProvider } from 'ethers'
+import { Wallet, JsonRpcProvider, Contract, formatEther } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { FINE_TUNING_SERVING_ABI } from '@/lib/contracts/abis'
-import { Contract } from 'ethers'
 
 let broker: any
 
@@ -68,7 +67,14 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       // Получение аккаунта
       getAccount: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
         try {
-          return await fineTuningContract.getAccount(user, provider)
+          const acc = await fineTuningContract.getAccount(user, provider)
+          return {
+            balance: BigInt(acc.balance),
+            pendingRefund: BigInt(acc.pendingRefund),
+            deliverables: acc.deliverables || [],
+            nonce: acc.nonce ? BigInt(acc.nonce) : BigInt(0),
+            refunds: acc.refunds || []
+          }
         } catch (error) {
           console.warn('getAccount error:', error)
           return null
@@ -79,7 +85,6 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       addAccount: async (user: string, provider: string = FINE_TUNE_PROVIDER, additionalInfo: string = '', options: any = {}) => {
         try {
           const tx = await fineTuningContract.addAccount(user, provider, additionalInfo, options)
-          await tx.wait()
           return tx
         } catch (error) {
           console.error('addAccount error:', error)
@@ -91,7 +96,6 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       depositFund: async (user: string, provider: string = FINE_TUNE_PROVIDER, cancelRetrievingAmount: number = 0, options: any = {}) => {
         try {
           const tx = await fineTuningContract.depositFund(user, provider, cancelRetrievingAmount, options)
-          await tx.wait()
           return tx
         } catch (error) {
           console.error('depositFund error:', error)
@@ -103,7 +107,6 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       acknowledgeProviderSigner: async (provider: string = FINE_TUNE_PROVIDER, providerSigner: string = FINE_TUNE_PROVIDER) => {
         try {
           const tx = await fineTuningContract.acknowledgeProviderSigner(provider, providerSigner)
-          await tx.wait()
           return tx
         } catch (error) {
           console.warn('acknowledgeProviderSigner error:', error)
@@ -116,7 +119,6 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       acknowledgeDeliverable: async (provider: string = FINE_TUNE_PROVIDER, index: number = 0) => {
         try {
           const tx = await fineTuningContract.acknowledgeDeliverable(provider, index)
-          await tx.wait()
           return tx
         } catch (error) {
           console.error('acknowledgeDeliverable error:', error)
@@ -128,7 +130,6 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       requestRefundAll: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
         try {
           const tx = await fineTuningContract.requestRefundAll(user, provider)
-          await tx.wait()
           return tx
         } catch (error) {
           console.error('requestRefundAll error:', error)
@@ -165,6 +166,14 @@ function createMockBroker() {
       acknowledgeDeliverable: async () => {},
       requestRefundAll: async () => {}
     }
+  }
+}
+
+export function weiToOg(value: bigint | string | number): string {
+  try {
+    return formatEther(value)
+  } catch {
+    return '0'
   }
 }
 

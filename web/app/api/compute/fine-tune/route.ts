@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       agentId,
-      datasetRoot,
+      datasetRootHash,
       dataSize,
       baseModel,
       steps,
@@ -23,22 +23,25 @@ export async function POST(request: NextRequest) {
 
     console.log('Fine-tuning request:', {
       agentId,
-      datasetRoot,
+      datasetRootHash,
       baseModel,
       steps,
       learningRate
     })
 
     // Валидация входных данных
-    if (!agentId || !datasetRoot || !baseModel) {
+    if (!agentId || !datasetRootHash || !baseModel) {
       return NextResponse.json(
-        { error: 'Missing required parameters: agentId, datasetRoot, baseModel' },
+        { error: 'Missing required parameters: agentId, datasetRootHash, baseModel' },
         { status: 400 }
       )
     }
 
     // Инициализация broker и сервиса
     const broker = await getBroker()
+    if (!broker.signer) {
+      return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
+    }
     const fineTuneService = new FineTuneService(broker)
 
     // Инициализация аккаунта (если нужно)
@@ -67,7 +70,7 @@ export async function POST(request: NextRequest) {
     // Создание задачи fine-tuning
     const taskId = await fineTuneService.createTask({
       agentId,
-      datasetRootHash: datasetRoot,
+      datasetRootHash,
       baseModel,
       steps: steps || 500,
       learningRate: learningRate || 0.00005,
@@ -134,6 +137,9 @@ export async function GET(request: NextRequest) {
 
     // Инициализация сервиса
     const broker = await getBroker()
+    if (!broker.signer) {
+      return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
+    }
     const fineTuneService = new FineTuneService(broker)
 
     // Получение статуса задачи
@@ -189,6 +195,9 @@ export async function PUT(request: NextRequest) {
 
     // Инициализация сервиса
     const broker = await getBroker()
+    if (!broker.signer) {
+      return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
+    }
     const fineTuneService = new FineTuneService(broker)
 
     // Подтверждение получения модели

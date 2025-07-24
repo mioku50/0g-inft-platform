@@ -9,7 +9,7 @@ import {
   PK
 } from '@/lib/server/compute-env'
 
-let broker: any
+let broker: any | null = null
 
 export function getSignerAddress(b?: any) {
   const br = b || broker

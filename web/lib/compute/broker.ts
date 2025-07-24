@@ -1,13 +1,23 @@
 // lib/compute/broker.ts
-import { Wallet, JsonRpcProvider, Contract, formatEther } from 'ethers'
+import {
+  Wallet,
+  JsonRpcProvider,
+  Contract,
+  formatEther,
+  parseEther
+} from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { FINE_TUNING_SERVING_ABI } from '@/lib/contracts/abis'
 
 let broker: any
 
 // Официальный провайдер Fine-tuning
-const FINE_TUNE_PROVIDER = process.env.OG_COMPUTE_PROVIDER_ADDRESS || '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
-const FINE_TUNING_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_FINE_TUNING_CONTRACT_ADDRESS || '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0'
+const FINE_TUNE_PROVIDER =
+  process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER ||
+  '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
+const FINE_TUNING_CONTRACT_ADDRESS =
+  process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS ||
+  '0xda478Ccf5d534346A16b1475E4c2DecE0268B176'
 
 export async function getBroker() {
   if (broker) return broker
@@ -27,6 +37,13 @@ export async function getBroker() {
   try {
     const signer = new Wallet(pk, new JsonRpcProvider(rpc))
     console.log('Initializing 0G Compute broker with signer:', signer.address)
+
+    const code = await signer.provider.getCode(FINE_TUNING_CONTRACT_ADDRESS)
+    if (!code || code === '0x') {
+      throw new Error(
+        `FineTuningServing not deployed at ${FINE_TUNING_CONTRACT_ADDRESS} on this network`
+      )
+    }
 
     // ✅ Broker создается сразу готовым - initialize() больше НЕ НУЖЕН
     broker = await createZGComputeNetworkBroker(signer)
@@ -55,17 +72,23 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
     // Добавляем Fine-tuning API к broker
     broker.fineTuning = {
       // Проверка существования аккаунта
-      accountExists: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
+      accountExists: async (
+        user: string,
+        provider: string = FINE_TUNE_PROVIDER
+      ) => {
         try {
           return await fineTuningContract.accountExists(user, provider)
-        } catch (error) {
+        } catch (error: any) {
           console.warn('accountExists error:', error)
           return false
         }
       },
 
       // Получение аккаунта
-      getAccount: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
+      getAccount: async (
+        user: string,
+        provider: string = FINE_TUNE_PROVIDER
+      ) => {
         try {
           const acc = await fineTuningContract.getAccount(user, provider)
           return {
@@ -75,65 +98,112 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
             nonce: acc.nonce ? BigInt(acc.nonce) : BigInt(0),
             refunds: acc.refunds || []
           }
-        } catch (error) {
+        } catch (error: any) {
           console.warn('getAccount error:', error)
           return null
         }
       },
 
       // Создание аккаунта
-      addAccount: async (user: string, provider: string = FINE_TUNE_PROVIDER, additionalInfo: string = '', options: any = {}) => {
+      addAccount: async (
+        user: string,
+        provider: string = FINE_TUNE_PROVIDER,
+        additionalInfo: string = '',
+        options: any = {}
+      ) => {
         try {
-          const tx = await fineTuningContract.addAccount(user, provider, additionalInfo, options)
+          const tx = await fineTuningContract.addAccount(
+            user,
+            provider,
+            additionalInfo,
+            options
+          )
+          await tx.wait()
           return tx
-        } catch (error) {
+        } catch (error: any) {
           console.error('addAccount error:', error)
-          throw error
+          throw new Error(
+            `addAccount failed: ${error.message} (code=${error.code}, reason=${error.reason})`
+          )
         }
       },
 
       // Пополнение баланса
-      depositFund: async (user: string, provider: string = FINE_TUNE_PROVIDER, cancelRetrievingAmount: number = 0, options: any = {}) => {
+      depositFund: async (
+        user: string,
+        provider: string = FINE_TUNE_PROVIDER,
+        cancelRetrievingAmount: bigint = BigInt(0),
+        options: any = {}
+      ) => {
         try {
-          const tx = await fineTuningContract.depositFund(user, provider, cancelRetrievingAmount, options)
+          const tx = await fineTuningContract.depositFund(
+            user,
+            provider,
+            cancelRetrievingAmount,
+            options
+          )
+          await tx.wait()
           return tx
-        } catch (error) {
+        } catch (error: any) {
           console.error('depositFund error:', error)
-          throw error
+          throw new Error(
+            `depositFund failed: ${error.message} (code=${error.code}, reason=${error.reason})`
+          )
         }
       },
 
       // Подтверждение провайдера
-      acknowledgeProviderSigner: async (provider: string = FINE_TUNE_PROVIDER, providerSigner: string = FINE_TUNE_PROVIDER) => {
+      acknowledgeProviderSigner: async (
+        provider: string = FINE_TUNE_PROVIDER,
+        providerSigner: string = FINE_TUNE_PROVIDER
+      ) => {
         try {
-          const tx = await fineTuningContract.acknowledgeProviderSigner(provider, providerSigner)
+          const tx = await fineTuningContract.acknowledgeProviderSigner(
+            provider,
+            providerSigner
+          )
+          await tx.wait()
           return tx
-        } catch (error) {
+        } catch (error: any) {
           console.warn('acknowledgeProviderSigner error:', error)
-          // Не выбрасываем ошибку, может быть уже выполнено
           return null
         }
       },
 
       // Подтверждение получения модели
-      acknowledgeDeliverable: async (provider: string = FINE_TUNE_PROVIDER, index: number = 0) => {
+      acknowledgeDeliverable: async (
+        provider: string = FINE_TUNE_PROVIDER,
+        index: number = 0
+      ) => {
         try {
-          const tx = await fineTuningContract.acknowledgeDeliverable(provider, index)
+          const tx = await fineTuningContract.acknowledgeDeliverable(
+            provider,
+            index
+          )
+          await tx.wait()
           return tx
-        } catch (error) {
+        } catch (error: any) {
           console.error('acknowledgeDeliverable error:', error)
-          throw error
+          throw new Error(
+            `acknowledgeDeliverable failed: ${error.message} (code=${error.code}, reason=${error.reason})`
+          )
         }
       },
 
       // Запрос возврата средств
-      requestRefundAll: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
+      requestRefundAll: async (
+        user: string,
+        provider: string = FINE_TUNE_PROVIDER
+      ) => {
         try {
           const tx = await fineTuningContract.requestRefundAll(user, provider)
+          await tx.wait()
           return tx
-        } catch (error) {
+        } catch (error: any) {
           console.error('requestRefundAll error:', error)
-          throw error
+          throw new Error(
+            `requestRefundAll failed: ${error.message} (code=${error.code}, reason=${error.reason})`
+          )
         }
       }
     }

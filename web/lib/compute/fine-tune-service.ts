@@ -147,11 +147,11 @@ export class FineTuneService {
             this.broker.signer.address,
             FINE_TUNE_PROVIDER
           )
-          
+
           if (account && account.deliverables && account.deliverables.length > 0) {
             const deliverable = account.deliverables[account.deliverables.length - 1]
             status.modelRootHash = deliverable.modelRootHash
-            status.progress = 'Finished'
+            status.progress = deliverable.acknowledged ? 'Finished' : 'Delivered'
           }
         } catch (error) {
           console.warn('Could not fetch deliverable:', error)
@@ -254,7 +254,7 @@ export class FineTuneService {
       const tx = await this.broker.fineTuning.depositFund(
         this.broker.signer.address,
         FINE_TUNE_PROVIDER,
-        0,
+        0n,
         { value: parseEther(amount) }
       )
       return tx

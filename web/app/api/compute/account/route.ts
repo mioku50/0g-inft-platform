@@ -1,9 +1,7 @@
 // app/api/compute/account/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getBroker, FINE_TUNE_PROVIDER } from '@/lib/compute/broker'
-import { FineTuneService } from '@/lib/compute/fine-tune-service'
-import { parseEther } from 'ethers'
-import { weiToOg } from '@/lib/compute/broker'
+import { parseEther, formatEther } from 'ethers'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 
 export const runtime = 'nodejs'
@@ -17,49 +15,32 @@ export async function GET(request: NextRequest) {
     if (!broker.signer) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }
-    const fineTuneService = new FineTuneService(broker)
 
-    // Получение баланса
-    const balance = await fineTuneService.getAccountBalance()
-
-    // Получение полной информации об аккаунте
-    let accountInfo = null
-    try {
-      accountInfo = await broker.fineTuning.getAccount(
-        broker.signer.address,
-        FINE_TUNE_PROVIDER
-      )
-    } catch (error) {
-      console.warn('Could not fetch detailed account info:', error)
-    }
-
-    // Проверка существования аккаунта
-    const accountExists = await broker.fineTuning.accountExists(
+    const exists = await broker.fineTuning.accountExists(
       broker.signer.address,
       FINE_TUNE_PROVIDER
     )
 
-    const response = {
-      success: true,
-      account: {
-        address: broker.signer.address,
-        provider: FINE_TUNE_PROVIDER,
-        balance: balance,
-        balanceWei: accountInfo?.balance?.toString() || '0',
-        exists: accountExists,
-        pendingRefund: accountInfo ? weiToOg(accountInfo.pendingRefund || BigInt(0)) : '0',
-        nonce: accountInfo?.nonce?.toString() || '0',
-        deliverables: accountInfo?.deliverables || [],
-        refunds: accountInfo?.refunds || []
-      },
-      recommendations: {
-        minimumBalance: '0.001',
-        recommendedBalance: '0.01',
-        needsTopUp: parseFloat(balance) < 0.001
-      }
+    let balance = 0n
+    let nonce = 0n
+    let deliverablesLen = 0
+
+    if (exists) {
+      const info = await broker.fineTuning.getAccount(
+        broker.signer.address,
+        FINE_TUNE_PROVIDER
+      )
+      balance = info.balance
+      nonce = info.nonce
+      deliverablesLen = info.deliverables.length
     }
 
-    return NextResponse.json(response)
+    return NextResponse.json({
+      exists,
+      balance: formatEther(balance),
+      nonce: nonce.toString(),
+      deliverables: deliverablesLen
+    })
 
   } catch (error: any) {
     console.error('Error getting account info:', error)
@@ -92,72 +73,42 @@ export async function POST(request: NextRequest) {
     if (!broker.signer) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }
-    const fineTuneService = new FineTuneService(broker)
 
-    let transactionHash = ''
-    let message = ''
-
+    let tx
     if (action === 'create') {
-      // Создание нового аккаунта
-      try {
-        const tx = await broker.fineTuning.addAccount(
-          broker.signer.address,
-          FINE_TUNE_PROVIDER,
-          'INFT Platform User',
-          { value: parseEther(amount) }
-        )
-        transactionHash = tx.hash
-        message = `Account created with initial balance of ${amount} ${NATIVE_SYMBOL}`
-      } catch (error: any) {
-        if (error.message.includes('AccountExists')) {
-          // Аккаунт уже существует, просто пополняем
-          const tx = await fineTuneService.depositFunds(amount)
-          transactionHash = tx?.hash || ''
-          message = `Account already exists. Deposited ${amount} ${NATIVE_SYMBOL}`
-        } else {
-          throw error
-        }
-      }
+      tx = await broker.fineTuning.addAccount(
+        broker.signer.address,
+        FINE_TUNE_PROVIDER,
+        'INFT Platform User',
+        { value: parseEther(amount) }
+      )
     } else {
-      // Пополнение существующего аккаунта
-      const tx = await fineTuneService.depositFunds(amount)
-      transactionHash = tx?.hash || ''
-      message = `Deposited ${amount} ${NATIVE_SYMBOL} to existing account`
-    }
-
-    // Получение обновленного баланса
-    const newBalance = await fineTuneService.getAccountBalance()
-
-    return NextResponse.json({
-      success: true,
-      message,
-      transaction: transactionHash,
-      account: {
-        address: broker.signer.address,
-        newBalance,
-        depositedAmount: amount
-      }
-    })
-
-  } catch (error: any) {
-    console.error('Error managing account:', error)
-    
-    // Обработка специфических ошибок
-    if (error.message.includes('insufficient funds')) {
-      return NextResponse.json(
-        { 
-          error: 'Insufficient wallet balance for deposit',
-          details: `Please ensure you have enough ${NATIVE_SYMBOL} in your wallet`
-        },
-        { status: 400 }
+      tx = await broker.fineTuning.depositFund(
+        broker.signer.address,
+        FINE_TUNE_PROVIDER,
+        0n,
+        { value: parseEther(amount) }
       )
     }
 
+    const info = await broker.fineTuning.getAccount(
+      broker.signer.address,
+      FINE_TUNE_PROVIDER
+    )
+
+    return NextResponse.json({
+      balance: formatEther(info.balance)
+    })
+
+  } catch (e: any) {
+    console.error('depositFund error', {
+      message: e.message,
+      code: e.code,
+      reason: e.reason,
+      data: e.data
+    })
     return NextResponse.json(
-      { 
-        error: 'Failed to manage account',
-        details: error.message || 'Unknown error'
-      },
+      { error: e.message, code: e.code, reason: e.reason },
       { status: 500 }
     )
   }
@@ -175,6 +126,7 @@ export async function DELETE(request: NextRequest) {
       broker.signer.address,
       FINE_TUNE_PROVIDER
     )
+    await tx.wait()
 
     return NextResponse.json({
       success: true,
@@ -183,13 +135,15 @@ export async function DELETE(request: NextRequest) {
       note: 'Refunds are processed automatically after the lock period expires'
     })
 
-  } catch (error: any) {
-    console.error('Error requesting refund:', error)
+  } catch (e: any) {
+    console.error('requestRefundAll error', {
+      message: e.message,
+      code: e.code,
+      reason: e.reason,
+      data: e.data
+    })
     return NextResponse.json(
-      { 
-        error: 'Failed to request refund',
-        details: error.message || 'Unknown error'
-      },
+      { error: e.message, code: e.code, reason: e.reason },
       { status: 500 }
     )
   }

@@ -92,6 +92,7 @@ export default function FineTunePage() {
   const checkAccountStatus = async () => {
     try {
       setIsCheckingAccount(true)
+      console.log('GET /api/compute/account')
       const response = await fetch('/api/compute/account')
       
       if (response.ok) {
@@ -125,6 +126,10 @@ export default function FineTunePage() {
 
     setIsDepositing(true)
     try {
+      console.log('POST /api/compute/account', {
+        amount: depositAmount,
+        action: accountInfo?.exists ? 'deposit' : 'create'
+      })
       const response = await fetch('/api/compute/account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -354,7 +359,11 @@ export default function FineTunePage() {
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-300">Account Status:</span>
                   <Badge className={accountInfo.exists ? 'bg-green-500' : 'bg-red-500'}>
-                    {accountInfo.exists ? 'Active' : 'Not Created'}
+                    {accountInfo.exists
+                      ? parseFloat(accountInfo.balance) === 0
+                        ? 'Created / 0 OG'
+                        : 'Active'
+                      : 'Not Created'}
                   </Badge>
                 </div>
                 {accountInfo.needsTopUp && (

@@ -620,3 +620,169 @@ export const COMPUTE_ORACLE_ABI = [
     "type": "function"
   }
 ] as const;
+
+// Добавляем Fine-tuning Serving ABI
+export const FINE_TUNING_SERVING_ABI = [
+  {
+    "inputs": [
+      {"internalType": "address", "name": "user", "type": "address"},
+      {"internalType": "address", "name": "provider", "type": "address"}
+    ],
+    "name": "AccountExists",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "user", "type": "address"},
+      {"internalType": "address", "name": "provider", "type": "address"}
+    ],
+    "name": "AccountNotExists", 
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {"internalType": "string", "name": "reason", "type": "string"}
+    ],
+    "name": "InvalidVerifierInput",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {"indexed": true, "internalType": "address", "name": "user", "type": "address"},
+      {"indexed": true, "internalType": "address", "name": "provider", "type": "address"},
+      {"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"},
+      {"indexed": false, "internalType": "uint256", "name": "pendingRefund", "type": "uint256"}
+    ],
+    "name": "BalanceUpdated",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "user", "type": "address"},
+      {"internalType": "address", "name": "provider", "type": "address"}
+    ],
+    "name": "accountExists",
+    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "provider", "type": "address"},
+      {"internalType": "uint256", "name": "index", "type": "uint256"}
+    ],
+    "name": "acknowledgeDeliverable",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "provider", "type": "address"},
+      {"internalType": "address", "name": "providerSigner", "type": "address"}
+    ],
+    "name": "acknowledgeProviderSigner",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "user", "type": "address"},
+      {"internalType": "address", "name": "provider", "type": "address"},
+      {"internalType": "string", "name": "additionalInfo", "type": "string"}
+    ],
+    "name": "addAccount",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "user", "type": "address"},
+      {"internalType": "bytes", "name": "modelRootHash", "type": "bytes"}
+    ],
+    "name": "addDeliverable",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "user", "type": "address"},
+      {"internalType": "address", "name": "provider", "type": "address"},
+      {"internalType": "uint256", "name": "cancelRetrievingAmount", "type": "uint256"}
+    ],
+    "name": "depositFund",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "user", "type": "address"},
+      {"internalType": "address", "name": "provider", "type": "address"}
+    ],
+    "name": "getAccount",
+    "outputs": [
+      {
+        "components": [
+          {"internalType": "address", "name": "user", "type": "address"},
+          {"internalType": "address", "name": "provider", "type": "address"},
+          {"internalType": "uint256", "name": "nonce", "type": "uint256"},
+          {"internalType": "uint256", "name": "balance", "type": "uint256"},
+          {"internalType": "uint256", "name": "pendingRefund", "type": "uint256"},
+          {
+            "components": [
+              {"internalType": "uint256", "name": "index", "type": "uint256"},
+              {"internalType": "uint256", "name": "amount", "type": "uint256"},
+              {"internalType": "uint256", "name": "createdAt", "type": "uint256"},
+              {"internalType": "bool", "name": "processed", "type": "bool"}
+            ],
+            "internalType": "struct Refund[]",
+            "name": "refunds",
+            "type": "tuple[]"
+          },
+          {"internalType": "string", "name": "additionalInfo", "type": "string"},
+          {"internalType": "address", "name": "providerSigner", "type": "address"},
+          {
+            "components": [
+              {"internalType": "bytes", "name": "modelRootHash", "type": "bytes"},
+              {"internalType": "bytes", "name": "encryptedSecret", "type": "bytes"},
+              {"internalType": "bool", "name": "acknowledged", "type": "bool"}
+            ],
+            "internalType": "struct Deliverable[]",
+            "name": "deliverables",
+            "type": "tuple[]"
+          }
+        ],
+        "internalType": "struct Account",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "user", "type": "address"},
+      {"internalType": "address", "name": "provider", "type": "address"}
+    ],
+    "name": "getPendingRefund",
+    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {"internalType": "address", "name": "user", "type": "address"},
+      {"internalType": "address", "name": "provider", "type": "address"}
+    ],
+    "name": "requestRefundAll",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+] as const

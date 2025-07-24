@@ -1,12 +1,11 @@
+// app/api/compute/account/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getBroker } from '@/lib/compute/broker'
+import { getBroker, FINE_TUNE_PROVIDER } from '@/lib/compute/broker'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
 import { parseEther, formatEther } from 'ethers'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 
 export const runtime = 'nodejs'
-
-const FINE_TUNE_PROVIDER = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
 
 /**
  * GET /api/compute/account - Получение информации об аккаунте
@@ -94,12 +93,13 @@ export async function POST(request: NextRequest) {
     if (action === 'create') {
       // Создание нового аккаунта
       try {
-        await broker.fineTuning.addAccount(
+        const tx = await broker.fineTuning.addAccount(
           broker.signer.address,
           FINE_TUNE_PROVIDER,
           'INFT Platform User',
           { value: parseEther(amount) }
         )
+        transactionHash = tx.hash
         message = `Account created with initial balance of ${amount} ${NATIVE_SYMBOL}`
       } catch (error: any) {
         if (error.message.includes('AccountExists')) {
@@ -112,7 +112,8 @@ export async function POST(request: NextRequest) {
       }
     } else {
       // Пополнение существующего аккаунта
-      await fineTuneService.depositFunds(amount)
+      const tx = await fineTuneService.depositFunds(amount)
+      transactionHash = tx?.hash || ''
       message = `Deposited ${amount} ${NATIVE_SYMBOL} to existing account`
     }
 
@@ -162,7 +163,7 @@ export async function DELETE(request: NextRequest) {
     const broker = await getBroker()
 
     // Запрос возврата всех доступных средств
-    await broker.fineTuning.requestRefundAll(
+    const tx = await broker.fineTuning.requestRefundAll(
       broker.signer.address,
       FINE_TUNE_PROVIDER
     )
@@ -170,6 +171,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Refund request submitted. Processing may take some time.',
+      transaction: tx?.hash || '',
       note: 'Refunds are processed automatically after the lock period expires'
     })
 

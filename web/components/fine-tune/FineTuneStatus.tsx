@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { toast } from '@/components/ui/use-toast'
 import { 
   Clock, 
   Settings, 
@@ -17,10 +18,9 @@ import {
   Loader2,
   ExternalLink,
   Copy,
-  RefreshCw
+  RefreshCw,
+  Activity
 } from 'lucide-react'
-import { useFineTuneMonitor, FineTuneStatus, formatTrainingTime } from '@/lib/utils/fine-tune-monitor'
-import { toast } from '@/components/ui/use-toast'
 
 interface FineTuneStatusProps {
   taskId: string
@@ -29,13 +29,134 @@ interface FineTuneStatusProps {
   autoStart?: boolean
 }
 
-const StatusIcons = {
-  Clock,
-  Settings,
-  Brain,
-  Upload,
-  CheckCircle,
-  XCircle
+// Утилиты для статуса
+const getStatusIcon = (statusName: string) => {
+  switch (statusName) {
+    case 'Init': return Clock
+    case 'SettingUp': return Settings
+    case 'Training': return Brain
+    case 'Delivering': return Upload
+    case 'Finished': return CheckCircle
+    case 'Failed': return XCircle
+    default: return Activity
+  }
+}
+
+const getProgressPercentage = (status: string): number => {
+  switch (status) {
+    case 'Init': return 10
+    case 'SettingUp': return 25
+    case 'Training': return 60
+    case 'Trained': return 80
+    case 'Delivering': return 90
+    case 'Delivered': return 95
+    case 'Finished': return 100
+    case 'Failed': return 0
+    default: return 0
+  }
+}
+
+const getStatusColor = (status: string): string => {
+  switch (status) {
+    case 'Init': return 'text-yellow-400'
+    case 'SettingUp': return 'text-orange-400'
+    case 'Training': return 'text-purple-400'
+    case 'Trained': return 'text-blue-400'
+    case 'Delivering': return 'text-blue-400'
+    case 'Delivered': return 'text-green-400'
+    case 'Finished': return 'text-green-500'
+    case 'Failed': return 'text-red-400'
+    default: return 'text-gray-400'
+  }
+}
+
+const isCompleted = (status: string): boolean => status === 'Finished'
+const isFailed = (status: string): boolean => status === 'Failed'
+const isInProgress = (status: string): boolean => 
+  ['Init', 'SettingUp', 'Training', 'Delivering'].includes(status)
+
+const formatTrainingTime = (seconds: number): string => {
+  const hours = Math.floor(seconds / 3600)
+  const mins = Math.floor((seconds % 3600) / 60)
+  const secs = seconds % 60
+
+  if (hours > 0) {
+    return `${hours}h ${mins}m ${secs}s`
+  } else if (mins > 0) {
+    return `${mins}m ${secs}s`
+  } else {
+    return `${secs}s`
+  }
+}
+
+// Hook для мониторинга Fine-tuning
+function useFineTuneMonitor(taskId: string) {
+  const [status, setStatus] = React.useState<any>(null)
+  const [isMonitoring, setIsMonitoring] = React.useState(false)
+  const [error, setError] = React.useState<Error | null>(null)
+  const [elapsedTime, setElapsedTime] = React.useState(0)
+  const intervalRef = React.useRef<NodeJS.Timeout | null>(null)
+  const startTimeRef = React.useRef<number>(Date.now())
+
+  const startMonitoring = React.useCallback(() => {
+    if (!taskId || isMonitoring) return
+
+    setIsMonitoring(true)
+    setError(null)
+    startTimeRef.current = Date.now()
+
+    const pollStatus = async () => {
+      try {
+        const response = await fetch(`/api/compute/fine-tune?taskId=${taskId}`)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch status: ${response.status}`)
+        }
+        
+        const data = await response.json()
+        setStatus(data)
+        setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000))
+
+        // Остановить мониторинг если задача завершена
+        if (isCompleted(data.progress) || isFailed(data.progress)) {
+          stopMonitoring()
+        }
+      } catch (err) {
+        setError(err as Error)
+        stopMonitoring()
+      }
+    }
+
+    // Немедленно получить статус
+    pollStatus()
+
+    // Установить интервал
+    intervalRef.current = setInterval(pollStatus, 10000) // каждые 10 секунд
+  }, [taskId, isMonitoring])
+
+  const stopMonitoring = React.useCallback(() => {
+    setIsMonitoring(false)
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }, [])
+
+  React.useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+      }
+    }
+  }, [])
+
+  return {
+    status,
+    isMonitoring,
+    error,
+    elapsedTime,
+    startMonitoring,
+    stopMonitoring
+  }
 }
 
 export function FineTuneStatusComponent({ 
@@ -85,12 +206,6 @@ export function FineTuneStatusComponent({
         variant: 'destructive'
       })
     }
-  }
-
-  const getStatusIcon = (statusName: string) => {
-    const iconName = FineTuneStatus.getStatusIcon(statusName) as keyof typeof StatusIcons
-    const IconComponent = StatusIcons[iconName] || Clock
-    return IconComponent
   }
 
   const refreshStatus = async () => {
@@ -157,11 +272,11 @@ export function FineTuneStatusComponent({
   }
 
   const StatusIcon = getStatusIcon(status.progress)
-  const progressPercentage = FineTuneStatus.getProgressPercentage(status.progress)
-  const statusColor = FineTuneStatus.getStatusColor(status.progress)
-  const isCompleted = FineTuneStatus.isCompleted(status.progress)
-  const isFailed = FineTuneStatus.isFailed(status.progress)
-  const inProgress = FineTuneStatus.isInProgress(status.progress)
+  const progressPercentage = getProgressPercentage(status.progress)
+  const statusColor = getStatusColor(status.progress)
+  const completed = isCompleted(status.progress)
+  const failed = isFailed(status.progress)
+  const inProgress = isInProgress(status.progress)
 
   return (
     <Card className="bg-white/10 backdrop-blur-xl border-white/20 p-6">
@@ -196,7 +311,7 @@ export function FineTuneStatusComponent({
         </div>
         
         <div className="flex items-center gap-2">
-          <Badge variant={isCompleted ? 'default' : isFailed ? 'destructive' : 'secondary'}>
+          <Badge variant={completed ? 'default' : failed ? 'destructive' : 'secondary'}>
             {progressPercentage}% Complete
           </Badge>
           <Button
@@ -215,7 +330,7 @@ export function FineTuneStatusComponent({
         <div className="flex justify-between items-center mb-2">
           <span className="text-sm text-gray-300">Progress</span>
           <span className="text-sm text-gray-300">
-            {status.elapsedTimeFormatted || formatTrainingTime(elapsedTime)}
+            {formatTrainingTime(elapsedTime)}
           </span>
         </div>
         <Progress 
@@ -238,7 +353,7 @@ export function FineTuneStatusComponent({
             <div>
               <span className="text-gray-400">Elapsed:</span>
               <span className="ml-2 font-medium text-white">
-                {status.elapsedTimeFormatted || formatTrainingTime(elapsedTime)}
+                {formatTrainingTime(elapsedTime)}
               </span>
             </div>
             {status.deliverIndex !== undefined && (
@@ -279,7 +394,7 @@ export function FineTuneStatusComponent({
           </Alert>
         )}
 
-        {isCompleted && (
+        {completed && (
           <Alert className="bg-green-500/10 border-green-500/30">
             <CheckCircle className="h-4 w-4 text-green-400" />
             <AlertDescription className="text-green-200">
@@ -298,7 +413,7 @@ export function FineTuneStatusComponent({
           </Alert>
         )}
 
-        {isFailed && (
+        {failed && (
           <Alert className="bg-red-500/10 border-red-500/30">
             <XCircle className="h-4 w-4 text-red-400" />
             <AlertDescription className="text-red-200">

@@ -1,3 +1,4 @@
+// app/agents/[id]/fine-tune/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -15,9 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
   Alert,
-  AlertDescription,
-  useToast
+  AlertDescription
 } from '@/components/ui'
+import { toast } from '@/components/ui/use-toast'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 import { 
   Brain, 
@@ -29,7 +30,6 @@ import {
   Check,
   AlertCircle,
   Download,
-  FileCheck,
   Activity,
   Wallet,
   Plus
@@ -46,7 +46,6 @@ export default function FineTunePage() {
   const params = useParams()
   const router = useRouter()
   const { address } = useAccount()
-  const { toast } = useToast()
   
   const tokenId = params.id as string
   
@@ -177,15 +176,15 @@ export default function FineTunePage() {
     try {
       const form = new FormData()
       form.set('file', dataset)
-      const res = await fetch('/api/storage/upload-dataset', {
+      const res = await fetch('/api/storage/upload', {
         method: 'POST',
         body: form
       })
       if (!res.ok) throw new Error('Upload failed')
       const result = await res.json()
-      setDatasetRoot(result.root)
+      setDatasetRoot(result.rootHash)
       setDataSize(result.size)
-      localStorage.setItem(`ds-${tokenId}`, JSON.stringify({ root: result.root, size: result.size }))
+      localStorage.setItem(`ds-${tokenId}`, JSON.stringify({ root: result.rootHash, size: result.size }))
       toast({
         title: 'Success!',
         description: 'Dataset uploaded to 0G Storage'
@@ -226,7 +225,7 @@ export default function FineTunePage() {
     }
   }
 
-  // Start fine-tuning with new API
+  // Start fine-tuning
   const startFineTuning = async () => {
     if (!datasetRoot) {
       toast({
@@ -305,7 +304,6 @@ export default function FineTunePage() {
             clearInterval(interval)
             setIsPolling(false)
             setModelRootHash(data.modelInfo?.rootHash)
-            await updateAgentWithNewModel(data.modelInfo?.rootHash)
             toast({
               title: 'Training Complete!',
               description: 'Your agent has been successfully fine-tuned'
@@ -329,20 +327,6 @@ export default function FineTunePage() {
       clearInterval(interval)
       setIsPolling(false)
     }, 2 * 60 * 60 * 1000)
-  }
-
-  // Update agent with new model
-  const updateAgentWithNewModel = async (modelHash: string) => {
-    if (!modelHash) return
-    try {
-      await fetch(`/api/agents/${tokenId}/update-model`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modelRootHash: modelHash })
-      })
-    } catch (error) {
-      console.error('Failed to update agent:', error)
-    }
   }
 
   // Render account setup section
@@ -463,7 +447,7 @@ export default function FineTunePage() {
                 {getStatusInfo(taskStatus).text}
               </h2>
               
-              {/* Progress Details */}
+              {/* Status Details */}
               {taskProgress && (
                 <div className="space-y-4">
                   <Alert className="bg-purple-500/10 border-purple-500/30">

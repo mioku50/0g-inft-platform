@@ -1,10 +1,6 @@
-import { getBroker } from './broker'
-import fs from 'fs/promises'
-import path from 'path'
+// lib/compute/fine-tune-service.ts
+import { getBroker, FINE_TUNE_PROVIDER } from './broker'
 import { parseEther, formatEther } from 'ethers'
-
-// Официальный провайдер 0G для Fine-tuning
-const FINE_TUNE_PROVIDER = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
 
 // Маппинг моделей согласно официальной документации
 const MODEL_MAPPING = {
@@ -35,7 +31,7 @@ export class FineTuneService {
   constructor(private broker: any) {}
 
   /**
-   * Создание задачи Fine-tuning через официальный 0G Compute Provider
+   * Создание задачи Fine-tuning через официальный 0G Provider
    */
   async createTask(params: {
     agentId: string
@@ -50,11 +46,11 @@ export class FineTuneService {
 
       // 1. Подготовка параметров обучения
       const trainingParams = {
-        num_train_epochs: Math.ceil(params.steps / 100), // Примерное преобразование
-        per_device_train_batch_size: 8,
-        per_device_eval_batch_size: 8,
+        num_train_epochs: Math.ceil(params.steps / 100),
+        per_device_train_batch_size: 4,
+        per_device_eval_batch_size: 4,
         learning_rate: params.learningRate,
-        warmup_steps: 100,
+        warmup_steps: 50,
         weight_decay: 0.01,
         logging_steps: 10,
         evaluation_strategy: "no",
@@ -70,13 +66,13 @@ export class FineTuneService {
       // 3. Подготовка данных для запроса
       const taskRequest: FineTuningTaskRequest = {
         userAddress: this.broker.signer.address,
-        serviceName: 'fine-tune-service1', // Стандартное имя сервиса
+        serviceName: 'fine-tune-service1',
         datasetHash: params.datasetRootHash,
         trainingParams: JSON.stringify(trainingParams),
         preTrainedModelHash,
-        fee: '0', // Fee будет рассчитан автоматически
+        fee: '0', // Fee рассчитается автоматически
         nonce: Date.now().toString(),
-        signature: '0x' // Подпись будет создана автоматически
+        signature: '0x' // Подпись создается автоматически
       }
 
       // 4. Получение информации о провайдере
@@ -123,7 +119,7 @@ export class FineTuneService {
       const { endpoint } = await this.broker.inference.getServiceMetadata(FINE_TUNE_PROVIDER)
       
       // Получение статуса задачи
-      const response = await fetch(`${endpoint}/v1/task/${taskId}`, {
+      const response = await fetch(`${endpoint}/v1/user/${this.broker.signer.address}/task/${taskId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json'
@@ -136,27 +132,10 @@ export class FineTuneService {
 
       const taskData = await response.json()
       
-      // Получение прогресса выполнения
-      let progressData = null
-      try {
-        const progressResponse = await fetch(`${endpoint}/v1/task-progress/${taskId}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        })
-        
-        if (progressResponse.ok) {
-          progressData = await progressResponse.json()
-        }
-      } catch (error) {
-        console.warn('Could not fetch progress data:', error)
-      }
-
-      // Преобразование статуса согласно вашей текущей схеме
+      // Преобразование статуса
       const status: FineTuningTaskResponse = {
         id: taskData.id,
-        progress: this.mapProgressStatus(taskData.progress),
+        progress: this.mapProgressStatus(taskData.progress || 'Init'),
         deliverIndex: taskData.deliverIndex,
         deliverTime: taskData.deliverTime
       }
@@ -164,13 +143,12 @@ export class FineTuneService {
       // Если задача завершена, получаем hash модели
       if (taskData.progress === 'Delivered' || taskData.progress === 'Finished') {
         try {
-          // Получение deliverable из контракта
           const account = await this.broker.fineTuning.getAccount(
             this.broker.signer.address,
             FINE_TUNE_PROVIDER
           )
           
-          if (account.deliverables && account.deliverables.length > 0) {
+          if (account && account.deliverables && account.deliverables.length > 0) {
             const deliverable = account.deliverables[account.deliverables.length - 1]
             status.modelRootHash = deliverable.modelRootHash
             status.progress = 'Finished'
@@ -193,7 +171,6 @@ export class FineTuneService {
    */
   async acknowledge(taskId: string): Promise<string> {
     try {
-      // Подтверждение через контракт serving
       await this.broker.fineTuning.acknowledgeDeliverable(
         FINE_TUNE_PROVIDER,
         0 // Индекс deliverable
@@ -207,7 +184,7 @@ export class FineTuneService {
   }
 
   /**
-   * Инициализация аккаунта для Fine-tuning (если не существует)
+   * Инициализация аккаунта для Fine-tuning
    */
   async initializeAccount(): Promise<void> {
     try {
@@ -224,8 +201,8 @@ export class FineTuneService {
         await this.broker.fineTuning.addAccount(
           this.broker.signer.address,
           FINE_TUNE_PROVIDER,
-          'INFT Platform User', // additionalInfo
-          { value: parseEther('0.01') } // Начальный баланс
+          'INFT Platform User',
+          { value: parseEther('0.01') }
         )
         
         console.log('Fine-tuning account created')
@@ -234,32 +211,13 @@ export class FineTuneService {
       // Подтверждаем провайдера
       await this.broker.fineTuning.acknowledgeProviderSigner(
         FINE_TUNE_PROVIDER,
-        FINE_TUNE_PROVIDER // Для простоты используем тот же адрес
+        FINE_TUNE_PROVIDER
       )
 
     } catch (error) {
       console.error('Error initializing fine-tuning account:', error)
       throw error
     }
-  }
-
-  /**
-   * Преобразование статусов провайдера в статусы вашей системы
-   */
-  private mapProgressStatus(providerStatus: string): string {
-    const statusMap: Record<string, string> = {
-      'Init': 'Init',
-      'Pending': 'SettingUp',
-      'Processing': 'Training',
-      'Completed': 'Trained',
-      'Delivering': 'Delivering',
-      'Delivered': 'Delivered',
-      'Finished': 'Finished',
-      'Failed': 'Failed',
-      'Error': 'Failed'
-    }
-
-    return statusMap[providerStatus] || providerStatus
   }
 
   /**
@@ -272,7 +230,11 @@ export class FineTuneService {
         FINE_TUNE_PROVIDER
       )
       
-      return formatEther(account.balance)
+      if (account && account.balance) {
+        return formatEther(account.balance)
+      }
+      
+      return '0'
     } catch (error) {
       console.error('Error getting account balance:', error)
       return '0'
@@ -294,5 +256,25 @@ export class FineTuneService {
       console.error('Error depositing funds:', error)
       throw error
     }
+  }
+
+  /**
+   * Преобразование статусов провайдера
+   */
+  private mapProgressStatus(providerStatus: string): string {
+    const statusMap: Record<string, string> = {
+      'Init': 'Init',
+      'Pending': 'SettingUp', 
+      'Processing': 'Training',
+      'Training': 'Training',
+      'Completed': 'Trained',
+      'Delivering': 'Delivering',
+      'Delivered': 'Delivered',
+      'Finished': 'Finished',
+      'Failed': 'Failed',
+      'Error': 'Failed'
+    }
+
+    return statusMap[providerStatus] || providerStatus
   }
 }

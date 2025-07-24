@@ -37,7 +37,7 @@ node -e "import { JsonRpcProvider } from 'ethers';(async()=>{const p=new JsonRpc
 # 2. Создать аккаунт с депозитом
 curl -X POST http://localhost:3000/api/compute/account \
   -H 'content-type: application/json' \
-  -d '{"amount":"0.001","action":"create"}'
+  -d '{"amount":"0.01","action":"create"}'
 
 # 3. Проверить баланс
 curl http://localhost:3000/api/compute/account | jq

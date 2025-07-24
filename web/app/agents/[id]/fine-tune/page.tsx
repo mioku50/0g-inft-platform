@@ -94,9 +94,9 @@ export default function FineTunePage() {
       setIsCheckingAccount(true)
       console.log('GET /api/compute/account')
       const response = await fetch('/api/compute/account')
-      
+      const data = await response.json()
+      console.log('GET /api/compute/account result', data)
       if (response.ok) {
-        const data = await response.json()
         setAccountInfo({
           balance: data.account.balance,
           exists: data.account.exists,
@@ -126,39 +126,22 @@ export default function FineTunePage() {
 
     setIsDepositing(true)
     try {
-      console.log('POST /api/compute/account', {
-        amount: depositAmount,
-        action: accountInfo?.exists ? 'deposit' : 'create'
-      })
-      const response = await fetch('/api/compute/account', {
+      const action = accountInfo?.exists ? 'deposit' : 'create'
+      console.log('POST /api/compute/account', { amount: depositAmount, action })
+      const res = await fetch('/api/compute/account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: depositAmount,
-          action: accountInfo?.exists ? 'deposit' : 'create'
-        })
+        body: JSON.stringify({ amount: depositAmount, action })
       })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.details || 'Failed to setup account')
-      }
-
-      const data = await response.json()
-      toast({
-        title: 'Success!',
-        description: data.message
-      })
-
-      // Refresh account info
+      const data = await res.json()
+      console.log('POST /api/compute/account result', data)
+      if (!res.ok) throw data
       await checkAccountStatus()
-
     } catch (error: any) {
       console.error('Account setup error:', error)
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to setup account',
-        variant: 'destructive'
+        variant: 'destructive',
+        description: error.details || error.message
       })
     } finally {
       setIsDepositing(false)

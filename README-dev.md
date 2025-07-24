@@ -27,3 +27,18 @@ Environment variables:
    ```
 
 Fine‑tuning tasks run against the address and provider above.
+
+### Smoke tests
+
+```bash
+# 1. Проверка деплоя контракта
+node -e "import { JsonRpcProvider } from 'ethers'; (async()=>{ const p=new JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL); const code=await p.getCode(process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS); console.log(code.length>2?'OK':'NOT DEPLOYED'); })()"
+
+# 2. Создать аккаунт и внести депозит
+curl -X POST http://localhost:3000/api/compute/account \
+  -H 'content-type: application/json' \
+  -d '{"amount":"0.01","action":"create"}'
+
+# 3. Проверить баланс
+curl http://localhost:3000/api/compute/account | jq
+```

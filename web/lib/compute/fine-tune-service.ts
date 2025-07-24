@@ -23,7 +23,8 @@ export interface FineTuningTaskResponse {
   id: string
   progress: string
   deliverIndex?: number
-  deliverTime?: number
+  latestDeliverableIndex?: number
+  acknowledged: boolean
   modelRootHash?: string
 }
 
@@ -137,7 +138,8 @@ export class FineTuneService {
         id: taskData.id,
         progress: this.mapProgressStatus(taskData.progress || 'Init'),
         deliverIndex: taskData.deliverIndex,
-        deliverTime: taskData.deliverTime
+        latestDeliverableIndex: undefined,
+        acknowledged: false
       }
 
       // Если задача завершена, получаем hash модели
@@ -149,8 +151,11 @@ export class FineTuneService {
           )
 
           if (account && account.deliverables && account.deliverables.length > 0) {
-            const deliverable = account.deliverables[account.deliverables.length - 1]
+            const idx = account.deliverables.length - 1
+            const deliverable = account.deliverables[idx]
+            status.latestDeliverableIndex = idx
             status.modelRootHash = deliverable.modelRootHash
+            status.acknowledged = deliverable.acknowledged
             status.progress = deliverable.acknowledged ? 'Finished' : 'Delivered'
           }
         } catch (error) {
@@ -175,7 +180,7 @@ export class FineTuneService {
         this.broker.signer.address,
         FINE_TUNE_PROVIDER
       )
-      const idx = acc && acc.deliverables ? acc.deliverables.length - 1 : 0
+      const idx = BigInt(acc.deliverables.length - 1)
       await this.broker.fineTuning.acknowledgeDeliverable(
         FINE_TUNE_PROVIDER,
         idx

@@ -66,7 +66,11 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
           pendingRefund: fromWei(acc.pendingRefund),
           deliverables: acc.deliverables || [],
           nonce: acc.nonce ? BigInt(acc.nonce) : 0n,
-          refunds: acc.refunds || []
+          refunds: acc.refunds || [],
+          user: acc.user,
+          provider: acc.provider,
+          additionalInfo: acc.additionalInfo,
+          providerSigner: acc.providerSigner
         }
       } catch (e: any) {
         throw formatError(e)
@@ -132,6 +136,71 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
     requestRefundAll: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
       try {
         const tx = await contract.requestRefundAll(user, provider)
+        await tx.wait()
+        return tx
+      } catch (e: any) {
+        throw formatError(e)
+      }
+    },
+
+    // Additional methods from the official ABI
+    addDeliverable: async (user: string, modelRootHash: string) => {
+      try {
+        const tx = await contract.addDeliverable(user, modelRootHash)
+        await tx.wait()
+        return tx
+      } catch (e: any) {
+        throw formatError(e)
+      }
+    },
+
+    getAllAccounts: async () => {
+      try {
+        return await contract.getAllAccounts()
+      } catch (e: any) {
+        throw formatError(e)
+      }
+    },
+
+    getAllServices: async () => {
+      try {
+        return await contract.getAllServices()
+      } catch (e: any) {
+        throw formatError(e)
+      }
+    },
+
+    getDeliverable: async (user: string, provider: string, index: bigint) => {
+      try {
+        return await contract.getDeliverable(user, provider, index)
+      } catch (e: any) {
+        throw formatError(e)
+      }
+    },
+
+    getPendingRefund: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
+      try {
+        const amount = await contract.getPendingRefund(user, provider)
+        return {
+          amountWei: amount.toString(),
+          amount: fromWei(amount)
+        }
+      } catch (e: any) {
+        throw formatError(e)
+      }
+    },
+
+    getService: async (provider: string = FINE_TUNE_PROVIDER) => {
+      try {
+        return await contract.getService(provider)
+      } catch (e: any) {
+        throw formatError(e)
+      }
+    },
+
+    settleFees: async (verifierInput: any) => {
+      try {
+        const tx = await contract.settleFees(verifierInput)
         await tx.wait()
         return tx
       } catch (e: any) {

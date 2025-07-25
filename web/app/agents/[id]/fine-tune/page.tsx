@@ -114,9 +114,9 @@ export default function FineTunePage() {
       }
       console.log('GET /api/compute/account result', data)
       setAccountInfo({
-        balance: data.balanceOG,
+        balance: data.balance,
         exists: data.exists,
-        needsTopUp: parseFloat(data.balanceOG) < 0.001
+        needsTopUp: parseFloat(data.balance) < 0.001
       })
       setBackendError(null)
     } catch (error: any) {

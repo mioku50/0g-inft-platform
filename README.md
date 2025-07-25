@@ -1,3 +1,137 @@
+0g-inft-platform
+✅ работает стабильно
+
+🟡 реализовано, но частично / с багами / требует доработки
+
+❌ нет
+
+1) Блокчейн / ончейн
+✅ INFT (ERC721Enumerable): mint(to, encryptedURI, metadataHash)
+
+✅ secured transferFrom
+
+✅ clone (клонирование агента)
+
+✅ Маркетплейс: листинг & покупка (базово)
+
+✅ Интеграция с 0G Testnet (Galileo, 16601)
+
+✅ Security Transfer
+
+🟡 Тесты и CI для контрактов (минимальны / не автоматизированы)
+
+2) 0G Storage
+✅ Загрузка метаданных/датасетов в децентрализованное хранилище
+
+✅ Чтение по rootHash
+
+🟡 Нет ретраев/прогресс-баров/больших файлового пайплайна
+
+3) 0G Compute / Serving (Inference & Fine-tuning)
+✅ Интеграция с @0glabs/0g-serving-broker
+
+✅ Полный набор методов Fine-tuning Serving контракта в broker.ts
+
+✅ Ledger аккаунт: создание/пополнение (есть обёртки)
+
+✅ Acknowledgment провайдеров (кэшируется)
+
+🟡 ENV/инициализация брокера ломаeт discovery сервисов → чат уходит в local fallback
+
+Ошибка: network does not support ENS, «Missing env … using fallback»
+
+🟡 Fine-tuning API (POST/GET/PUT) реализованы, но нет подтверждённого E2E-цикла на сети
+
+🟡 Нет UI-панели для deliverables + acknowledge (частично)
+
+❌ Нет автоматического воркера/крона для settleFees / авто-ack
+
+4) Чат с агентами ( поверх Compute Network )
+✅ Архитектура переработана: тонкий route.ts + ChatService
+
+✅ Кэш брокера (5 мин), кэш acknowledge (10 мин)
+
+✅ Параллельный пробег провайдеров (Promise.any), тайм-ауты
+
+✅ Метрики (initBroker, discoveryServices, ackSigner, providerRequestTime, totalTTFB) в ответе
+
+🟡 Сейчас фактически падает на discovery → возвращается local fallback
+
+❌ Нет стриминга (если нужен)
+
+5) Создание и управление агентами
+✅ Выбор модели (Llama / DeepSeek)
+
+✅ Выбор “личности” (5 типов)
+
+✅ Кастомные инструкции + preview системного промпта
+
+✅ Загрузка аватара
+
+✅ Список своих агентов
+
+✅ Чат с агентом (UI готов, backend сейчас в fallback)
+
+✅ Трансфер NFT другим пользователям
+
+✅ Клонирование агента
+
+✅ Страница добавления training-примеров + сохранение в 0G Storage
+
+✅ UI для управления примерами
+
+6) Страницы / UI
+✅ Главная
+
+✅ Mint Agent
+
+✅ My Agents
+
+✅ Chat (работает, но сейчас с локальным fallback)
+
+✅ Fine-tuning
+
+✅ Маркетплейс (базовый)
+
+✅ Компоненты: ConnectButton, TransferModal, CloneModal, PromptManager и т.д.
+
+✅ Адаптив, лёгкий интерфейс
+
+🟡 Fine-tuning UI: прогресс, deliverables, ack — нуждаются в доработке
+
+7) Документация / DX
+🟡 README требует обновления:
+
+текущее состояние, все ENV, точные адреса контрактов
+
+“как починить чат” (ENS/ENV/chainId)
+
+короткие задачи для Cursor / AI Codex
+
+Acceptance Criteria (TTFB < 4s, broker-cache, ack-cache, e2e fine-tune)
+
+✅ Скрипт test-chat-api.js для быстрой проверки чата
+
+🟡 Нет “compute doctor” команды в README (проверка RPC, PK, контрактов, discovery)
+
+8) Безопасность
+✅ Приватные ключи только на сервере
+
+✅ Валидация ENV (адресов, PK, RPC)
+
+🟡 Нет rate-limit / auth на публичных API
+
+🟡 Нет allow-list провайдеров
+
+❌ Нет централизованного логирования ошибок (Sentry и т.п.)
+
+9) Тесты / CI
+🟡 Есть smoke-тесты (ручные), но нет полноценного CI пайплайна
+
+❌ Нет e2e теста fine-tune (init → train → deliver → ack)
+
+❌ Нет нагрузочного теста чата
+
 Fine-tuning CLI
 Customize AI models with your own data using 0G's distributed GPU network.
 

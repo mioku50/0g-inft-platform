@@ -1,6 +1,7 @@
 import { ethers } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import OpenAI from 'openai'
+import { getBroker, ledgerSafe } from './broker'
 
 // Кэш брокера (TTL 5 минут)
 interface BrokerCacheEntry {
@@ -26,14 +27,6 @@ const OFFICIAL_CONTRACTS = {
 const TOTAL_TIMEOUT = 20000 // 20 секунд общий
 const PROVIDER_TIMEOUT = 15000 // 15 секунд на провайдера
 
-interface TimingMetrics {
-  initBroker: number
-  discovery: number
-  ack: number
-  providerRequest: number
-  totalTTFB: number
-}
-
 interface ChatRequest {
   message: string
   agentMetadata: {
@@ -43,15 +36,23 @@ interface ChatRequest {
 }
 
 interface ChatResponse {
-  success: boolean
-  response?: string
-  model?: string
-  provider?: string
+  response: string
+  model: string
+  provider: string
   isRealAI: boolean
   metadata: {
-    timing: TimingMetrics
-    servicesFound?: number
-    errors?: string[]
+    timing: {
+      initBroker: number
+      discovery: number
+      ack: number
+      providerRequest: number
+      totalTTFB: number
+    }
+    providers?: {
+      found: number
+      attempted: number
+      successful: number
+    }
   }
 }
 
@@ -66,19 +67,18 @@ export class ChatService {
 
   async processChat(request: ChatRequest): Promise<ChatResponse> {
     const startTime = Date.now()
-    const timing: TimingMetrics = {
+    const timing = {
       initBroker: 0,
       discovery: 0,
       ack: 0,
       providerRequest: 0,
       totalTTFB: 0
     }
-    const errors: string[] = []
 
     try {
-      // 1. Инициализация брокера с кэшем
+      // 1. Инициализация брокера (с кэшем)
       const brokerStart = Date.now()
-      const broker = await this.getBrokerSafe()
+      const broker = await this.getBrokerCached()
       timing.initBroker = Date.now() - brokerStart
 
       // 2. Обнаружение сервисов
@@ -87,39 +87,45 @@ export class ChatService {
       timing.discovery = Date.now() - discoveryStart
 
       if (services.length === 0) {
-        return this.createFallbackResponse(timing, errors, 'No services found')
+        throw new Error('No inference services found')
       }
 
-      // 3. Параллельный запуск запросов к провайдерам
+      // 3. Acknowledge провайдеров
+      const ackStart = Date.now()
+      await this.acknowledgeProviders(broker, services)
+      timing.ack = Date.now() - ackStart
+
+      // 4. Параллельные запросы к провайдерам
       const providerStart = Date.now()
-      const result = await this.raceProviders(broker, services, request, timing)
+      const result = await this.requestFromProviders(broker, services, request)
       timing.providerRequest = Date.now() - providerStart
 
-      if (result) {
-        timing.totalTTFB = Date.now() - startTime
-        return {
-          success: true,
-          response: result.response,
-          model: result.model,
-          provider: result.provider,
-          isRealAI: true,
-          metadata: { timing, servicesFound: services.length }
+      timing.totalTTFB = Date.now() - startTime
+
+      return {
+        response: result.response,
+        model: result.model,
+        provider: result.provider,
+        isRealAI: true,
+        metadata: {
+          timing,
+          providers: {
+            found: services.length,
+            attempted: services.length,
+            successful: 1
+          }
         }
       }
 
-      // Все провайдеры упали
-      timing.totalTTFB = Date.now() - startTime
-      return this.createFallbackResponse(timing, errors, 'All providers failed', services.length)
-
     } catch (error: any) {
-      timing.totalTTFB = Date.now() - startTime
-      errors.push(error.message)
       console.error('ChatService error:', error)
-      return this.createFallbackResponse(timing, errors, 'Service error', 0)
+      timing.totalTTFB = Date.now() - startTime
+
+      return this.createFallbackResponse(error.message, timing)
     }
   }
 
-  private async getBrokerSafe(): Promise<any> {
+  private async getBrokerCached() {
     const now = Date.now()
     
     // Проверяем кэш
@@ -129,270 +135,186 @@ export class ChatService {
     }
 
     console.log('Initializing new broker...')
+    const broker = await getBroker()
     
-    try {
-      const provider = new ethers.JsonRpcProvider(this.rpcUrl)
-      const wallet = new ethers.Wallet(this.privateKey, provider)
-      
-      const broker = await createZGComputeNetworkBroker(
-        wallet,
-        OFFICIAL_CONTRACTS.ledger,
-        OFFICIAL_CONTRACTS.inference,
-        OFFICIAL_CONTRACTS.fineTuning
-      )
-
-      // Проверяем и пополняем баланс безопасно
-      await this.ensureMinBalance(broker)
-
-      // Кэшируем брокер
-      brokerCache = { broker, timestamp: now }
-      
-      return broker
-    } catch (error: any) {
-      throw new Error(`Failed to initialize broker: ${error.message}`)
+    brokerCache = {
+      broker,
+      timestamp: now
     }
-  }
 
-  private async ensureMinBalance(broker: any): Promise<void> {
-    try {
-      const ledgerInfo = await broker.ledger.getLedger()
-      const balance = this.safeBigIntToNumber(ledgerInfo.balance)
-      const minBalance = 0.02
-      
-      console.log(`Ledger balance: ${ethers.formatEther(ledgerInfo.balance)} OG`)
-      
-      if (balance < minBalance) {
-        console.log('Low balance, adding funds...')
-        const addAmount = ethers.parseEther('0.05')
-        await broker.ledger.addLedger(addAmount)
-        console.log('Funds added successfully')
-      }
-    } catch (error: any) {
-      console.log('Balance check error (non-critical):', error.message)
-      // Не прерываем работу при ошибках баланса
-    }
-  }
-
-  private safeBigIntToNumber(value: any): number {
-    try {
-      if (typeof value === 'bigint') {
-        return Number(ethers.formatEther(value))
-      }
-      if (typeof value === 'string') {
-        return Number(ethers.formatEther(BigInt(value)))
-      }
-      return Number(ethers.formatEther(BigInt(value?.toString?.() ?? '0')))
-    } catch (error) {
-      console.log('BigInt conversion error:', error)
-      return 0
-    }
+    return broker
   }
 
   private async discoverServices(broker: any): Promise<any[]> {
     try {
       const services = await broker.inference.listService()
-      console.log(`Found ${services.length} services`)
       
-      // Приоритизируем официальные провайдеры
-      const officialProviders = [
-        '0xf07240Efa67755B5311bc75784a061eDB47165Dd', // llama-3.3-70b-instruct
-        '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'  // deepseek-r1-70b
-      ]
+      console.log(`Found ${services.length} inference services`)
       
-      return services.sort((a: any, b: any) => {
-        const aIsOfficial = officialProviders.includes(a.provider)
-        const bIsOfficial = officialProviders.includes(b.provider)
-        if (aIsOfficial && !bIsOfficial) return -1
-        if (!aIsOfficial && bIsOfficial) return 1
-        return 0
-      })
+      // Приоритет официальным провайдерам
+      const officialServices = services.filter((s: any) => 
+        Object.values(OFFICIAL_CONTRACTS).includes(s.provider)
+      )
+      
+      const otherServices = services.filter((s: any) => 
+        !Object.values(OFFICIAL_CONTRACTS).includes(s.provider)
+      )
+      
+      return [...officialServices, ...otherServices]
+      
     } catch (error: any) {
       throw new Error(`Service discovery failed: ${error.message}`)
     }
   }
 
-  private async raceProviders(
-    broker: any, 
-    services: any[], 
-    request: ChatRequest,
-    timing: TimingMetrics
-  ): Promise<any | null> {
-    const promises = services.map(service => 
-      this.tryProvider(broker, service, request, timing)
-    )
+  private async acknowledgeProviders(broker: any, services: any[]): Promise<void> {
+    const now = Date.now()
+    
+    for (const service of services) {
+      const cacheKey = service.provider
+      const lastAck = acknowledgeCache.get(cacheKey)
+      
+      if (lastAck && (now - lastAck) < ACKNOWLEDGE_TTL) {
+        console.log(`Provider ${service.provider} already acknowledged (cached)`)
+        continue
+      }
 
-    try {
-      // Используем Promise.any для первого успешного ответа
-      const result = await Promise.any(promises)
-      return result
-    } catch (error) {
-      // Все провайдеры упали
-      console.log('All providers failed in race')
-      return null
+      try {
+        await broker.inference.acknowledgeProviderSigner(service.provider)
+        acknowledgeCache.set(cacheKey, now)
+        console.log(`Acknowledged provider: ${service.provider}`)
+      } catch (error: any) {
+        console.warn(`Failed to acknowledge provider ${service.provider}:`, error.message)
+      }
     }
   }
 
-  private async tryProvider(
-    broker: any, 
-    service: any, 
-    request: ChatRequest,
-    timing: TimingMetrics
-  ): Promise<any> {
+  private async requestFromProviders(broker: any, services: any[], request: ChatRequest): Promise<{ response: string; model: string; provider: string }> {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT)
+    const timeoutId = setTimeout(() => controller.abort(), TOTAL_TIMEOUT)
 
     try {
-      console.log(`Trying provider: ${service.model} at ${service.provider}`)
+      const promises = services.map(service => 
+        this.requestFromProvider(broker, service, request, controller.signal)
+      )
 
-      // 1. Acknowledge провайдера с кэшем
-      const ackStart = Date.now()
-      await this.acknowledgeProviderSafe(broker, service.provider)
-      timing.ack += Date.now() - ackStart
+      const result = await Promise.any(promises)
+      clearTimeout(timeoutId)
+      return result
 
-      // 2. Получаем метаданные сервиса
-      const metadata = await broker.inference.getServiceMetadata(service.provider)
-      console.log(`Service endpoint: ${metadata.endpoint}`)
+    } catch (error: any) {
+      clearTimeout(timeoutId)
+      throw new Error(`All providers failed: ${error.message}`)
+    }
+  }
 
-      // 3. Генерируем headers
-      const headers = await broker.inference.getRequestHeaders(service.provider, request.message)
+  private async requestFromProvider(broker: any, service: any, request: ChatRequest, signal: AbortSignal): Promise<{ response: string; model: string; provider: string }> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT)
 
-      // 4. Подготавливаем запрос
+    try {
+      // Пробуем OpenAI SDK
+      const openai = new OpenAI({
+        baseURL: service.url,
+        apiKey: 'dummy-key'
+      })
+
       const requestBody = {
         messages: [
-          { 
-            role: 'system' as const, 
-            content: `You are ${request.agentMetadata.name}. ${request.agentMetadata.description}` 
+          {
+            role: 'system' as const,
+            content: `You are ${request.agentMetadata.name}. ${request.agentMetadata.description}`
           },
           { role: 'user' as const, content: request.message }
         ],
-        model: metadata.model,
+        model: service.model || 'default',
         stream: false as const
       }
 
-      // 5. Пробуем OpenAI SDK
-      try {
-        const openai = new OpenAI({
-          baseURL: metadata.endpoint,
-          apiKey: ''
-        })
+      const response = await openai.chat.completions.create(requestBody, {
+        signal: controller.signal
+      })
 
-        const completion = await openai.chat.completions.create(requestBody, {
-          headers: headers,
-          signal: controller.signal
-        })
+      clearTimeout(timeoutId)
 
-        const aiResponse = completion.choices[0].message.content
+      const content = response.choices[0]?.message?.content || 'No response'
 
-        // 6. Обрабатываем ответ (верификация)
+      // Если сервис верифицируемый - вызываем processResponse
+      if (service.verifiable) {
         try {
-          const isValid = await broker.inference.processResponse(
-            service.provider,
-            aiResponse,
-            completion.id
-          )
-          console.log(`✅ Success with ${service.model}, valid: ${isValid}`)
-        } catch (e) {
-          console.log('Process response error (non-critical):', (e as any).message)
+          await broker.inference.processResponse(service.provider, response)
+        } catch (verifyError: any) {
+          console.warn(`Response verification failed for ${service.provider}:`, verifyError.message)
         }
+      }
 
-        return {
-          response: aiResponse,
-          model: metadata.model,
-          provider: service.provider
-        }
-
-      } catch (sdkError: any) {
-        console.log(`OpenAI SDK failed, trying fetch: ${sdkError.message}`)
-        
-        // 7. Fallback на fetch
-        const response = await fetch(`${metadata.endpoint}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            ...headers,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          console.log(`✅ Success with fetch for ${service.model}`)
-          
-          return {
-            response: data.choices[0].message.content,
-            model: metadata.model,
-            provider: service.provider
-          }
-        } else {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-        }
+      return {
+        response: content,
+        model: service.model || 'unknown',
+        provider: service.provider
       }
 
     } catch (error: any) {
-      console.log(`Provider ${service.provider} failed: ${error.message}`)
-      throw error
-    } finally {
-      clearTimeout(timeout)
-    }
-  }
-
-  private async acknowledgeProviderSafe(broker: any, providerAddress: string): Promise<void> {
-    const now = Date.now()
-    const lastAck = acknowledgeCache.get(providerAddress)
-
-    if (lastAck && (now - lastAck) < ACKNOWLEDGE_TTL) {
-      console.log('Provider already acknowledged (cached)')
-      return
-    }
-
-    try {
-      console.log('Acknowledging provider...')
-      const ackTx = await broker.inference.acknowledgeProviderSigner(providerAddress)
-      console.log(`Acknowledge tx: ${ackTx.hash}`)
+      clearTimeout(timeoutId)
       
+      if (error.name === 'AbortError') {
+        throw new Error(`Provider ${service.provider} timed out`)
+      }
+      
+      // Fallback на fetch
       try {
-        await ackTx?.wait?.()
-      } catch (waitErr: any) {
-        console.log('Ack wait error (non-critical):', waitErr?.message)
-      }
-      
-      acknowledgeCache.set(providerAddress, now)
-      console.log('Provider acknowledged successfully!')
-      
-    } catch (ackError: any) {
-      if (ackError.message.includes('already acknowledged')) {
-        console.log('Provider already acknowledged')
-        acknowledgeCache.set(providerAddress, now)
-      } else {
-        throw new Error(`Acknowledge failed: ${ackError.message}`)
+        const response = await fetch(`${service.url}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer dummy-key'
+          },
+          body: JSON.stringify({
+            messages: [
+              { role: 'system', content: `You are ${request.agentMetadata.name}. ${request.agentMetadata.description}` },
+              { role: 'user', content: request.message }
+            ],
+            model: service.model || 'default'
+          }),
+          signal
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        const data = await response.json()
+        const content = data.choices?.[0]?.message?.content || 'No response'
+
+        return {
+          response: content,
+          model: service.model || 'unknown',
+          provider: service.provider
+        }
+
+      } catch (fetchError: any) {
+        throw new Error(`Provider ${service.provider} failed: ${fetchError.message}`)
       }
     }
   }
 
-  private createFallbackResponse(
-    timing: TimingMetrics, 
-    errors: string[], 
-    reason: string,
-    servicesFound: number = 0
-  ): ChatResponse {
+  private createFallbackResponse(error: string, timing: any): ChatResponse {
     return {
-      success: true,
-      response: `I'm currently experiencing connectivity issues with the 0G Compute Network.
+      response: `I apologize, but I'm currently unable to connect to the 0G Compute network. This might be due to network issues or service maintenance. 
 
-🔄 **Status Report:**
-- Services discovered: ${servicesFound}
-- Issue: ${reason}
-- Errors: ${errors.slice(0, 3).join(', ')}
+Error details: ${error}
 
-I'm operating in local mode for now. How can I help you?`,
+Please try again in a few moments. If the issue persists, you can check the 0G Network status or contact support.`,
       model: 'local-fallback',
       provider: 'local',
       isRealAI: false,
       metadata: {
         timing,
-        servicesFound,
-        errors: errors.slice(0, 5) // Ограничиваем количество ошибок
+        providers: {
+          found: 0,
+          attempted: 0,
+          successful: 0
+        }
       }
     }
   }

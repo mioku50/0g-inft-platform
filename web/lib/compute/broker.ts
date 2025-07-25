@@ -1,4 +1,4 @@
-import { Wallet, JsonRpcProvider, Contract } from 'ethers'
+import { Wallet, JsonRpcProvider, Contract, Network } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { FINE_TUNING_SERVING_ABI } from '@/lib/contracts/abis'
 import { fromWei } from '@/lib/constants'
@@ -6,7 +6,9 @@ import {
   RPC_URL,
   FINE_TUNING_SERVING,
   FINE_TUNE_PROVIDER,
-  PK
+  PK,
+  COMPUTE_LEDGER_CONTRACT,
+  COMPUTE_INFERENCE_CONTRACT
 } from '@/lib/server/compute-env'
 
 let broker: any | null = null
@@ -25,100 +27,67 @@ export async function assertContractDeployed(provider: JsonRpcProvider, address:
 
 // Безопасные обёртки для работы с ledger
 export const ledgerSafe = {
-  get: async (brokerInstance?: any): Promise<{ balance: bigint; error?: string }> => {
+  async get(): Promise<{ balance: bigint }> {
     try {
-      const br = brokerInstance || broker
-      if (!br) {
-        throw new Error('Broker not initialized')
-      }
-      
-      const ledgerInfo = await br.ledger.getLedger()
-      
-      // Безопасное преобразование BigNumberish в bigint
-      let balance: bigint
-      if (typeof ledgerInfo.balance === 'bigint') {
-        balance = ledgerInfo.balance
-      } else if (typeof ledgerInfo.balance === 'string') {
-        balance = BigInt(ledgerInfo.balance)
-      } else if (ledgerInfo.balance?._isBigNumber) {
-        // Обработка ethers BigNumber
-        balance = BigInt(ledgerInfo.balance.toString())
-      } else {
-        balance = BigInt(ledgerInfo.balance?.toString?.() ?? '0')
-      }
-      
-      console.log(`Ledger balance: ${fromWei(balance)} OG`)
-      return { balance }
-      
+      const balance = await broker.ledger.getLedger()
+      return { balance: BigInt(balance.toString()) }
     } catch (error: any) {
-      console.log('Ledger get error:', error.message)
-      return { balance: 0n, error: error.message }
+      console.log('Balance check error (non-critical):', error.message)
+      return { balance: BigInt(0) }
     }
   },
 
-  ensureMinBalance: async (minBalanceOG: number, brokerInstance?: any): Promise<boolean> => {
-    try {
-      const br = brokerInstance || broker
-      if (!br) {
-        console.log('Broker not available for balance check')
-        return false
-      }
-
-      const { balance, error } = await ledgerSafe.get(br)
-      if (error) {
-        console.log('Cannot check balance:', error)
-        return false
-      }
-
-      const minBalanceWei = BigInt(Math.floor(minBalanceOG * 1e18))
-      
-      if (balance < minBalanceWei) {
-        console.log(`Low balance (${fromWei(balance)} OG), adding funds...`)
-        
-        try {
-          const addAmount = BigInt(Math.floor(Math.max(minBalanceOG * 2, 0.05) * 1e18))
-          await br.ledger.addLedger(addAmount)
-          console.log(`Added ${fromWei(addAmount)} OG to ledger`)
-          return true
-        } catch (addError: any) {
-          console.log('Failed to add funds:', addError.message)
-          return false
-        }
-      }
-      
-      console.log('Balance sufficient')
-      return true
-      
-    } catch (error: any) {
-      console.log('Balance check error (non-critical):', error.message)
-      return false
+  async ensureMinBalance(min: bigint): Promise<void> {
+    const { balance } = await this.get()
+    if (balance < min) {
+      // Здесь можно добавить логику для автопополнения, если необходимо
+      console.warn(`Warning: Current balance (${balance}) is less than minimum required (${min}). Top-up might be needed.`)
     }
   }
 }
 
-export async function getBrokerOrThrow() {
-  if (broker) return broker
-
-  const provider = new JsonRpcProvider(RPC_URL)
-  const signer = new Wallet(PK, provider)
-
-  await assertContractDeployed(provider, FINE_TUNING_SERVING)
-
-  try {
-    broker = await createZGComputeNetworkBroker(signer)
-  } catch (e: any) {
-    throw new Error(`Failed to start 0G SDK: ${e.message}`)
+export async function getBroker() {
+  if (broker) {
+    return broker
   }
 
-  broker.signer = signer
-  broker.signerAddress = signer.address
-  
-  // Добавляем безопасные методы к broker
-  broker.ledgerSafe = ledgerSafe
-  
-  await addFineTuningSupport(broker, signer)
+  if (!PK) {
+    throw new Error('Private key (PK) is not set in environment variables.')
+  }
 
+  // Создаем провайдер с явным Network чтобы избежать ENS ошибок
+  const provider = new JsonRpcProvider(
+    { url: RPC_URL },
+    new Network('0g-testnet', 16601)
+  )
+  
+  const wallet = new Wallet(PK, provider)
+
+  console.log('🔗 Creating broker with explicit contract addresses...')
+  console.log('  Ledger:', COMPUTE_LEDGER_CONTRACT)
+  console.log('  Inference:', COMPUTE_INFERENCE_CONTRACT)
+  console.log('  Fine-tuning:', FINE_TUNING_SERVING)
+
+  // Создаем broker с явными адресами контрактов
+  broker = createZGComputeNetworkBroker({
+    signer: wallet,
+    ledgerAddress: COMPUTE_LEDGER_CONTRACT,
+    inferenceAddress: COMPUTE_INFERENCE_CONTRACT,
+    fineTuningAddress: FINE_TUNING_SERVING
+  })
+
+  console.log('✅ Broker created successfully')
   return broker
+}
+
+// Альтернативная функция с проверкой
+export async function getBrokerOrThrow() {
+  try {
+    return await getBroker()
+  } catch (error: any) {
+    console.error('❌ Failed to create broker:', error.message)
+    throw new Error(`Broker initialization failed: ${error.message}`)
+  }
 }
 
 async function addFineTuningSupport(broker: any, signer: Wallet) {
@@ -307,7 +276,3 @@ function formatError(e: any) {
 }
 
 export { FINE_TUNE_PROVIDER }
-
-export async function getBroker() {
-  return getBrokerOrThrow()
-}

@@ -8,15 +8,16 @@ const MODEL_MAPPING = {
   'deepseek-r1-70b': '0x2084fdd904c9a3317dde98147d4e7778a40e076b5b0eb469f7a8f27ae5b13e7f'
 }
 
+// Official task schema matching the SDK
 export interface FineTuningTaskRequest {
   userAddress: string
-  serviceName: string
+  preTrainedModelHash: string
   datasetHash: string
   trainingParams: string
-  preTrainedModelHash: string
   fee: string
   nonce: string
   signature: string
+  wait?: boolean
 }
 
 export interface FineTuningTaskResponse {
@@ -26,6 +27,9 @@ export interface FineTuningTaskResponse {
   latestDeliverableIndex?: number
   acknowledged: boolean
   modelRootHash?: string
+  createdAt?: string
+  updatedAt?: string
+  deliverTime?: number
 }
 
 export class FineTuneService {
@@ -64,28 +68,34 @@ export class FineTuneService {
       const preTrainedModelHash = MODEL_MAPPING[params.baseModel as keyof typeof MODEL_MAPPING] 
         || MODEL_MAPPING['llama-3.3-70b']
 
-      // 3. Подготовка данных для запроса
+      // 3. Получение account для nonce и fee calculation
+      const account = await this.broker.fineTuning.getAccount(
+        this.broker.signer.address,
+        FINE_TUNE_PROVIDER
+      )
+
+      // 4. Подготовка данных для запроса согласно официальной схеме
       const taskRequest: FineTuningTaskRequest = {
         userAddress: this.broker.signer.address,
-        serviceName: 'fine-tune-service1',
+        preTrainedModelHash,
         datasetHash: params.datasetRootHash,
         trainingParams: JSON.stringify(trainingParams),
-        preTrainedModelHash,
-        fee: '0', // Fee рассчитается автоматически
-        nonce: Date.now().toString(),
-        signature: '0x' // Подпись создается автоматически
+        fee: toWei('0.001').toString(), // Базовая fee, может быть рассчитана динамически
+        nonce: account.nonce.toString(),
+        signature: '0x', // Подпись создается автоматически через SDK
+        wait: false
       }
 
-      // 4. Получение информации о провайдере
+      // 5. Получение информации о провайдере
       const { endpoint } = await this.broker.inference.getServiceMetadata(FINE_TUNE_PROVIDER)
       
-      // 5. Создание заголовков для аутентификации
+      // 6. Создание заголовков для аутентификации
       const headers = await this.broker.inference.getRequestHeaders(
         FINE_TUNE_PROVIDER,
         JSON.stringify(taskRequest)
       )
 
-      // 6. Отправка запроса на создание задачи
+      // 7. Отправка запроса на создание задачи
       const response = await fetch(`${endpoint}/v1/user/${taskRequest.userAddress}/task`, {
         method: 'POST',
         headers: {
@@ -133,17 +143,20 @@ export class FineTuneService {
 
       const taskData = await response.json()
       
-      // Преобразование статуса
+      // Преобразование статуса согласно официальной схеме
       const status: FineTuningTaskResponse = {
         id: taskData.id,
         progress: this.mapProgressStatus(taskData.progress || 'Init'),
         deliverIndex: taskData.deliverIndex,
         latestDeliverableIndex: undefined,
-        acknowledged: false
+        acknowledged: false,
+        createdAt: taskData.createdAt,
+        updatedAt: taskData.updatedAt,
+        deliverTime: taskData.deliverTime
       }
 
       // Если задача завершена, получаем hash модели
-      if (taskData.progress === 'Delivered' || taskData.progress === 'Finished') {
+      if (this.isTaskCompleted(status.progress)) {
         try {
           const account = await this.broker.fineTuning.getAccount(
             this.broker.signer.address,
@@ -180,6 +193,11 @@ export class FineTuneService {
         this.broker.signer.address,
         FINE_TUNE_PROVIDER
       )
+      
+      if (!acc.deliverables || acc.deliverables.length === 0) {
+        throw new Error('No deliverables found to acknowledge')
+      }
+
       const idx = BigInt(acc.deliverables.length - 1)
       await this.broker.fineTuning.acknowledgeDeliverable(
         FINE_TUNE_PROVIDER,
@@ -270,9 +288,10 @@ export class FineTuneService {
   }
 
   /**
-   * Преобразование статусов провайдера
+   * Преобразование статусов провайдера согласно официальной документации
    */
   private mapProgressStatus(providerStatus: string): string {
+    // Официальные статусы из swagger и SDK
     const statusMap: Record<string, string> = {
       'Init': 'Init',
       'Pending': 'SettingUp', 
@@ -287,5 +306,33 @@ export class FineTuneService {
     }
 
     return statusMap[providerStatus] || providerStatus
+  }
+
+  /**
+   * Проверка завершения задачи
+   */
+  private isTaskCompleted(progress: string): boolean {
+    return ['Delivered', 'Finished', 'Failed'].includes(progress)
+  }
+
+  /**
+   * Проверка успешного завершения задачи
+   */
+  private isTaskSuccessful(progress: string): boolean {
+    return ['Delivered', 'Finished'].includes(progress)
+  }
+
+  /**
+   * Проверка неудачного завершения задачи
+   */
+  private isTaskFailed(progress: string): boolean {
+    return progress === 'Failed'
+  }
+
+  /**
+   * Проверка выполнения задачи
+   */
+  private isTaskInProgress(progress: string): boolean {
+    return ['Init', 'SettingUp', 'Training', 'Delivering'].includes(progress)
   }
 }

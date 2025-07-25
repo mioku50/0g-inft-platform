@@ -621,8 +621,102 @@ export const COMPUTE_ORACLE_ABI = [
   }
 ] as const;
 
-// Добавляем Fine-tuning Serving ABI
+// Добавляем Fine-tuning Serving ABI - Updated to match official SDK
 export const FINE_TUNING_SERVING_ABI = [
+  {
+    "inputs": [
+      { "internalType": "address", "name": "user", "type": "address" },
+      { "internalType": "address", "name": "provider", "type": "address" }
+    ],
+    "name": "AccountExists",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "user", "type": "address" },
+      { "internalType": "address", "name": "provider", "type": "address" }
+    ],
+    "name": "AccountNotExists",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      { "internalType": "string", "name": "reason", "type": "string" }
+    ],
+    "name": "InvalidVerifierInput",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "provider", "type": "address" }
+    ],
+    "name": "ServiceNotExist",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "user", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "provider", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "pendingRefund", "type": "uint256" }
+    ],
+    "name": "BalanceUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "previousOwner", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "newOwner", "type": "address" }
+    ],
+    "name": "OwnershipTransferred",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "user", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "provider", "type": "address" },
+      { "indexed": true, "internalType": "uint256", "name": "index", "type": "uint256" },
+      { "indexed": false, "internalType": "uint256", "name": "timestamp", "type": "uint256" }
+    ],
+    "name": "RefundRequested",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "user", "type": "address" }
+    ],
+    "name": "ServiceRemoved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "user", "type": "address" },
+      { "indexed": false, "internalType": "string", "name": "url", "type": "string" },
+      {
+        "components": [
+          { "internalType": "uint256", "name": "cpuCount", "type": "uint256" },
+          { "internalType": "uint256", "name": "nodeMemory", "type": "uint256" },
+          { "internalType": "uint256", "name": "gpuCount", "type": "uint256" },
+          { "internalType": "uint256", "name": "nodeStorage", "type": "uint256" },
+          { "internalType": "string", "name": "gpuType", "type": "string" }
+        ],
+        "indexed": false,
+        "internalType": "struct Quota",
+        "name": "quota",
+        "type": "tuple"
+      },
+      { "indexed": false, "internalType": "uint256", "name": "pricePerToken", "type": "uint256" },
+      { "indexed": false, "internalType": "address", "name": "providerSigner", "type": "address" },
+      { "indexed": false, "internalType": "bool", "name": "occupied", "type": "bool" }
+    ],
+    "name": "ServiceUpdated",
+    "type": "event"
+  },
   {
     "inputs": [
       { "internalType": "address", "name": "user", "type": "address" },
@@ -662,6 +756,51 @@ export const FINE_TUNING_SERVING_ABI = [
     "name": "addAccount",
     "outputs": [],
     "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "user", "type": "address" },
+      { "internalType": "bytes", "name": "modelRootHash", "type": "bytes" }
+    ],
+    "name": "addDeliverable",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "string", "name": "url", "type": "string" },
+      {
+        "components": [
+          { "internalType": "uint256", "name": "cpuCount", "type": "uint256" },
+          { "internalType": "uint256", "name": "nodeMemory", "type": "uint256" },
+          { "internalType": "uint256", "name": "gpuCount", "type": "uint256" },
+          { "internalType": "uint256", "name": "nodeStorage", "type": "uint256" },
+          { "internalType": "string", "name": "gpuType", "type": "string" }
+        ],
+        "internalType": "struct Quota",
+        "name": "quota",
+        "type": "tuple"
+      },
+      { "internalType": "uint256", "name": "pricePerToken", "type": "uint256" },
+      { "internalType": "address", "name": "providerSigner", "type": "address" },
+      { "internalType": "bool", "name": "occupied", "type": "bool" },
+      { "internalType": "string[]", "name": "models", "type": "string[]" }
+    ],
+    "name": "addOrUpdateService",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "user", "type": "address" },
+      { "internalType": "address", "name": "provider", "type": "address" }
+    ],
+    "name": "deleteAccount",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -722,11 +861,278 @@ export const FINE_TUNING_SERVING_ABI = [
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "getAllAccounts",
+    "outputs": [
+      {
+        "components": [
+          { "internalType": "address", "name": "user", "type": "address" },
+          { "internalType": "address", "name": "provider", "type": "address" },
+          { "internalType": "uint256", "name": "nonce", "type": "uint256" },
+          { "internalType": "uint256", "name": "balance", "type": "uint256" },
+          { "internalType": "uint256", "name": "pendingRefund", "type": "uint256" },
+          {
+            "components": [
+              { "internalType": "uint256", "name": "index", "type": "uint256" },
+              { "internalType": "uint256", "name": "amount", "type": "uint256" },
+              { "internalType": "uint256", "name": "createdAt", "type": "uint256" },
+              { "internalType": "bool", "name": "processed", "type": "bool" }
+            ],
+            "internalType": "struct Refund[]",
+            "name": "refunds",
+            "type": "tuple[]"
+          },
+          { "internalType": "string", "name": "additionalInfo", "type": "string" },
+          { "internalType": "address", "name": "providerSigner", "type": "address" },
+          {
+            "components": [
+              { "internalType": "bytes", "name": "modelRootHash", "type": "bytes" },
+              { "internalType": "bytes", "name": "encryptedSecret", "type": "bytes" },
+              { "internalType": "bool", "name": "acknowledged", "type": "bool" }
+            ],
+            "internalType": "struct Deliverable[]",
+            "name": "deliverables",
+            "type": "tuple[]"
+          }
+        ],
+        "internalType": "struct Account[]",
+        "name": "",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getAllServices",
+    "outputs": [
+      {
+        "components": [
+          { "internalType": "address", "name": "provider", "type": "address" },
+          { "internalType": "string", "name": "url", "type": "string" },
+          {
+            "components": [
+              { "internalType": "uint256", "name": "cpuCount", "type": "uint256" },
+              { "internalType": "uint256", "name": "nodeMemory", "type": "uint256" },
+              { "internalType": "uint256", "name": "gpuCount", "type": "uint256" },
+              { "internalType": "uint256", "name": "nodeStorage", "type": "uint256" },
+              { "internalType": "string", "name": "gpuType", "type": "string" }
+            ],
+            "internalType": "struct Quota",
+            "name": "quota",
+            "type": "tuple"
+          },
+          { "internalType": "uint256", "name": "pricePerToken", "type": "uint256" },
+          { "internalType": "address", "name": "providerSigner", "type": "address" },
+          { "internalType": "bool", "name": "occupied", "type": "bool" },
+          { "internalType": "string[]", "name": "models", "type": "string[]" }
+        ],
+        "internalType": "struct Service[]",
+        "name": "services",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "user", "type": "address" },
+      { "internalType": "address", "name": "provider", "type": "address" }
+    ],
+    "name": "getDeliverable",
+    "outputs": [
+      {
+        "components": [
+          { "internalType": "bytes", "name": "modelRootHash", "type": "bytes" },
+          { "internalType": "bytes", "name": "encryptedSecret", "type": "bytes" },
+          { "internalType": "bool", "name": "acknowledged", "type": "bool" }
+        ],
+        "internalType": "struct Deliverable",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "user", "type": "address" },
+      { "internalType": "address", "name": "provider", "type": "address" }
+    ],
+    "name": "getPendingRefund",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "provider", "type": "address" }
+    ],
+    "name": "getService",
+    "outputs": [
+      {
+        "components": [
+          { "internalType": "address", "name": "provider", "type": "address" },
+          { "internalType": "string", "name": "url", "type": "string" },
+          {
+            "components": [
+              { "internalType": "uint256", "name": "cpuCount", "type": "uint256" },
+              { "internalType": "uint256", "name": "nodeMemory", "type": "uint256" },
+              { "internalType": "uint256", "name": "gpuCount", "type": "uint256" },
+              { "internalType": "uint256", "name": "nodeStorage", "type": "uint256" },
+              { "internalType": "string", "name": "gpuType", "type": "string" }
+            ],
+            "internalType": "struct Quota",
+            "name": "quota",
+            "type": "tuple"
+          },
+          { "internalType": "uint256", "name": "pricePerToken", "type": "uint256" },
+          { "internalType": "address", "name": "providerSigner", "type": "address" },
+          { "internalType": "bool", "name": "occupied", "type": "bool" },
+          { "internalType": "string[]", "name": "models", "type": "string[]" }
+        ],
+        "internalType": "struct Service",
+        "name": "service",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_locktime", "type": "uint256" },
+      { "internalType": "address", "name": "_ledgerAddress", "type": "address" },
+      { "internalType": "address", "name": "owner", "type": "address" },
+      { "internalType": "uint256", "name": "_penaltyPercentage", "type": "uint256" }
+    ],
+    "name": "initialize",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "initialized",
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ledgerAddress",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "lockTime",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "owner",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "penaltyPercentage",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "user", "type": "address" },
+      { "internalType": "address", "name": "provider", "type": "address" }
+    ],
+    "name": "processRefund",
+    "outputs": [
+      { "internalType": "uint256", "name": "totalAmount", "type": "uint256" },
+      { "internalType": "uint256", "name": "balance", "type": "uint256" },
+      { "internalType": "uint256", "name": "pendingRefund", "type": "uint256" }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "removeService",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "renounceOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "inputs": [
       { "internalType": "address", "name": "user", "type": "address" },
       { "internalType": "address", "name": "provider", "type": "address" }
     ],
     "name": "requestRefundAll",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          { "internalType": "uint256", "name": "index", "type": "uint256" },
+          { "internalType": "bytes", "name": "encryptedSecret", "type": "bytes" },
+          { "internalType": "bytes", "name": "modelRootHash", "type": "bytes" },
+          { "internalType": "uint256", "name": "nonce", "type": "uint256" },
+          { "internalType": "address", "name": "providerSigner", "type": "address" },
+          { "internalType": "bytes", "name": "signature", "type": "bytes" },
+          { "internalType": "uint256", "name": "taskFee", "type": "uint256" },
+          { "internalType": "address", "name": "user", "type": "address" }
+        ],
+        "internalType": "struct VerifierInput",
+        "name": "verifierInput",
+        "type": "tuple"
+      }
+    ],
+    "name": "settleFees",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "newOwner", "type": "address" }
+    ],
+    "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_locktime", "type": "uint256" }
+    ],
+    "name": "updateLockTime",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "uint256", "name": "_penaltyPercentage", "type": "uint256" }
+    ],
+    "name": "updatePenaltyPercentage",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

@@ -23,6 +23,79 @@ export async function assertContractDeployed(provider: JsonRpcProvider, address:
   }
 }
 
+// Безопасные обёртки для работы с ledger
+export const ledgerSafe = {
+  get: async (brokerInstance?: any): Promise<{ balance: bigint; error?: string }> => {
+    try {
+      const br = brokerInstance || broker
+      if (!br) {
+        throw new Error('Broker not initialized')
+      }
+      
+      const ledgerInfo = await br.ledger.getLedger()
+      
+      // Безопасное преобразование BigNumberish в bigint
+      let balance: bigint
+      if (typeof ledgerInfo.balance === 'bigint') {
+        balance = ledgerInfo.balance
+      } else if (typeof ledgerInfo.balance === 'string') {
+        balance = BigInt(ledgerInfo.balance)
+      } else if (ledgerInfo.balance?._isBigNumber) {
+        // Обработка ethers BigNumber
+        balance = BigInt(ledgerInfo.balance.toString())
+      } else {
+        balance = BigInt(ledgerInfo.balance?.toString?.() ?? '0')
+      }
+      
+      console.log(`Ledger balance: ${fromWei(balance)} OG`)
+      return { balance }
+      
+    } catch (error: any) {
+      console.log('Ledger get error:', error.message)
+      return { balance: 0n, error: error.message }
+    }
+  },
+
+  ensureMinBalance: async (minBalanceOG: number, brokerInstance?: any): Promise<boolean> => {
+    try {
+      const br = brokerInstance || broker
+      if (!br) {
+        console.log('Broker not available for balance check')
+        return false
+      }
+
+      const { balance, error } = await ledgerSafe.get(br)
+      if (error) {
+        console.log('Cannot check balance:', error)
+        return false
+      }
+
+      const minBalanceWei = BigInt(Math.floor(minBalanceOG * 1e18))
+      
+      if (balance < minBalanceWei) {
+        console.log(`Low balance (${fromWei(balance)} OG), adding funds...`)
+        
+        try {
+          const addAmount = BigInt(Math.floor(Math.max(minBalanceOG * 2, 0.05) * 1e18))
+          await br.ledger.addLedger(addAmount)
+          console.log(`Added ${fromWei(addAmount)} OG to ledger`)
+          return true
+        } catch (addError: any) {
+          console.log('Failed to add funds:', addError.message)
+          return false
+        }
+      }
+      
+      console.log('Balance sufficient')
+      return true
+      
+    } catch (error: any) {
+      console.log('Balance check error (non-critical):', error.message)
+      return false
+    }
+  }
+}
+
 export async function getBrokerOrThrow() {
   if (broker) return broker
 
@@ -39,6 +112,10 @@ export async function getBrokerOrThrow() {
 
   broker.signer = signer
   broker.signerAddress = signer.address
+  
+  // Добавляем безопасные методы к broker
+  broker.ledgerSafe = ledgerSafe
+  
   await addFineTuningSupport(broker, signer)
 
   return broker
@@ -211,9 +288,15 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 }
 
 function formatError(e: any) {
+  // Фильтруем invalid BigNumberish из сообщений об ошибках
+  let message = e.message
+  if (message && message.includes('invalid BigNumberish')) {
+    message = message.replace(/invalid BigNumberish value[^,]*/g, 'BigInt conversion error')
+  }
+  
   return new Error(
     JSON.stringify({
-      message: e.message,
+      message,
       code: e.code,
       reason: e.reason,
       shortMessage: e.shortMessage,

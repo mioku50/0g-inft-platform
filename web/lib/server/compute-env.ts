@@ -1,14 +1,14 @@
-import { requireEnv } from '../constants'
+import { requireEnv, CHAIN_ID } from '../constants'
 
 // Server-only environment variables validation
 export const RPC_URL = requireEnv('NEXT_PUBLIC_0G_RPC_URL')
-export const FINE_TUNING_SERVING = requireEnv('NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS')
+export const FINE_TUNING_SERVING = requireEnv('FINE_TUNING_CONTRACT')
 export const FINE_TUNE_PROVIDER = requireEnv('NEXT_PUBLIC_FINE_TUNE_PROVIDER')
 export const PK = requireEnv('OG_COMPUTE_PRIVATE_KEY')
 
 // Дополнительные ENV для 0G Compute
-export const COMPUTE_LEDGER_CONTRACT = process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT || '0x1a85Dd32da10c170F4f138d082DDc496ab3E5BAa'
-export const COMPUTE_INFERENCE_CONTRACT = process.env.NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT || '0x5299bd255B76305ae08d7F95D54'
+export const COMPUTE_LEDGER_CONTRACT = requireEnv('LEDGER_CONTRACT')
+export const COMPUTE_INFERENCE_CONTRACT = requireEnv('INFERENCE_CONTRACT')
 
 // Validation function for server-only usage
 export function validateComputeEnvironment(): { isValid: boolean; errors: string[] } {
@@ -17,7 +17,7 @@ export function validateComputeEnvironment(): { isValid: boolean; errors: string
   try {
     // Обязательные переменные
     if (!RPC_URL) errors.push('Missing NEXT_PUBLIC_0G_RPC_URL')
-    if (!FINE_TUNING_SERVING) errors.push('Missing NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS')
+    if (!FINE_TUNING_SERVING) errors.push('Missing FINE_TUNING_CONTRACT')
     if (!FINE_TUNE_PROVIDER) errors.push('Missing NEXT_PUBLIC_FINE_TUNE_PROVIDER')
     if (!PK) errors.push('Missing OG_COMPUTE_PRIVATE_KEY')
     
@@ -27,7 +27,7 @@ export function validateComputeEnvironment(): { isValid: boolean; errors: string
     }
     
     if (FINE_TUNING_SERVING && !FINE_TUNING_SERVING.match(/^0x[a-fA-F0-9]{40}$/)) {
-      errors.push('NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS must be a valid Ethereum address')
+      errors.push('FINE_TUNING_CONTRACT must be a valid Ethereum address')
     }
     
     if (FINE_TUNE_PROVIDER && !FINE_TUNE_PROVIDER.match(/^0x[a-fA-F0-9]{40}$/)) {
@@ -44,11 +44,11 @@ export function validateComputeEnvironment(): { isValid: boolean; errors: string
     
     // Валидация дополнительных контрактов
     if (COMPUTE_LEDGER_CONTRACT && !COMPUTE_LEDGER_CONTRACT.match(/^0x[a-fA-F0-9]{40}$/)) {
-      errors.push('NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT must be a valid Ethereum address')
+      errors.push('LEDGER_CONTRACT must be a valid Ethereum address')
     }
-    
+
     if (COMPUTE_INFERENCE_CONTRACT && !COMPUTE_INFERENCE_CONTRACT.match(/^0x[a-fA-F0-9]{40}$/)) {
-      errors.push('NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT must be a valid Ethereum address')
+      errors.push('INFERENCE_CONTRACT must be a valid Ethereum address')
     }
     
     // Валидация сети (проверяем известные RPC)
@@ -76,7 +76,7 @@ export function validateComputeEnvironment(): { isValid: boolean; errors: string
 export async function validateRPCConnection(): Promise<{ isValid: boolean; error?: string; chainId?: number }> {
   try {
     const { ethers } = await import('ethers')
-    const provider = new ethers.JsonRpcProvider(RPC_URL)
+    const provider = new ethers.JsonRpcProvider(RPC_URL, { name: '0g', chainId: CHAIN_ID })
     
     // Тестируем подключение
     const network = await provider.getNetwork()
@@ -108,7 +108,7 @@ export async function validateRPCConnection(): Promise<{ isValid: boolean; error
 export async function validateWalletSetup(): Promise<{ isValid: boolean; error?: string; address?: string; balance?: string }> {
   try {
     const { ethers } = await import('ethers')
-    const provider = new ethers.JsonRpcProvider(RPC_URL)
+    const provider = new ethers.JsonRpcProvider(RPC_URL, { name: '0g', chainId: CHAIN_ID })
     
     // Нормализуем приватный ключ
     const normalizedPK = PK.startsWith('0x') ? PK : `0x${PK}`
@@ -192,8 +192,11 @@ export const COMPUTE_CONFIG = {
   FINE_TUNING_SERVING,
   FINE_TUNE_PROVIDER,
   PK: PK.startsWith('0x') ? PK : `0x${PK}`, // Нормализованный ключ
+  CHAIN_ID,
   COMPUTE_LEDGER_CONTRACT,
   COMPUTE_INFERENCE_CONTRACT,
   isValid: () => validateComputeEnvironment().isValid,
   validateFull: validateFullEnvironment
 }
+
+export { CHAIN_ID }

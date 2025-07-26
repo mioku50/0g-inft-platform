@@ -1,6 +1,12 @@
 import { ethers } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import OpenAI from 'openai'
+import {
+  COMPUTE_LEDGER_CONTRACT,
+  COMPUTE_INFERENCE_CONTRACT,
+  FINE_TUNING_SERVING,
+  CHAIN_ID
+} from '@/lib/server/compute-env'
 
 // Кэш брокера (TTL 5 минут)
 interface BrokerCacheEntry {
@@ -15,11 +21,11 @@ const BROKER_TTL = 5 * 60 * 1000 // 5 минут
 const acknowledgeCache = new Map<string, number>()
 const ACKNOWLEDGE_TTL = 10 * 60 * 1000 // 10 минут
 
-// Официальные контракты
+// Контракты из ENV
 const OFFICIAL_CONTRACTS = {
-  ledger: '0x1a85Dd32da10c170F4f138d082DDc496ab3E5BAa',
-  inference: '0x5299bd255B76305ae08d7F95D54',
-  fineTuning: '0xda478Ccf5d534346A16b1475E4c2DecE0268B176'
+  ledger: COMPUTE_LEDGER_CONTRACT,
+  inference: COMPUTE_INFERENCE_CONTRACT,
+  fineTuning: FINE_TUNING_SERVING
 }
 
 // Тайм-ауты
@@ -131,7 +137,7 @@ export class ChatService {
     console.log('Initializing new broker...')
     
     try {
-      const provider = new ethers.JsonRpcProvider(this.rpcUrl)
+      const provider = new ethers.JsonRpcProvider(this.rpcUrl, { name: '0g', chainId: CHAIN_ID })
       const wallet = new ethers.Wallet(this.privateKey, provider)
       
       const broker = await createZGComputeNetworkBroker(

@@ -4,6 +4,8 @@ if (!(process as any).versions?.node) {
   (process as any).versions.node = '20.11.0';   // любая строка X.Y.Z
 }
 
+export const runtime = 'nodejs'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { ChatService } from '@/lib/compute/chat-service'
 import { RPC_URL, PK } from '@/lib/server/compute-env'

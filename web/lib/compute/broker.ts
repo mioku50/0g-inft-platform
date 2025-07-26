@@ -1,12 +1,14 @@
 import { Wallet, JsonRpcProvider, Contract } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { FINE_TUNING_SERVING_ABI } from '@/lib/contracts/abis'
-import { fromWei } from '@/lib/constants'
+import { fromWei, CHAIN_ID } from '@/lib/constants'
 import {
   RPC_URL,
   FINE_TUNING_SERVING,
   FINE_TUNE_PROVIDER,
-  PK
+  PK,
+  COMPUTE_LEDGER_CONTRACT,
+  COMPUTE_INFERENCE_CONTRACT
 } from '@/lib/server/compute-env'
 
 let broker: any | null = null
@@ -51,8 +53,12 @@ export const ledgerSafe = {
       return { balance }
       
     } catch (error: any) {
-      console.log('Ledger get error:', error.message)
-      return { balance: 0n, error: error.message }
+      const msg = error.message || ''
+      console.log('Ledger get error:', msg)
+      if (msg.includes('LedgerNotExists')) {
+        return { balance: 0n, error: 'LedgerNotExists' }
+      }
+      return { balance: 0n, error: msg }
     }
   },
 
@@ -66,6 +72,17 @@ export const ledgerSafe = {
 
       const { balance, error } = await ledgerSafe.get(br)
       if (error) {
+        if (error === 'LedgerNotExists') {
+          try {
+            const initAmount = BigInt(Math.floor(Math.max(minBalanceOG, 0.05) * 1e18))
+            await br.ledger.addLedger(initAmount)
+            console.log(`Created ledger with ${fromWei(initAmount)} OG`)
+            return true
+          } catch (addErr: any) {
+            console.log('Failed to create ledger:', addErr.message)
+            return false
+          }
+        }
         console.log('Cannot check balance:', error)
         return false
       }
@@ -99,13 +116,18 @@ export const ledgerSafe = {
 export async function getBrokerOrThrow() {
   if (broker) return broker
 
-  const provider = new JsonRpcProvider(RPC_URL)
+  const provider = new JsonRpcProvider(RPC_URL, { name: '0g', chainId: CHAIN_ID })
   const signer = new Wallet(PK, provider)
 
   await assertContractDeployed(provider, FINE_TUNING_SERVING)
 
   try {
-    broker = await createZGComputeNetworkBroker(signer)
+    broker = await createZGComputeNetworkBroker(
+      signer,
+      COMPUTE_LEDGER_CONTRACT,
+      COMPUTE_INFERENCE_CONTRACT,
+      FINE_TUNING_SERVING
+    )
   } catch (e: any) {
     throw new Error(`Failed to start 0G SDK: ${e.message}`)
   }

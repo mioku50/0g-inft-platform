@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { ethers } from 'ethers'
 import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
-import { toWei, fromWei } from '@/lib/constants'
+import { fromWei } from '@/lib/constants'
 import { getFineTuneProvider, validateComputeEnvironment } from '@/lib/server/compute-env'
 
 export const runtime = 'nodejs'
@@ -39,18 +40,32 @@ export async function GET(request: NextRequest) {
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) throw new Error('Signer not initialized')
     
-    const exists = await broker.fineTuning.accountExists(signerAddress, getFineTuneProvider())
+    const exists = await broker.fineTuning.accountExists(
+      signerAddress,
+      getFineTuneProvider()
+    )
     let acc: any = null
-    
+
     if (exists) {
-      acc = await broker.fineTuning.getAccount(signerAddress, getFineTuneProvider())
+      acc = await broker.fineTuning.getAccount(
+        signerAddress,
+        getFineTuneProvider()
+      )
     }
-    
-    const balanceWei = acc ? acc.balanceWei : '0'
-    const balance = acc ? acc.balance : '0'
-    const pendingRefundWei = acc ? acc.pendingRefundWei : '0'
-    const pendingRefund = acc ? acc.pendingRefund : '0'
-    
+
+    const toBn0 = (v: any) => {
+      try {
+        return v == null ? 0n : BigInt(v.toString())
+      } catch {
+        return 0n
+      }
+    }
+
+    const balanceWei = acc?.balanceWei ?? '0'
+    const balance = acc?.balance ?? '0'
+    const pendingRefund = acc ? fromWei(toBn0(acc.pendingRefundWei)) : '0'
+    const pendingRefundWei = acc?.pendingRefundWei ?? '0'
+
     const result: AccountResponse = {
       exists,
       balance,
@@ -58,8 +73,8 @@ export async function GET(request: NextRequest) {
       pendingRefund,
       pendingRefundWei,
       needsTopUp: parseFloat(balance) < 0.001,
-      deliverables: acc?.deliverables || [],
-      nonce: acc?.nonce?.toString()
+      deliverables: Array.isArray(acc?.deliverables) ? acc!.deliverables : [],
+      nonce: acc?.nonce?.toString(),
     }
     
     console.log('[compute/account][GET]', { result: { ...result, deliverables: result.deliverables?.length } })
@@ -114,52 +129,53 @@ export async function POST(request: NextRequest) {
     if (!signerAddress) throw new Error('Signer not initialized')
     
     let tx
-    try {
-      if (action === 'create') {
-        // Create account with initial deposit
-        tx = await broker.fineTuning.addAccount(
-          signerAddress,
-          getFineTuneProvider(),
-          'INFT Platform User',
-          { value: toWei(amount) }
-        )
-      } else {
-        // Try to deposit to existing account
+    let message = ''
+    if (action === 'create') {
+      try {
         tx = await broker.fineTuning.depositFund(
           signerAddress,
           getFineTuneProvider(),
           0n,
-          { value: toWei(amount) }
+          { value: ethers.parseEther(amount) }
         )
+        message = `Deposited ${amount} ETH to existing account`
+      } catch (e: any) {
+        const msg = (e?.reason || e?.message || '').toString()
+        if (msg.includes('AccountNotExists') || msg.includes('Account Not Exists')) {
+          if (!broker.ledger?.openFineTuningAccount) {
+            throw new Error('Ledger helper openFineTuningAccount is missing on broker')
+          }
+          tx = await broker.ledger.openFineTuningAccount(
+            signerAddress,
+            getFineTuneProvider(),
+            { value: ethers.parseEther(amount) }
+          )
+          await tx.wait()
+          message = `Account created via Ledger and funded with ${amount} ETH`
+        } else {
+          throw e
+        }
       }
-    } catch (e: any) {
-      if (e.message?.includes('AccountExists')) {
-        // Account exists, try deposit instead
-        tx = await broker.fineTuning.depositFund(
-          signerAddress,
-          getFineTuneProvider(),
-          0n,
-          { value: toWei(amount) }
-        )
-      } else if (e.message?.includes('AccountNotExists')) {
-        // Account doesn't exist, create it
-        tx = await broker.fineTuning.addAccount(
-          signerAddress,
-          getFineTuneProvider(),
-          'INFT Platform User',
-          { value: toWei(amount) }
-        )
-      } else {
-        throw e
-      }
+    } else {
+      tx = await broker.fineTuning.depositFund(
+        signerAddress,
+        getFineTuneProvider(),
+        0n,
+        { value: ethers.parseEther(amount) }
+      )
+      message = `Deposited ${amount} ETH to existing account`
     }
     
-    const acc = await broker.fineTuning.getAccount(signerAddress, getFineTuneProvider())
-    const result = { 
-      success: true, 
-      txHash: tx.hash, 
+    const acc = await broker.fineTuning.getAccount(
+      signerAddress,
+      getFineTuneProvider()
+    )
+    const result = {
+      success: true,
+      txHash: tx.hash,
       balance: acc.balance,
-      balanceWei: acc.balanceWei 
+      balanceWei: acc.balanceWei,
+      message,
     }
     
     console.log('[compute/account][POST]', { result })

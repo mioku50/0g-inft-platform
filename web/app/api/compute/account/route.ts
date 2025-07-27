@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
 import { toWei, fromWei } from '@/lib/constants'
-import { FINE_TUNE_PROVIDER, validateComputeEnvironment } from '@/lib/server/compute-env'
+import { getFineTuneProvider, validateComputeEnvironment } from '@/lib/server/compute-env'
 
 export const runtime = 'nodejs'
 
@@ -39,11 +39,11 @@ export async function GET(request: NextRequest) {
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) throw new Error('Signer not initialized')
     
-    const exists = await broker.fineTuning.accountExists(signerAddress, FINE_TUNE_PROVIDER)
+    const exists = await broker.fineTuning.accountExists(signerAddress, getFineTuneProvider())
     let acc: any = null
     
     if (exists) {
-      acc = await broker.fineTuning.getAccount(signerAddress, FINE_TUNE_PROVIDER)
+      acc = await broker.fineTuning.getAccount(signerAddress, getFineTuneProvider())
     }
     
     const balanceWei = acc ? acc.balanceWei : '0'
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
         // Create account with initial deposit
         tx = await broker.fineTuning.addAccount(
           signerAddress,
-          FINE_TUNE_PROVIDER,
+          getFineTuneProvider(),
           'INFT Platform User',
           { value: toWei(amount) }
         )
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
         // Try to deposit to existing account
         tx = await broker.fineTuning.depositFund(
           signerAddress,
-          FINE_TUNE_PROVIDER,
+          getFineTuneProvider(),
           0n,
           { value: toWei(amount) }
         )
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
         // Account exists, try deposit instead
         tx = await broker.fineTuning.depositFund(
           signerAddress,
-          FINE_TUNE_PROVIDER,
+          getFineTuneProvider(),
           0n,
           { value: toWei(amount) }
         )
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
         // Account doesn't exist, create it
         tx = await broker.fineTuning.addAccount(
           signerAddress,
-          FINE_TUNE_PROVIDER,
+          getFineTuneProvider(),
           'INFT Platform User',
           { value: toWei(amount) }
         )
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    const acc = await broker.fineTuning.getAccount(signerAddress, FINE_TUNE_PROVIDER)
+    const acc = await broker.fineTuning.getAccount(signerAddress, getFineTuneProvider())
     const result = { 
       success: true, 
       txHash: tx.hash, 
@@ -206,7 +206,7 @@ export async function DELETE(request: NextRequest) {
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) throw new Error('Signer not initialized')
     
-    const tx = await broker.fineTuning.requestRefundAll(signerAddress, FINE_TUNE_PROVIDER)
+    const tx = await broker.fineTuning.requestRefundAll(signerAddress, getFineTuneProvider())
     const result = { success: true, txHash: tx.hash }
     
     console.log('[compute/account][DELETE]', { result })

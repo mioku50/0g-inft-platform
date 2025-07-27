@@ -2,11 +2,11 @@ import { ethers } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import OpenAI from 'openai'
 import {
-  COMPUTE_LEDGER_CONTRACT,
-  COMPUTE_INFERENCE_CONTRACT,
-  FINE_TUNING_SERVING,
-  CHAIN_ID
+  getComputeLedgerContract,
+  getComputeInferenceContract,
+  getFineTuningServingAddress
 } from '@/lib/server/compute-env'
+import { create0GProvider } from '@/lib/server/provider'
 
 // Кэш брокера (TTL 5 минут)
 interface BrokerCacheEntry {
@@ -23,9 +23,9 @@ const ACKNOWLEDGE_TTL = 10 * 60 * 1000 // 10 минут
 
 // Контракты из ENV
 const OFFICIAL_CONTRACTS = {
-  ledger: COMPUTE_LEDGER_CONTRACT,
-  inference: COMPUTE_INFERENCE_CONTRACT,
-  fineTuning: FINE_TUNING_SERVING
+  ledger: getComputeLedgerContract(),
+  inference: getComputeInferenceContract(),
+  fineTuning: getFineTuningServingAddress()
 }
 
 // Тайм-ауты
@@ -62,11 +62,9 @@ interface ChatResponse {
 }
 
 export class ChatService {
-  private rpcUrl: string
-  private privateKey: string
+  private privateKey: string | undefined
 
-  constructor(rpcUrl: string, privateKey: string) {
-    this.rpcUrl = rpcUrl
+  constructor(privateKey?: string) {
     this.privateKey = privateKey
   }
 
@@ -137,7 +135,8 @@ export class ChatService {
     console.log('Initializing new broker...')
     
     try {
-      const provider = new ethers.JsonRpcProvider(this.rpcUrl, { name: '0g', chainId: CHAIN_ID })
+      const provider = create0GProvider()
+      if (!this.privateKey) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
       const wallet = new ethers.Wallet(this.privateKey, provider)
       
       const broker = await createZGComputeNetworkBroker(

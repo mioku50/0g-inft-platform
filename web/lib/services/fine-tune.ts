@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import { ethers } from 'ethers'
-import { RPC_URL, PK } from '@/lib/server/compute-env'
+import { getRpcUrl, getPrivateKey } from '@/lib/server/compute-env'
 import fs from 'fs/promises'
 import path from 'path'
 import { downloadFromStorage, uploadToStorage } from '@/lib/storage/client-server'
@@ -32,8 +32,10 @@ async function saveJobs(jobs: Record<string, any>) {
 }
 
 export async function requestFineTune(params: FineTuneParams) {
-  const provider = new ethers.JsonRpcProvider(RPC_URL)
-  const wallet = new ethers.Wallet(PK, provider)
+  const provider = new ethers.JsonRpcProvider(getRpcUrl())
+  const pk = getPrivateKey()
+  if (!pk) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
+  const wallet = new ethers.Wallet(pk, provider)
   const oracle = new ethers.Contract(
     process.env.NEXT_PUBLIC_COMPUTE_ORACLE_ADDRESS!,
     COMPUTE_ORACLE_ABI,
@@ -59,8 +61,10 @@ export async function requestFineTune(params: FineTuneParams) {
 }
 
 export async function pollJobStatus() {
-  const provider = new ethers.JsonRpcProvider(RPC_URL)
-  const wallet = new ethers.Wallet(PK, provider)
+  const provider = new ethers.JsonRpcProvider(getRpcUrl())
+  const pk = getPrivateKey()
+  if (!pk) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
+  const wallet = new ethers.Wallet(pk, provider)
   const oracle = new ethers.Contract(
     process.env.NEXT_PUBLIC_COMPUTE_ORACLE_ADDRESS!,
     COMPUTE_ORACLE_ABI,

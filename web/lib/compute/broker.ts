@@ -1,15 +1,16 @@
-import { Wallet, JsonRpcProvider, Contract } from 'ethers'
+import { Wallet, Contract, JsonRpcProvider } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { FINE_TUNING_SERVING_ABI } from '@/lib/contracts/abis'
-import { fromWei, CHAIN_ID } from '@/lib/constants'
+import { fromWei } from '@/lib/constants'
 import {
-  RPC_URL,
-  FINE_TUNING_SERVING,
-  FINE_TUNE_PROVIDER,
-  PK,
-  COMPUTE_LEDGER_CONTRACT,
-  COMPUTE_INFERENCE_CONTRACT
+  getRpcUrl,
+  getFineTuningServingAddress,
+  getFineTuneProvider,
+  getPrivateKey,
+  getComputeLedgerContract,
+  getComputeInferenceContract
 } from '@/lib/server/compute-env'
+import { create0GProvider } from '@/lib/server/provider'
 
 let broker: any | null = null
 
@@ -116,17 +117,24 @@ export const ledgerSafe = {
 export async function getBrokerOrThrow() {
   if (broker) return broker
 
-  const provider = new JsonRpcProvider(RPC_URL, { name: '0g', chainId: CHAIN_ID })
-  const signer = new Wallet(PK, provider)
+  const rpcUrl = getRpcUrl()
+  const servingAddr = getFineTuningServingAddress()
+  const ledger = getComputeLedgerContract()
+  const inference = getComputeInferenceContract()
+  const pk = getPrivateKey()
+  if (!pk) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
 
-  await assertContractDeployed(provider, FINE_TUNING_SERVING)
+  const provider = create0GProvider()
+  const signer = new Wallet(pk, provider)
+
+  await assertContractDeployed(provider, servingAddr)
 
   try {
-    broker = await createZGComputeNetworkBroker(
+  broker = await createZGComputeNetworkBroker(
       signer,
-      COMPUTE_LEDGER_CONTRACT,
-      COMPUTE_INFERENCE_CONTRACT,
-      FINE_TUNING_SERVING
+      ledger,
+      inference,
+      servingAddr
     )
   } catch (e: any) {
     throw new Error(`Failed to start 0G SDK: ${e.message}`)
@@ -144,10 +152,10 @@ export async function getBrokerOrThrow() {
 }
 
 async function addFineTuningSupport(broker: any, signer: Wallet) {
-  const contract = new Contract(FINE_TUNING_SERVING, FINE_TUNING_SERVING_ABI, signer)
+  const contract = new Contract(getFineTuningServingAddress(), FINE_TUNING_SERVING_ABI, signer)
 
   broker.fineTuning = {
-    accountExists: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
+    accountExists: async (user: string, provider: string = getFineTuneProvider()) => {
       try {
         return await contract.accountExists(user, provider)
       } catch (e: any) {
@@ -155,7 +163,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       }
     },
 
-    getAccount: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
+    getAccount: async (user: string, provider: string = getFineTuneProvider()) => {
       try {
         const acc = await contract.getAccount(user, provider)
         return {
@@ -178,7 +186,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 
     addAccount: async (
       user: string,
-      provider: string = FINE_TUNE_PROVIDER,
+      provider: string = getFineTuneProvider(),
       info: string = 'INFT Platform User',
       opts: any = {}
     ) => {
@@ -193,7 +201,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 
     depositFund: async (
       user: string,
-      provider: string = FINE_TUNE_PROVIDER,
+      provider: string = getFineTuneProvider(),
       cancel: bigint = 0n,
       opts: any = {}
     ) => {
@@ -207,8 +215,8 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
     },
 
     acknowledgeProviderSigner: async (
-      provider: string = FINE_TUNE_PROVIDER,
-      signerAddr: string = FINE_TUNE_PROVIDER
+      provider: string = getFineTuneProvider(),
+      signerAddr: string = getFineTuneProvider()
     ) => {
       try {
         const tx = await contract.acknowledgeProviderSigner(provider, signerAddr)
@@ -220,7 +228,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
     },
 
     acknowledgeDeliverable: async (
-      provider: string = FINE_TUNE_PROVIDER,
+      provider: string = getFineTuneProvider(),
       index: bigint = 0n
     ) => {
       try {
@@ -232,7 +240,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       }
     },
 
-    requestRefundAll: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
+    requestRefundAll: async (user: string, provider: string = getFineTuneProvider()) => {
       try {
         const tx = await contract.requestRefundAll(user, provider)
         await tx.wait()
@@ -277,7 +285,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       }
     },
 
-    getPendingRefund: async (user: string, provider: string = FINE_TUNE_PROVIDER) => {
+    getPendingRefund: async (user: string, provider: string = getFineTuneProvider()) => {
       try {
         const amount = await contract.getPendingRefund(user, provider)
         return {
@@ -289,7 +297,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       }
     },
 
-    getService: async (provider: string = FINE_TUNE_PROVIDER) => {
+    getService: async (provider: string = getFineTuneProvider()) => {
       try {
         return await contract.getService(provider)
       } catch (e: any) {
@@ -328,7 +336,7 @@ function formatError(e: any) {
   )
 }
 
-export { FINE_TUNE_PROVIDER }
+export { getFineTuneProvider }
 
 export async function getBroker() {
   return getBrokerOrThrow()

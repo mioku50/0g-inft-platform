@@ -145,8 +145,29 @@ export async function getBrokerOrThrow() {
   
   // Добавляем безопасные методы к broker
   broker.ledgerSafe = ledgerSafe
-  
+
   await addFineTuningSupport(broker, signer)
+
+  // Attach minimal Ledger helper (used in /api/compute/account)
+  if (!broker.ledger?.openFineTuningAccount) {
+    const LEDGER_ABI = [
+      'function openFineTuningAccount(address user, address provider) payable',
+    ] as const
+    const { ethers } = await import('ethers')
+    const ledgerHelper = new ethers.Contract(
+      getComputeLedgerContract(),
+      LEDGER_ABI,
+      signer
+    )
+    broker.ledger = {
+      ...(broker.ledger || {}),
+      openFineTuningAccount: (
+        user: string,
+        provider: string,
+        overrides?: any
+      ) => ledgerHelper.openFineTuningAccount(user, provider, overrides),
+    }
+  }
 
   return broker
 }

@@ -204,7 +204,8 @@ export class ChatService {
         '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'  // deepseek-r1-70b
       ]
       
-      return services.sort((a: any, b: any) => {
+      const list = [...services]
+      return list.sort((a: any, b: any) => {
         const aIsOfficial = officialProviders.includes(a.provider)
         const bIsOfficial = officialProviders.includes(b.provider)
         if (aIsOfficial && !bIsOfficial) return -1

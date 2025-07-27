@@ -1,8 +1,13 @@
 // web/app/api/sync/metadata/route.ts
 import { NextRequest, NextResponse } from 'next/server'
+import { getProvider } from '@/lib/server/provider'
 import { MetadataSyncService } from '@/lib/services/metadata-sync'
 
 export const runtime = 'nodejs'
+
+const provider = getProvider()
+const withTimeout = <T>(p: Promise<T>, ms = 3000) =>
+  Promise.race([p, new Promise<never>((_, r) => setTimeout(() => r(new Error('timeout')), ms))])
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,6 +17,14 @@ export async function POST(request: NextRequest) {
     //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     // }
     
+    // Легко проверяем сеть с тайм-аутом
+    try {
+      const network = await withTimeout(provider.getNetwork(), 3000)
+      console.log('[Sync API] network', network.chainId)
+    } catch (err) {
+      console.warn('[Sync API] getNetwork timeout or error')
+    }
+
     // Получаем параметры из body
     const body = await request.json().catch(() => ({}))
     const mode = body.mode || 'single' // по умолчанию синхронный режим

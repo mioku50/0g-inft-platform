@@ -7,3 +7,9 @@ export function create0GProvider(): ethers.JsonRpcProvider {
   ;(provider as any).resolveName = async () => null
   return provider
 }
+
+let cached: ethers.JsonRpcProvider | null = null
+export function getProvider(): ethers.JsonRpcProvider {
+  if (!cached) cached = create0GProvider()
+  return cached
+}

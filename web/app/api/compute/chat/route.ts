@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { ChatService } from '@/lib/compute/chat-service'
-import { RPC_URL, PK } from '@/lib/server/compute-env'
+import { getPrivateKey } from '@/lib/server/compute-env'
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     console.log('Agent:', agentMetadata.name)
 
     // Создаем ChatService и обрабатываем запрос
-    const chatService = new ChatService(RPC_URL, PK)
+    const chatService = new ChatService(getPrivateKey())
     const result = await chatService.processChat({ message, agentMetadata })
 
     console.log('=== Chat Response ===')

@@ -1,5 +1,5 @@
 // lib/compute/fine-tune-service.ts
-import { getBroker, FINE_TUNE_PROVIDER } from './broker'
+import { getBroker, getFineTuneProvider } from './broker'
 import { toWei, fromWei } from '@/lib/constants'
 
 // Маппинг моделей согласно официальной документации
@@ -69,10 +69,10 @@ export class FineTuneService {
         || MODEL_MAPPING['llama-3.3-70b']
 
       // 3. Получение account для nonce и fee calculation
-      const account = await this.broker.fineTuning.getAccount(
-        this.broker.signer.address,
-        FINE_TUNE_PROVIDER
-      )
+        const account = await this.broker.fineTuning.getAccount(
+          this.broker.signer.address,
+          getFineTuneProvider()
+        )
 
       // 4. Подготовка данных для запроса согласно официальной схеме
       const taskRequest: FineTuningTaskRequest = {
@@ -87,11 +87,11 @@ export class FineTuneService {
       }
 
       // 5. Получение информации о провайдере
-      const { endpoint } = await this.broker.inference.getServiceMetadata(FINE_TUNE_PROVIDER)
+      const { endpoint } = await this.broker.inference.getServiceMetadata(getFineTuneProvider())
       
       // 6. Создание заголовков для аутентификации
       const headers = await this.broker.inference.getRequestHeaders(
-        FINE_TUNE_PROVIDER,
+        getFineTuneProvider(),
         JSON.stringify(taskRequest)
       )
 
@@ -127,7 +127,7 @@ export class FineTuneService {
   async getStatus(taskId: string): Promise<FineTuningTaskResponse> {
     try {
       // Получение информации о провайдере
-      const { endpoint } = await this.broker.inference.getServiceMetadata(FINE_TUNE_PROVIDER)
+      const { endpoint } = await this.broker.inference.getServiceMetadata(getFineTuneProvider())
       
       // Получение статуса задачи
       const response = await fetch(`${endpoint}/v1/user/${this.broker.signer.address}/task/${taskId}`, {
@@ -160,7 +160,7 @@ export class FineTuneService {
         try {
           const account = await this.broker.fineTuning.getAccount(
             this.broker.signer.address,
-            FINE_TUNE_PROVIDER
+            getFineTuneProvider()
           )
 
           if (account && account.deliverables && account.deliverables.length > 0) {
@@ -191,7 +191,7 @@ export class FineTuneService {
     try {
       const acc = await this.broker.fineTuning.getAccount(
         this.broker.signer.address,
-        FINE_TUNE_PROVIDER
+        getFineTuneProvider()
       )
       
       if (!acc.deliverables || acc.deliverables.length === 0) {
@@ -200,7 +200,7 @@ export class FineTuneService {
 
       const idx = BigInt(acc.deliverables.length - 1)
       await this.broker.fineTuning.acknowledgeDeliverable(
-        FINE_TUNE_PROVIDER,
+        getFineTuneProvider(),
         idx
       )
 
@@ -219,7 +219,7 @@ export class FineTuneService {
       // Проверяем существование аккаунта
       const accountExists = await this.broker.fineTuning.accountExists(
         this.broker.signer.address,
-        FINE_TUNE_PROVIDER
+        getFineTuneProvider()
       )
 
       if (!accountExists) {
@@ -228,7 +228,7 @@ export class FineTuneService {
         // Создаем аккаунт с начальным балансом
         await this.broker.fineTuning.addAccount(
           this.broker.signer.address,
-          FINE_TUNE_PROVIDER,
+          getFineTuneProvider(),
           'INFT Platform User',
           { value: toWei('0.01') }
         )
@@ -238,8 +238,8 @@ export class FineTuneService {
 
       // Подтверждаем провайдера
       await this.broker.fineTuning.acknowledgeProviderSigner(
-        FINE_TUNE_PROVIDER,
-        FINE_TUNE_PROVIDER
+        getFineTuneProvider(),
+        getFineTuneProvider()
       )
 
     } catch (error) {
@@ -255,7 +255,7 @@ export class FineTuneService {
     try {
       const account = await this.broker.fineTuning.getAccount(
         this.broker.signer.address,
-        FINE_TUNE_PROVIDER
+        getFineTuneProvider()
       )
       
       if (account && account.balance !== undefined) {
@@ -276,7 +276,7 @@ export class FineTuneService {
     try {
       const tx = await this.broker.fineTuning.depositFund(
         this.broker.signer.address,
-        FINE_TUNE_PROVIDER,
+        getFineTuneProvider(),
         0n,
         { value: toWei(amount) }
       )

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
 import { NATIVE_SYMBOL } from '@/lib/constants'
-import { FINE_TUNE_PROVIDER, validateComputeEnvironment } from '@/lib/server/compute-env'
+import { getFineTuneProvider, validateComputeEnvironment } from '@/lib/server/compute-env'
 
 export const runtime = 'nodejs'
 
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     const fineTuneService = new FineTuneService(broker)
 
     // Проверяем существование аккаунта
-    const exists = await broker.fineTuning.accountExists(signerAddress, FINE_TUNE_PROVIDER)
+    const exists = await broker.fineTuning.accountExists(signerAddress, getFineTuneProvider())
     if (!exists) {
       return NextResponse.json(
         { error: 'Fine-tune account not found. Please create an account first.' },
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Проверяем баланс
-    const acc = await broker.fineTuning.getAccount(signerAddress, FINE_TUNE_PROVIDER)
+    const acc = await broker.fineTuning.getAccount(signerAddress, getFineTuneProvider())
     const balance = parseFloat(acc.balance)
     console.log('Account balance:', balance, NATIVE_SYMBOL)
 

@@ -1,7 +1,7 @@
 // web/app/api/agents/list/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
-import { RPC_URL } from '@/lib/server/compute-env'
+import { getRpcUrl } from '@/lib/server/compute-env'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import { agentCache, CacheKeys } from '@/lib/cache/agent-cache'
 
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(cached)
     }
     
-    const provider = new ethers.JsonRpcProvider(RPC_URL)
+    const provider = new ethers.JsonRpcProvider(getRpcUrl())
     const contract = new ethers.Contract(
       process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS!,
       INFT_ABI,

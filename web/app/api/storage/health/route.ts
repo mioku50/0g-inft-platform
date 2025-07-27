@@ -1,9 +1,9 @@
 // web/app/api/health/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
-import { RPC_URL } from '@/lib/server/compute-env'
+import { getRpcUrl } from '@/lib/server/compute-env'
 
-const L1_RPC = RPC_URL
+const L1_RPC = getRpcUrl()
 const STORAGE_KEY = process.env.OG_STORAGE_PRIVATE_KEY
 const COMPUTE_KEY = process.env.OG_COMPUTE_PRIVATE_KEY
 

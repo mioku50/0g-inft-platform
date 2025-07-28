@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { formatEther } from 'ethers'
-import { getBroker, getLedgerContract, addAccountWithDeposit, deposit } from '@/lib/compute/broker'
+import { getBroker, getLedgerContract, getServingContract, addAccountWithDeposit, deposit } from '@/lib/compute/broker'
 import { validateComputeEnvironment } from '@/lib/server/compute-env'
 
 const FINE_TUNE_PROVIDER = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER!
@@ -69,36 +69,47 @@ export async function POST(req: NextRequest) {
 
   const { amount, action = 'create' } = await req.json()
 
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
+  }
+  if (action !== 'create' && action !== 'deposit') {
+    return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+  }
+
   const broker = await getBroker()
   const ledger = getLedgerContract(broker.signer)
+  const serving = getServingContract(broker.signer)
+
+  try {
+    await serving.getService(FINE_TUNE_PROVIDER)
+  } catch {
+    return NextResponse.json({ error: 'ProviderNotRegistered' }, { status: 409 })
+  }
 
   try {
     const result = action === 'create'
       ? await addAccountWithDeposit(broker.signer, ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)
-      : await deposit(ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)
+      : await deposit(broker.signer, ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)
 
     return NextResponse.json({
       success: true,
       action,
       txHash: result.txHash,
-      txUrl: result.explorerUrl,
-      gasUsed: result.gasUsed,
-      note: action === 'create'
-        ? 'Account created (or already existed) and funded'
-        : 'Deposit successful'
+      txUrl: result.txUrl,
+      status: result.status
     })
   } catch (e: any) {
     const msg = e.message || 'Tx failed'
-    if (msg.startsWith('AccountExists')) {
-      return NextResponse.json({
-        error: msg,
-        hint: 'Use deposit action to add funds'
-      }, { status: 409 })
+    if (msg === 'AccountExists') {
+      return NextResponse.json({ error: msg }, { status: 409 })
     }
-    if (/insufficient funds/i.test(msg)) {
-      return NextResponse.json({ error: msg }, { status: 400 })
+    if (msg === 'ProviderNotExist' || msg === 'ServiceNotExist') {
+      return NextResponse.json({ error: msg }, { status: 409 })
     }
-    return NextResponse.json({ error: msg }, { status: 502 })
+    if (/insufficient funds/i.test(msg) || msg === 'InsufficientBalance') {
+      return NextResponse.json({ error: msg }, { status: 402 })
+    }
+    return NextResponse.json({ error: msg, details: msg }, { status: 502 })
   }
 }
 

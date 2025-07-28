@@ -70,6 +70,8 @@ export default function FineTunePage() {
   const [depositAmount, setDepositAmount] = useState('0.01')
   const [isDepositing, setIsDepositing] = useState(false)
   const [backendError, setBackendError] = useState<string | null>(null)
+  const [txUrl, setTxUrl] = useState<string | null>(null)
+  const [txStatus, setTxStatus] = useState<string | null>(null)
 
   // Load cached dataset info
   useEffect(() => {
@@ -90,7 +92,7 @@ export default function FineTunePage() {
     }
   }, [address])
 
-  const checkAccountStatus = async () => {
+  const checkAccountStatus = async (silent = false) => {
     try {
       setIsCheckingAccount(true)
       console.log('GET /api/compute/account')
@@ -99,18 +101,20 @@ export default function FineTunePage() {
       if (response.status === 503) {
         setBackendError('Backend misconfigured')
         setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
-        return
+        return null
       }
       if (!response.ok) {
-        toast({
-          variant: 'destructive',
-          description: data.details || data.error || 'Failed to fetch account info',
-          action: (
-            <Button variant="outline" onClick={checkAccountStatus}>Повторить</Button>
-          )
-        })
+        if (!silent) {
+          toast({
+            variant: 'destructive',
+            description: data.details || data.error || 'Failed to fetch account info',
+            action: (
+              <Button variant="outline" onClick={() => checkAccountStatus()}>Повторить</Button>
+            )
+          })
+        }
         setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
-        return
+        return null
       }
       console.log('GET /api/compute/account result', data)
       setAccountInfo({
@@ -119,19 +123,35 @@ export default function FineTunePage() {
         needsTopUp: parseFloat(data.balance) < 0.001
       })
       setBackendError(null)
+      return { balance: data.balance, exists: data.exists, needsTopUp: parseFloat(data.balance) < 0.001 }
     } catch (error: any) {
       console.error('Error checking account:', error)
-      toast({
-        variant: 'destructive',
-        description: error.details || error.message || 'Failed to fetch account info',
-        action: (
-          <Button variant="outline" onClick={checkAccountStatus}>Повторить</Button>
-        )
-      })
+      if (!silent) {
+        toast({
+          variant: 'destructive',
+          description: error.details || error.message || 'Failed to fetch account info',
+          action: (
+            <Button variant="outline" onClick={() => checkAccountStatus()}>Повторить</Button>
+          )
+        })
+      }
       setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
+      return null
     } finally {
       setIsCheckingAccount(false)
     }
+  }
+
+  const pollAccount = async () => {
+    if (isPolling) return
+    setIsPolling(true)
+    const end = Date.now() + 60000
+    while (Date.now() < end) {
+      const info = await checkAccountStatus(true)
+      if (info && parseFloat(info.balance) > 0) break
+      await new Promise((r) => setTimeout(r, 5000 + Math.random() * 3000))
+    }
+    setIsPolling(false)
   }
 
   const handleAccountSetup = async () => {
@@ -145,6 +165,8 @@ export default function FineTunePage() {
     }
 
     setIsDepositing(true)
+    setTxStatus('Submitting transaction...')
+    setTxUrl(null)
     try {
       const action = accountInfo?.exists ? 'deposit' : 'create'
       console.log('POST /api/compute/account', { amount: depositAmount, action })
@@ -170,6 +192,7 @@ export default function FineTunePage() {
       }
 
       if (data.txUrl) {
+        setTxUrl(data.txUrl)
         toast({
           title: 'Transaction Sent',
           description: (
@@ -180,17 +203,20 @@ export default function FineTunePage() {
         })
       }
 
+      pollAccount()
       setTimeout(() => {
-        checkAccountStatus()
-      }, 2500)
+        setIsDepositing(false)
+        setTxStatus('Submitted')
+      }, 3500)
     } catch (error: any) {
       console.error('Account setup error:', error)
       toast({
         variant: 'destructive',
         description: error.details || error.message
       })
-    } finally {
       setIsDepositing(false)
+    } finally {
+      // do nothing
     }
   }
 
@@ -438,7 +464,7 @@ export default function FineTunePage() {
                   {isDepositing ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {accountInfo?.exists ? 'Depositing...' : 'Creating Account...'}
+                      {txStatus || 'Submitting transaction...'}
                     </>
                   ) : (
                     <>
@@ -447,6 +473,16 @@ export default function FineTunePage() {
                     </>
                   )}
                 </Button>
+                {txUrl && (
+                  <p className="text-center text-sm text-purple-200 mt-2">
+                    <a href={txUrl} target="_blank" rel="noreferrer" className="underline">
+                      View on Explorer
+                    </a>
+                    {txStatus && txStatus === 'Submitted' && (
+                      <span className="ml-2 text-purple-300">({txStatus})</span>
+                    )}
+                  </p>
+                )}
               </div>
             )}
           </div>

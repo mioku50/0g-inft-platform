@@ -1,16 +1,47 @@
 import { Wallet, Contract, JsonRpcProvider, Interface, ethers } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
-import { FINE_TUNING_SERVING_ABI } from '@/lib/contracts/abis'
 import { fromWei } from '@/lib/constants'
 import {
   getRpcUrl,
-  getFineTuningServingAddress,
   getFineTuneProvider,
   getPrivateKey,
   getComputeLedgerContract,
   getComputeInferenceContract
 } from '@/lib/server/compute-env'
 import { create0GProvider } from '@/lib/server/provider'
+
+// CHANGED: единый ABI только для Serving контракта (никаких Ledger-вызовов)
+const SERVING_ABI = [
+  'function accountExists(address user, address provider) view returns (bool)',
+  'function getAccount(address user, address provider) view returns (tuple(address user,address provider,uint256 nonce,uint256 balance,uint256 pendingRefund,tuple(uint256 index,uint256 amount,uint256 createdAt,bool processed)[] refunds,string additionalInfo,address providerSigner,tuple(bytes modelRootHash,bytes encryptedSecret,bool acknowledged)[] deliverables))',
+  'function addAccount(address user, address provider, string additionalInfo) payable',
+  'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) payable',
+  'function acknowledgeProviderSigner(address provider, address providerSigner)',
+  'function acknowledgeDeliverable(address provider, uint256 index)',
+  'function requestRefundAll(address user, address provider)'
+]
+
+function getServingAddress(): string {
+  const addr = process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS
+  if (!addr) throw new Error('NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS is not set')
+  return addr
+}
+
+function formatError(e: any): Error {
+  // CHANGED: читаем reason, shortMessage, пустые reverts
+  try {
+    const msg = e?.shortMessage || e?.reason || e?.message || String(e)
+    if (msg.includes('Caller is not the ledger')) {
+      return new Error('Wrong contract used: call Serving, not Ledger')
+    }
+    if (/reverted.*no data/i.test(msg) || msg === 'require(false)' || msg.includes('require(false)')) {
+      return new Error('Transaction reverted without reason (check params, provider, msg.value)')
+    }
+    return new Error(msg)
+  } catch {
+    return new Error('Unknown EVM error')
+  }
+}
 
 function toWeiSafe(v?: any) {
   try {
@@ -115,7 +146,7 @@ export async function getBrokerOrThrow() {
   if (broker) return broker
 
   const rpcUrl = getRpcUrl()
-  const servingAddr = getFineTuningServingAddress()
+  const servingAddr = getServingAddress()
   const ledger = getComputeLedgerContract()
   const inference = getComputeInferenceContract()
   const pk = getPrivateKey()
@@ -170,197 +201,70 @@ export async function getBrokerOrThrow() {
 }
 
 async function addFineTuningSupport(broker: any, signer: Wallet) {
-  const contract = new Contract(getFineTuningServingAddress(), FINE_TUNING_SERVING_ABI, signer)
-
-  const servingAddress = getFineTuningServingAddress()
-  const ledgerAddressEnv = process.env.COMPUTE_LEDGER_CONTRACT
-
-  const servingAbi = FINE_TUNING_SERVING_ABI
-  const serving = new Contract(servingAddress, servingAbi, signer)
-  let ledgerAddress: string | null = ledgerAddressEnv || null
-  if (!ledgerAddress) {
-    try {
-      ledgerAddress = await (serving as any).ledgerAddress()
-    } catch {
-      ledgerAddress = null
-    }
-  }
-
-  let ledger: Contract | null = null
-  const LEDGER_ABI = [
-    'function addAccount(address user, address provider, string info) payable',
-    'function depositFund(address user, address provider, uint256 cancel) payable'
-  ] as const
-  if (ledgerAddress) {
-    ledger = new Contract(ledgerAddress, LEDGER_ABI, signer)
-  }
+  const serving = new Contract(getServingAddress(), SERVING_ABI, signer)
 
   broker.fineTuning = {
-    accountExists: async (user: string, provider: string = getFineTuneProvider()) => {
+    accountExists: async (user: string, provider: string) => {
       try {
-        return await contract.accountExists(user, provider)
+        return await serving.accountExists(user, provider)
       } catch (e: any) {
         throw formatError(e)
       }
     },
 
-    getAccount: async (user: string, provider: string = getFineTuneProvider()) => {
+    getAccount: async (user: string, provider: string) => {
       try {
-        const acc = await contract.getAccount(user, provider)
-        const balance = toWeiSafe(acc.balance)
-        const pending = toWeiSafe(acc.pendingRefund)
+        const acc: any = await serving.getAccount(user, provider)
         return {
-          balanceWei: balance.toString(),
-          balance: fromWei(balance),
-          pendingRefundWei: pending.toString(),
-          pendingRefund: fromWei(pending),
-          deliverables: acc.deliverables || [],
-          nonce: acc.nonce ? BigInt(acc.nonce) : 0n,
-          refunds: acc.refunds || [],
-          user: acc.user,
-          provider: acc.provider,
-          additionalInfo: acc.additionalInfo,
-          providerSigner: acc.providerSigner
+          ...acc,
+          balance: acc.balance?.toString?.() ?? '0',
+          pendingRefund: acc.pendingRefund?.toString?.() ?? '0'
         }
       } catch (e: any) {
         throw formatError(e)
       }
     },
 
-    addAccount: async (
-      user: string,
-      provider: string = getFineTuneProvider(),
-      info: string = 'INFT Platform User',
-      opts: any = {}
-    ) => {
-      if (!ledger) {
-        throw new Error('Ledger contract is not configured. Set COMPUTE_LEDGER_CONTRACT or ensure serving.ledgerAddress() is available.')
-      }
+    addAccount: async (user: string, provider: string, info: string, opts: any = {}) => {
       try {
-        const tx = await (ledger as any).addAccount(user, provider, info, opts)
-        await tx.wait()
-        return tx
+        const tx = await serving.addAccount(user, provider, info, opts)
+        return await tx.wait()
       } catch (e: any) {
         throw formatError(e)
       }
     },
 
-    depositFund: async (
-      user: string,
-      provider: string = getFineTuneProvider(),
-      cancel: bigint = 0n,
-      opts: any = {}
-    ) => {
-      if (!ledger) {
-        throw new Error('Ledger contract is not configured. Set COMPUTE_LEDGER_CONTRACT or ensure serving.ledgerAddress() is available.')
-      }
+    depositFund: async (user: string, provider: string, cancel: bigint, opts: any = {}) => {
       try {
-        const tx = await (ledger as any).depositFund(user, provider, cancel, opts)
-        await tx.wait()
-        return tx
+        const tx = await serving.depositFund(user, provider, cancel, opts)
+        return await tx.wait()
       } catch (e: any) {
         throw formatError(e)
       }
     },
 
-    acknowledgeProviderSigner: async (
-      provider: string = getFineTuneProvider(),
-      signerAddr: string = getFineTuneProvider()
-    ) => {
+    acknowledgeProviderSigner: async (provider: string, providerSigner: string = provider) => {
       try {
-        const tx = await contract.acknowledgeProviderSigner(provider, signerAddr)
-        const rc = await tx.wait()
-        return rc ? tx : null
-      } catch (e: any) {
-        const msg = String(e?.message || e)
-        if (/already|acknowledged|known/i.test(msg)) return null
-        throw formatError(e)
-      }
-    },
-
-    acknowledgeDeliverable: async (
-      provider: string = getFineTuneProvider(),
-      index: bigint = 0n
-    ) => {
-      try {
-        const tx = await contract.acknowledgeDeliverable(provider, index)
-        await tx.wait()
-        return tx
+        const tx = await serving.acknowledgeProviderSigner(provider, providerSigner)
+        return await tx.wait()
       } catch (e: any) {
         throw formatError(e)
       }
     },
 
-    requestRefundAll: async (user: string, provider: string = getFineTuneProvider()) => {
+    acknowledgeDeliverable: async (provider: string, index: bigint) => {
       try {
-        const tx = await contract.requestRefundAll(user, provider)
-        await tx.wait()
-        return tx
+        const tx = await serving.acknowledgeDeliverable(provider, index)
+        return await tx.wait()
       } catch (e: any) {
         throw formatError(e)
       }
     },
 
-    // Additional methods from the official ABI
-    addDeliverable: async (user: string, modelRootHash: string) => {
+    requestRefundAll: async (user: string, provider: string) => {
       try {
-        const tx = await contract.addDeliverable(user, modelRootHash)
-        await tx.wait()
-        return tx
-      } catch (e: any) {
-        throw formatError(e)
-      }
-    },
-
-    getAllAccounts: async () => {
-      try {
-        return await contract.getAllAccounts()
-      } catch (e: any) {
-        throw formatError(e)
-      }
-    },
-
-    getAllServices: async () => {
-      try {
-        return await contract.getAllServices()
-      } catch (e: any) {
-        throw formatError(e)
-      }
-    },
-
-    getDeliverable: async (user: string, provider: string, index: bigint) => {
-      try {
-        return await contract.getDeliverable(user, provider, index)
-      } catch (e: any) {
-        throw formatError(e)
-      }
-    },
-
-    getPendingRefund: async (user: string, provider: string = getFineTuneProvider()) => {
-      try {
-        const amount = toWeiSafe(await contract.getPendingRefund(user, provider))
-        return {
-          amountWei: amount.toString(),
-          amount: fromWei(amount)
-        }
-      } catch (e: any) {
-        throw formatError(e)
-      }
-    },
-
-    getService: async (provider: string = getFineTuneProvider()) => {
-      try {
-        return await contract.getService(provider)
-      } catch (e: any) {
-        throw formatError(e)
-      }
-    },
-
-    settleFees: async (verifierInput: any) => {
-      try {
-        const tx = await contract.settleFees(verifierInput)
-        await tx.wait()
-        return tx
+        const tx = await serving.requestRefundAll(user, provider)
+        return await tx.wait()
       } catch (e: any) {
         throw formatError(e)
       }
@@ -368,24 +272,6 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
   }
 }
 
-function formatError(e: any) {
-  // Фильтруем invalid BigNumberish из сообщений об ошибках
-  let message = e.message
-  if (message && message.includes('invalid BigNumberish')) {
-    message = message.replace(/invalid BigNumberish value[^,]*/g, 'BigInt conversion error')
-  }
-  
-  return new Error(
-    JSON.stringify({
-      message,
-      code: e.code,
-      reason: e.reason,
-      shortMessage: e.shortMessage,
-      data: e.data,
-      tx: e.transaction?.hash
-    })
-  )
-}
 
 export { getFineTuneProvider }
 

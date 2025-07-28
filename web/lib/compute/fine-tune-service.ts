@@ -105,15 +105,13 @@ export class FineTuneService {
         body: JSON.stringify(taskRequest)
       })
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Fine-tuning task creation failed: ${response.status} - ${errorText}`)
+      if (response.status === 204) {
+        const list = await fetch(`${endpoint}/v1/user/${taskRequest.userAddress}/task?latest=1`).then(r => r.json()).catch(() => [])
+        return list?.[0]?.id ?? ''
       }
 
-      const result = await response.json()
-      console.log('Fine-tuning task created:', result)
-
-      return result.id || result.taskId
+      const result = await response.json().catch(() => null)
+      return result?.id || result?.taskId || ''
 
     } catch (error) {
       console.error('Error creating fine-tuning task:', error)

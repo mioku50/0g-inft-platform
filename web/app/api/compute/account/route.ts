@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
-import { fromWei } from '@/lib/constants'
-import { getFineTuneProvider, validateComputeEnvironment } from '@/lib/server/compute-env'
+import { validateComputeEnvironment } from '@/lib/server/compute-env'
+
+const FINE_TUNE_PROVIDER = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER!
+if (!FINE_TUNE_PROVIDER) throw new Error('NEXT_PUBLIC_FINE_TUNE_PROVIDER is not set')
 
 export const runtime = 'nodejs'
 
@@ -37,39 +39,35 @@ export async function GET(request: NextRequest) {
   }
   
   try {
-    const signerAddress = getSignerAddress(broker)
-    if (!signerAddress) throw new Error('Signer not initialized')
-    
-    const exists = await broker.fineTuning.accountExists(
-      signerAddress,
-      getFineTuneProvider()
-    )
+    const user = getSignerAddress(broker)
+    if (!user) throw new Error('Signer not initialized')
+
+    const svc = broker.fineTuning
+    const provider = FINE_TUNE_PROVIDER
+
+    const exists = await svc.accountExists(user, provider)
+    let balance = '0', pendingRefund = '0', deliverables = 0, nonce: string | undefined
     let acc: any = null
-
     if (exists) {
-      acc = await broker.fineTuning.getAccount(
-        signerAddress,
-        getFineTuneProvider()
-      )
+      acc = await svc.getAccount(user, provider)
+      balance = ethers.formatEther(acc.balance ?? '0')
+      pendingRefund = ethers.formatEther(acc.pendingRefund ?? '0')
+      deliverables = acc?.deliverables?.length || 0
+      nonce = acc?.nonce?.toString?.()
     }
 
-    const balanceWei = acc?.balance ? BigInt(acc.balance.toString()) : 0n
-    const pendingWei = acc?.pendingRefund ? BigInt(acc.pendingRefund.toString()) : 0n
-    const balanceNum = Number(ethers.formatEther(balanceWei || 0n))
-
-    const result = {
-      exists,
-      balance: String(balanceNum),
-      balanceWei: balanceWei.toString(),
-      pendingRefund: ethers.formatEther(pendingWei || 0n),
-      pendingRefundWei: pendingWei.toString(),
-      needsTopUp: balanceNum < 0.001,
-      deliverables: acc?.deliverables?.length ?? 0,
-      nonce: acc?.nonce?.toString(),
-    }
-
-    console.log('[compute/account][GET]', { result })
-    return NextResponse.json({ result })
+    return NextResponse.json({
+      result: {
+        exists,
+        balance,
+        balanceWei: exists ? acc.balance : '0',
+        pendingRefund,
+        pendingRefundWei: exists ? acc.pendingRefund : '0',
+        needsTopUp: Number(balance) < 0.001,
+        deliverables,
+        nonce
+      }
+    })
     
   } catch (error: any) {
     console.error('[compute/account][GET][error]', error)
@@ -119,23 +117,25 @@ export async function POST(request: NextRequest) {
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) throw new Error('Signer not initialized')
     
-    if (action === 'create') {
-      const tx = await broker.fineTuning.addAccount(
+    const exists = await broker.fineTuning.accountExists(signerAddress, FINE_TUNE_PROVIDER)
+    let receipt
+    const value = ethers.parseEther(amount)
+    if (!exists || action === 'create') {
+      receipt = await broker.fineTuning.addAccount(
         signerAddress,
-        getFineTuneProvider(),
+        FINE_TUNE_PROVIDER,
         'INFT Platform User',
-        { value: ethers.parseEther(amount) }
+        { value }
       )
-      return NextResponse.json({ success: true, txHash: tx?.hash ?? null })
     } else {
-      const tx = await broker.fineTuning.depositFund(
+      receipt = await broker.fineTuning.depositFund(
         signerAddress,
-        getFineTuneProvider(),
+        FINE_TUNE_PROVIDER,
         0n,
-        { value: ethers.parseEther(amount) }
+        { value }
       )
-      return NextResponse.json({ success: true, txHash: tx?.hash ?? null })
     }
+    return NextResponse.json({ success: true, txHash: receipt?.hash ?? receipt?.transactionHash })
     
   } catch (e: any) {
     console.error('[compute/account][POST][error]', e)
@@ -178,7 +178,7 @@ export async function DELETE(request: NextRequest) {
     const signerAddress = getSignerAddress(broker)
     if (!signerAddress) throw new Error('Signer not initialized')
     
-    const tx = await broker.fineTuning.requestRefundAll(signerAddress, getFineTuneProvider())
+    const tx = await broker.fineTuning.requestRefundAll(signerAddress, FINE_TUNE_PROVIDER)
     const result = { success: true, txHash: tx.hash }
     
     console.log('[compute/account][DELETE]', { result })

@@ -1,4 +1,4 @@
-import { Wallet, Contract, JsonRpcProvider, Interface, ethers } from 'ethers'
+import { Wallet, JsonRpcProvider, ethers } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { fromWei } from '@/lib/constants'
 import {
@@ -11,7 +11,7 @@ import {
 import { create0GProvider } from '@/lib/server/provider'
 
 // CHANGED: единый ABI только для Serving контракта (никаких Ledger-вызовов)
-const SERVING_ABI = [
+export const FINE_TUNING_ABI = [
   'function accountExists(address user, address provider) view returns (bool)',
   'function getAccount(address user, address provider) view returns (tuple(address user,address provider,uint256 nonce,uint256 balance,uint256 pendingRefund,tuple(uint256 index,uint256 amount,uint256 createdAt,bool processed)[] refunds,string additionalInfo,address providerSigner,tuple(bytes modelRootHash,bytes encryptedSecret,bool acknowledged)[] deliverables))',
   'function addAccount(address user, address provider, string additionalInfo) payable',
@@ -21,10 +21,18 @@ const SERVING_ABI = [
   'function requestRefundAll(address user, address provider)'
 ]
 
-function getServingAddress(): string {
-  const addr = process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS
-  if (!addr) throw new Error('NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS is not set')
-  return addr
+const SERVING_ADDR = (
+  process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS ??
+  process.env.FINE_TUNING_SERVING_ADDRESS
+) as string
+
+if (!SERVING_ADDR) {
+  throw new Error('Fine-tuning: Serving address is missing')
+}
+
+export function getServingContract(signerOrProvider: ethers.Signer | ethers.Provider) {
+  console.log('[fine] Using Serving address:', SERVING_ADDR)
+  return new ethers.Contract(SERVING_ADDR, FINE_TUNING_ABI, signerOrProvider)
 }
 
 function formatError(e: any): Error {
@@ -146,7 +154,7 @@ export async function getBrokerOrThrow() {
   if (broker) return broker
 
   const rpcUrl = getRpcUrl()
-  const servingAddr = getServingAddress()
+  const servingAddr = SERVING_ADDR
   const ledger = getComputeLedgerContract()
   const inference = getComputeInferenceContract()
   const pk = getPrivateKey()
@@ -201,7 +209,7 @@ export async function getBrokerOrThrow() {
 }
 
 async function addFineTuningSupport(broker: any, signer: Wallet) {
-  const serving = new Contract(getServingAddress(), SERVING_ABI, signer)
+  const serving = getServingContract(signer)
 
   broker.fineTuning = {
     accountExists: async (user: string, provider: string) => {

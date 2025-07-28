@@ -10,14 +10,16 @@ import {
 } from '@/lib/server/compute-env'
 import { create0GProvider } from '@/lib/server/provider'
 
-// CHANGED: единый ABI только для Serving контракта (никаких Ledger-вызовов)
-export const FINE_TUNING_ABI = [
+export const SERVING_ABI = [
   'function accountExists(address user, address provider) view returns (bool)',
   'function getAccount(address user, address provider) view returns (tuple(address user,address provider,uint256 nonce,uint256 balance,uint256 pendingRefund,tuple(uint256 index,uint256 amount,uint256 createdAt,bool processed)[] refunds,string additionalInfo,address providerSigner,tuple(bytes modelRootHash,bytes encryptedSecret,bool acknowledged)[] deliverables))',
+  'function acknowledgeProviderSigner(address provider, address providerSigner)',
+  'function acknowledgeDeliverable(address provider, uint256 index)'
+]
+
+export const LEDGER_ABI = [
   'function addAccount(address user, address provider, string additionalInfo) payable',
   'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) payable',
-  'function acknowledgeProviderSigner(address provider, address providerSigner)',
-  'function acknowledgeDeliverable(address provider, uint256 index)',
   'function requestRefundAll(address user, address provider)'
 ]
 
@@ -26,21 +28,37 @@ const SERVING_ADDR = (
   process.env.FINE_TUNING_SERVING_ADDRESS
 ) as string
 
+const LEDGER_ADDR = getComputeLedgerContract()
+
 if (!SERVING_ADDR) {
   throw new Error('Fine-tuning: Serving address is missing')
 }
+if (!LEDGER_ADDR) {
+  throw new Error('Fine-tuning: Ledger address is missing')
+}
 
-export function getServingContract(signerOrProvider: ethers.Signer | ethers.Provider) {
+export function getServingContract(
+  signerOrProvider: ethers.Signer | ethers.Provider
+) {
   console.log('[fine] Using Serving address:', SERVING_ADDR)
-  return new ethers.Contract(SERVING_ADDR, FINE_TUNING_ABI, signerOrProvider)
+  return new ethers.Contract(SERVING_ADDR, SERVING_ABI, signerOrProvider)
+}
+
+export function getLedgerContract(
+  signerOrProvider: ethers.Signer | ethers.Provider
+) {
+  console.log('[fine] Using Ledger address:', LEDGER_ADDR)
+  return new ethers.Contract(LEDGER_ADDR, LEDGER_ABI, signerOrProvider)
 }
 
 function formatError(e: any): Error {
   // CHANGED: читаем reason, shortMessage, пустые reverts
   try {
     const msg = e?.shortMessage || e?.reason || e?.message || String(e)
-    if (msg.includes('Caller is not the ledger')) {
-      return new Error('Wrong contract used: call Serving, not Ledger')
+    if (/caller is not the ledger contract/i.test(msg)) {
+      return new Error(
+        'Wrong contract: call Ledger, not Serving (вызывайте методы аккаунта через Ledger‑контракт)'
+      )
     }
     if (/reverted.*no data/i.test(msg) || msg === 'require(false)' || msg.includes('require(false)')) {
       return new Error('Transaction reverted without reason (check params, provider, msg.value)')
@@ -210,6 +228,7 @@ export async function getBrokerOrThrow() {
 
 async function addFineTuningSupport(broker: any, signer: Wallet) {
   const serving = getServingContract(signer)
+  const ledger = getLedgerContract(signer)
 
   broker.fineTuning = {
     accountExists: async (user: string, provider: string) => {
@@ -233,18 +252,28 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       }
     },
 
-    addAccount: async (user: string, provider: string, info: string, opts: any = {}) => {
+    addAccount: async (
+      user: string,
+      provider: string,
+      info: string,
+      opts: any = {}
+    ) => {
       try {
-        const tx = await serving.addAccount(user, provider, info, opts)
+        const tx = await ledger.addAccount(user, provider, info, opts)
         return await tx.wait()
       } catch (e: any) {
         throw formatError(e)
       }
     },
 
-    depositFund: async (user: string, provider: string, cancel: bigint, opts: any = {}) => {
+    depositFund: async (
+      user: string,
+      provider: string,
+      cancel: bigint,
+      opts: any = {}
+    ) => {
       try {
-        const tx = await serving.depositFund(user, provider, cancel, opts)
+        const tx = await ledger.depositFund(user, provider, cancel, opts)
         return await tx.wait()
       } catch (e: any) {
         throw formatError(e)
@@ -271,7 +300,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 
     requestRefundAll: async (user: string, provider: string) => {
       try {
-        const tx = await serving.requestRefundAll(user, provider)
+        const tx = await ledger.requestRefundAll(user, provider)
         return await tx.wait()
       } catch (e: any) {
         throw formatError(e)

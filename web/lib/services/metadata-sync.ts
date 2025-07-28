@@ -6,6 +6,9 @@ import { uploadToStorage } from '@/lib/storage/client-server'
 import fs from 'fs/promises'
 import path from 'path'
 
+const METADATA_ROOT = '/data/metadata'
+const LOCAL_DIR = path.join(METADATA_ROOT, 'local')
+
 function normalizeRoot(root: string) {
   const fromUrl = root.replace(/^https?:\/\/[^/]+\/(0x[0-9a-fA-F]+)/, '$1')
   return fromUrl.replace(/^local:\/\/+/, 'local/')
@@ -49,8 +52,7 @@ export class MetadataSyncService {
       )
       
       const totalSupply = await contract.totalSupply()
-      const metadataDir = path.join(process.cwd(), 'data', 'metadata')
-      await fs.mkdir(metadataDir, { recursive: true })
+      await fs.mkdir(LOCAL_DIR, { recursive: true })
       
       let fixedCount = 0
       let processedCount = 0
@@ -83,7 +85,8 @@ export class MetadataSyncService {
           }
           
           // Проверяем существует ли файл локально
-          const filePath = path.join(metadataDir, `${normalizeRoot(cleanHash)}.json`)
+          const filePath = path.join(METADATA_ROOT, `${normalizeRoot(cleanHash)}.json`)
+          await fs.mkdir(path.dirname(filePath), { recursive: true })
           try {
             await fs.access(filePath)
             console.log(`[MetadataSync] Token #${tokenId} already has local metadata`)
@@ -105,6 +108,7 @@ export class MetadataSyncService {
             
             if (response.ok) {
               const content = await response.text()
+              await fs.mkdir(path.dirname(filePath), { recursive: true })
               await fs.writeFile(filePath, content)
               console.log(`[MetadataSync] Downloaded metadata for token #${tokenId}`)
               fixedCount++
@@ -129,6 +133,7 @@ export class MetadataSyncService {
               error: 'original_metadata_not_found'
             }
             
+            await fs.mkdir(path.dirname(filePath), { recursive: true })
             await fs.writeFile(filePath, JSON.stringify(metadata, null, 2))
             console.log(`[MetadataSync] Created fallback for token #${tokenId}`)
             fixedCount++

@@ -110,11 +110,10 @@ export async function POST(request: NextRequest) {
     console.log('Fine-tuning task created:', taskId)
 
     return NextResponse.json({
-      success: true,
+      success: Boolean(taskId),
       taskId,
-      message: 'Fine-tuning task created successfully',
+      message: taskId ? 'Fine-tuning task created successfully' : 'Task accepted by provider (taskId not returned yet)',
       estimatedTime: '30-60 minutes',
-      accountBalance: acc.balance
     })
 
   } catch (error: any) {

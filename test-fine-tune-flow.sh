@@ -45,27 +45,17 @@ if (missing.length > 0) {
 }
 "
 
-# Test 2: Contract deployment check
+# Test 2: Contract deployment check (curl JSON-RPC with timeout)
 echo "2️⃣  Contract deployment check..."
-node -e "
-import { JsonRpcProvider } from 'ethers';
-(async () => {
-  try {
-    const provider = new JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL);
-    const code = await provider.getCode(process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS);
-    if (!code || code === '0x') {
-      console.log('❌ FineTuningServing contract NOT DEPLOYED at', process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS);
-      process.exit(1);
-    }
-    console.log('✅ FineTuningServing contract is deployed');
-    console.log('   Address:', process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS);
-    console.log('   Code size:', code.length, 'bytes');
-  } catch (error) {
-    console.error('❌ Error checking contract deployment:', error.message);
-    process.exit(1);
-  }
-})();
-"
+RPC="${NEXT_PUBLIC_0G_RPC_URL}"
+ADDR="${NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS}"
+CODE=$(curl -s --max-time 8 -H "Content-Type: application/json" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_getCode\",\"params\":[\"$ADDR\", \"latest\"]}" "$RPC" | jq -r '.result // empty')
+if [ -z "$CODE" ] || [ "$CODE" = "0x" ]; then
+  log_error "FineTuningServing NOT deployed at $ADDR (or RPC blocked)"
+  exit 1
+else
+  log_success "FineTuningServing code size: ${#CODE} bytes"
+fi
 
 # Test 3: API health check
 echo "3️⃣  API health check..."

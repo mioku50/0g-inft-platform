@@ -6,6 +6,11 @@ import { uploadToStorage } from '@/lib/storage/client-server'
 import fs from 'fs/promises'
 import path from 'path'
 
+function normalizeRoot(root: string) {
+  const fromUrl = root.replace(/^https?:\/\/[^/]+\/(0x[0-9a-fA-F]+)/, '$1')
+  return fromUrl.replace(/^local:\/\/+/, 'local/')
+}
+
 export class MetadataSyncService {
   private static instance: MetadataSyncService
   private syncInterval: NodeJS.Timeout | null = null
@@ -78,7 +83,7 @@ export class MetadataSyncService {
           }
           
           // Проверяем существует ли файл локально
-          const filePath = path.join(metadataDir, `${cleanHash}.json`)
+          const filePath = path.join(metadataDir, `${normalizeRoot(cleanHash)}.json`)
           try {
             await fs.access(filePath)
             console.log(`[MetadataSync] Token #${tokenId} already has local metadata`)

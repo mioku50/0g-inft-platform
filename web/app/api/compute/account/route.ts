@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { parseEther, formatEther } from 'ethers'
-import { getBroker, getServingContract } from '@/lib/compute/broker'
+import { getBroker } from '@/lib/compute/broker'
 import { validateComputeEnvironment } from '@/lib/server/compute-env'
 
 const FINE_TUNE_PROVIDER = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER!
@@ -30,13 +30,13 @@ export async function GET() {
   }
 
   const broker = await getBroker()
-  const serving = getServingContract(broker.signer)
+  const fine = broker.fineTuning
 
-  const exists = await serving.accountExists(broker.signer.address, FINE_TUNE_PROVIDER)
+  const exists = await fine.accountExists(broker.signer.address, FINE_TUNE_PROVIDER)
 
   let balance = '0', pendingRefund = '0', deliverables = 0, nonce: string | undefined
   if (exists) {
-    const acc = await serving.getAccount(broker.signer.address, FINE_TUNE_PROVIDER)
+    const acc = await fine.getAccount(broker.signer.address, FINE_TUNE_PROVIDER)
     balance = formatEther(acc.balance)
     pendingRefund = formatEther(acc.pendingRefund)
     deliverables = acc.deliverables?.length ?? 0
@@ -70,10 +70,10 @@ export async function POST(req: NextRequest) {
   const { amount, action = 'create' } = await req.json()
 
   const broker = await getBroker()
-  const serving = getServingContract(broker.signer)
+  const fine = broker.fineTuning
 
   if (action === 'create') {
-    const tx = await serving.addAccount(
+    const tx = await fine.addAccount(
       broker.signer.address,
       FINE_TUNE_PROVIDER,
       'INFT Platform User',
@@ -83,10 +83,10 @@ export async function POST(req: NextRequest) {
     await tx.wait()
     return NextResponse.json({ success: true, message: `Account created with ${amount} ETH`, txHash: tx.hash })
   } else {
-    const tx = await serving.depositFund(
+    const tx = await fine.depositFund(
       broker.signer.address,
       FINE_TUNE_PROVIDER,
-      0,
+      0n,
       { value: parseEther(amount) }
     )
     console.log('[fine] depositFund tx.to:', tx.to)
@@ -106,9 +106,10 @@ export async function DELETE() {
   }
 
   const broker = await getBroker()
-  const serving = getServingContract(broker.signer)
-
-  const tx = await serving.requestRefundAll(broker.signer.address, FINE_TUNE_PROVIDER)
+  const tx = await broker.fineTuning.requestRefundAll(
+    broker.signer.address,
+    FINE_TUNE_PROVIDER
+  )
   console.log('[fine] requestRefundAll tx.to:', tx.to)
   await tx.wait()
 

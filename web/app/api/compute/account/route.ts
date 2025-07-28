@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { parseEther, formatEther } from 'ethers'
+import { formatEther } from 'ethers'
 import { getBroker } from '@/lib/compute/broker'
 import { validateComputeEnvironment } from '@/lib/server/compute-env'
 
@@ -72,26 +72,34 @@ export async function POST(req: NextRequest) {
   const broker = await getBroker()
   const fine = broker.fineTuning
 
-  if (action === 'create') {
-    const tx = await fine.addAccount(
-      broker.signer.address,
-      FINE_TUNE_PROVIDER,
-      'INFT Platform User',
-      { value: parseEther(amount) }
-    )
-    console.log('[fine] addAccount tx.to:', tx.to)
-    await tx.wait()
-    return NextResponse.json({ success: true, message: `Account created with ${amount} ETH`, txHash: tx.hash })
-  } else {
-    const tx = await fine.depositFund(
-      broker.signer.address,
-      FINE_TUNE_PROVIDER,
-      0n,
-      { value: parseEther(amount) }
-    )
-    console.log('[fine] depositFund tx.to:', tx.to)
-    await tx.wait()
-    return NextResponse.json({ success: true, message: `Deposited ${amount} ETH`, txHash: tx.hash })
+  const explorer = process.env.NEXT_PUBLIC_TURBO_EXPLORER_URL || process.env.NEXT_PUBLIC_STANDARD_EXPLORER_URL
+
+  try {
+    let receipt
+    if (action === 'create') {
+      receipt = await fine.addAccount(
+        broker.signer.address,
+        FINE_TUNE_PROVIDER,
+        'INFT Platform User',
+        amount
+      )
+    } else {
+      receipt = await fine.depositFund(
+        broker.signer.address,
+        FINE_TUNE_PROVIDER,
+        0n,
+        amount
+      )
+    }
+    return NextResponse.json({
+      success: true,
+      transaction: {
+        hash: receipt.transactionHash,
+        explorerUrl: explorer ? `${explorer}${receipt.transactionHash}` : undefined
+      }
+    })
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e.message }, { status: 400 })
   }
 }
 

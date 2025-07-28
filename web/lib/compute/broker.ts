@@ -1,4 +1,4 @@
-import { Wallet, JsonRpcProvider, ethers } from 'ethers'
+import { Wallet, JsonRpcProvider, ethers, Interface } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { fromWei } from '@/lib/constants'
 import {
@@ -13,15 +13,16 @@ import { create0GProvider } from '@/lib/server/provider'
 export const SERVING_ABI = [
   'function accountExists(address user, address provider) view returns (bool)',
   'function getAccount(address user, address provider) view returns (tuple(address user,address provider,uint256 nonce,uint256 balance,uint256 pendingRefund,tuple(uint256 index,uint256 amount,uint256 createdAt,bool processed)[] refunds,string additionalInfo,address providerSigner,tuple(bytes modelRootHash,bytes encryptedSecret,bool acknowledged)[] deliverables))',
+  'function getService(address provider) view returns (tuple(address provider,string url,(uint256,uint256,uint256,uint256,string) quota,uint256 pricePerToken,address providerSigner,bool occupied,string[] models))',
   'function acknowledgeProviderSigner(address provider, address providerSigner)',
   'function acknowledgeDeliverable(address provider, uint256 index)'
-]
+] as const
 
 export const LEDGER_ABI = [
   'function addAccount(address user, address provider, string additionalInfo) payable',
   'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) payable',
   'function requestRefundAll(address user, address provider)'
-]
+] as const
 
 const SERVING_ADDR = (
   process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS ??
@@ -51,9 +52,35 @@ export function getLedgerContract(
   return new ethers.Contract(LEDGER_ADDR, LEDGER_ABI, signerOrProvider)
 }
 
+async function ensureProviderRegistered(providerAddr: string, serving: ethers.Contract) {
+  const svc = await serving.getService(providerAddr)
+  if (!svc || !svc.url || svc.url.length === 0) {
+    throw new Error(`ServiceNotExist(provider=${providerAddr})`)
+  }
+  return svc
+}
+
+const LEDGER_IFACE = new Interface(LEDGER_ABI)
+const SERVING_IFACE = new Interface([
+  ...SERVING_ABI,
+  'error AccountExists(address user,address provider)',
+  'error ServiceNotExist(address provider)'
+])
+
 function formatError(e: any): Error {
-  // CHANGED: читаем reason, shortMessage, пустые reverts
   try {
+    const data = e?.info?.error?.data || e?.data
+    if (data) {
+      for (const iface of [LEDGER_IFACE, SERVING_IFACE]) {
+        try {
+          const parsed = iface.parseError(data)
+          if (parsed) {
+            return new Error(`${parsed.name}(${parsed.args?.map(String).join(',')})`)
+          }
+        } catch {}
+      }
+    }
+
     const msg = e?.shortMessage || e?.reason || e?.message || String(e)
     if (/caller is not the ledger contract/i.test(msg)) {
       return new Error(
@@ -256,10 +283,13 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       user: string,
       provider: string,
       info: string,
-      opts: any = {}
+      amountEth: string
     ) => {
       try {
-        const tx = await ledger.addAccount(user, provider, info, opts)
+        await ensureProviderRegistered(provider, serving)
+        const value = ethers.parseEther(amountEth)
+        console.log('[fine] addAccount', { user, provider, value: value.toString() })
+        const tx = await ledger.addAccount(user, provider, info, { value })
         return await tx.wait()
       } catch (e: any) {
         throw formatError(e)
@@ -270,10 +300,12 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       user: string,
       provider: string,
       cancel: bigint,
-      opts: any = {}
+      amountEth: string
     ) => {
       try {
-        const tx = await ledger.depositFund(user, provider, cancel, opts)
+        await ensureProviderRegistered(provider, serving)
+        const value = ethers.parseEther(amountEth)
+        const tx = await ledger.depositFund(user, provider, cancel, { value })
         return await tx.wait()
       } catch (e: any) {
         throw formatError(e)

@@ -107,16 +107,24 @@ export class MetadataSyncService {
             })
             
             if (response.ok) {
-              const content = await response.text()
-              await fs.mkdir(path.dirname(filePath), { recursive: true })
-              await fs.writeFile(filePath, content)
-              console.log(`[MetadataSync] Downloaded metadata for token #${tokenId}`)
-              fixedCount++
+              const buf = await response.text()
+              if (!buf) {
+                console.warn('[MetadataSync] skip write, no data')
+              } else {
+                await fs.mkdir(path.dirname(filePath), { recursive: true })
+                await fs.writeFile(filePath, buf)
+                console.log(`[MetadataSync] Downloaded metadata for token #${tokenId}`)
+                fixedCount++
+              }
             } else {
               throw new Error('Download failed')
             }
           } catch (downloadError) {
-            console.error(`[MetadataSync] Failed to download metadata for token #${tokenId}:`, downloadError)
+            if ((downloadError as any)?.code === 'ENOENT') {
+              console.warn(`[MetadataSync] ENOENT for token #${tokenId}`)
+            } else {
+              console.error(`[MetadataSync] Failed to download metadata for token #${tokenId}:`, downloadError)
+            }
             
             // Создаем fallback метаданные
             const metadata = {
@@ -140,8 +148,12 @@ export class MetadataSyncService {
           }
           
           processedCount++
-        } catch (error) {
-          console.error(`[MetadataSync] Error processing token ${i}:`, error)
+        } catch (error: any) {
+          if (error?.code === 'ENOENT') {
+            console.warn(`[MetadataSync] ENOENT processing token ${i}`)
+          } else {
+            console.error(`[MetadataSync] Error processing token ${i}:`, error)
+          }
         }
       }
       

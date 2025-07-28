@@ -169,7 +169,20 @@ export default function FineTunePage() {
         return
       }
 
-      await checkAccountStatus()
+      if (data.txUrl) {
+        toast({
+          title: 'Transaction Sent',
+          description: (
+            <a href={data.txUrl} target="_blank" rel="noreferrer" className="underline">
+              View on Explorer
+            </a>
+          )
+        })
+      }
+
+      setTimeout(() => {
+        checkAccountStatus()
+      }, 2500)
     } catch (error: any) {
       console.error('Account setup error:', error)
       toast({

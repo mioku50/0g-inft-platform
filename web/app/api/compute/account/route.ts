@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ethers } from 'ethers'
-import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
+import { parseEther, formatEther } from 'ethers'
+import { getBroker, getServingContract } from '@/lib/compute/broker'
 import { validateComputeEnvironment } from '@/lib/server/compute-env'
 
 const FINE_TUNE_PROVIDER = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER!
@@ -19,183 +19,98 @@ type AccountResponse = {
   nonce?: string
 }
 
-export async function GET(request: NextRequest) {
-  // Validate environment first
+export async function GET() {
   const envValidation = validateComputeEnvironment()
   if (!envValidation.isValid) {
     console.error('[compute/account][GET] Environment validation failed:', envValidation.errors)
-    return NextResponse.json({ 
-      error: 'Compute misconfigured', 
-      details: envValidation.errors 
+    return NextResponse.json({
+      error: 'Compute misconfigured',
+      details: envValidation.errors
     }, { status: 503 })
   }
 
-  let broker: any
-  try {
-    broker = await getBrokerOrThrow()
-  } catch (e: any) {
-    console.error('[compute/account][GET] broker init error', e)
-    return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
+  const broker = await getBroker()
+  const serving = getServingContract(broker.signer)
+
+  const exists = await serving.accountExists(broker.signer.address, FINE_TUNE_PROVIDER)
+
+  let balance = '0', pendingRefund = '0', deliverables = 0, nonce: string | undefined
+  if (exists) {
+    const acc = await serving.getAccount(broker.signer.address, FINE_TUNE_PROVIDER)
+    balance = formatEther(acc.balance)
+    pendingRefund = formatEther(acc.pendingRefund)
+    deliverables = acc.deliverables?.length ?? 0
+    nonce = acc.nonce?.toString()
   }
-  
-  try {
-    const user = getSignerAddress(broker)
-    if (!user) throw new Error('Signer not initialized')
 
-    const svc = broker.fineTuning
-    const provider = FINE_TUNE_PROVIDER
-
-    const exists = await svc.accountExists(user, provider)
-    let balance = '0', pendingRefund = '0', deliverables = 0, nonce: string | undefined
-    let acc: any = null
-    if (exists) {
-      acc = await svc.getAccount(user, provider)
-      balance = ethers.formatEther(acc.balance ?? '0')
-      pendingRefund = ethers.formatEther(acc.pendingRefund ?? '0')
-      deliverables = acc?.deliverables?.length || 0
-      nonce = acc?.nonce?.toString?.()
+  return NextResponse.json({
+    result: {
+      exists,
+      balance,
+      balanceWei: exists ? undefined : '0',
+      pendingRefund,
+      pendingRefundWei: undefined,
+      needsTopUp: !exists || parseFloat(balance) < 0.001,
+      deliverables,
+      nonce
     }
-
-    return NextResponse.json({
-      result: {
-        exists,
-        balance,
-        balanceWei: exists ? acc.balance : '0',
-        pendingRefund,
-        pendingRefundWei: exists ? acc.pendingRefund : '0',
-        needsTopUp: Number(balance) < 0.001,
-        deliverables,
-        nonce
-      }
-    })
-    
-  } catch (error: any) {
-    console.error('[compute/account][GET][error]', error)
-    const msg = error.message
-    
-    if (
-      msg?.includes('Missing env') ||
-      msg?.includes('Contract not deployed') ||
-      msg?.includes('Failed to start')
-    ) {
-      return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
-    }
-    
-    return NextResponse.json({ error: msg }, { status: 500 })
-  }
+  })
 }
 
-export async function POST(request: NextRequest) {
-  // Validate environment first
+export async function POST(req: NextRequest) {
   const envValidation = validateComputeEnvironment()
   if (!envValidation.isValid) {
     console.error('[compute/account][POST] Environment validation failed:', envValidation.errors)
-    return NextResponse.json({ 
-      error: 'Compute misconfigured', 
-      details: envValidation.errors 
+    return NextResponse.json({
+      error: 'Compute misconfigured',
+      details: envValidation.errors
     }, { status: 503 })
   }
 
-  const body = await request.json()
-  console.log('[compute/account][POST]', { body })
-  
-  let broker: any
-  try {
-    broker = await getBrokerOrThrow()
-  } catch (e: any) {
-    console.error('[compute/account][POST] broker init error', e)
-    return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
-  }
-  
-  try {
-    const { amount, action } = body as { amount: string; action?: string }
-    
-    if (!amount || isNaN(+amount) || Number(amount) <= 0) {
-      return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
-    }
-    
-    const signerAddress = getSignerAddress(broker)
-    if (!signerAddress) throw new Error('Signer not initialized')
-    
-    const exists = await broker.fineTuning.accountExists(signerAddress, FINE_TUNE_PROVIDER)
-    let receipt
-    const value = ethers.parseEther(amount)
-    if (!exists || action === 'create') {
-      receipt = await broker.fineTuning.addAccount(
-        signerAddress,
-        FINE_TUNE_PROVIDER,
-        'INFT Platform User',
-        { value }
-      )
-    } else {
-      receipt = await broker.fineTuning.depositFund(
-        signerAddress,
-        FINE_TUNE_PROVIDER,
-        0n,
-        { value }
-      )
-    }
-    return NextResponse.json({ success: true, txHash: receipt?.hash ?? receipt?.transactionHash })
-    
-  } catch (e: any) {
-    console.error('[compute/account][POST][error]', e)
-    const msg = e.message
-    
-    if (
-      msg?.includes('Missing env') ||
-      msg?.includes('Contract not deployed') ||
-      msg?.includes('Failed to start')
-    ) {
-      return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
-    }
-    
-    return NextResponse.json({ error: msg }, { status: 500 })
+  const { amount, action = 'create' } = await req.json()
+
+  const broker = await getBroker()
+  const serving = getServingContract(broker.signer)
+
+  if (action === 'create') {
+    const tx = await serving.addAccount(
+      broker.signer.address,
+      FINE_TUNE_PROVIDER,
+      'INFT Platform User',
+      { value: parseEther(amount) }
+    )
+    console.log('[fine] addAccount tx.to:', tx.to)
+    await tx.wait()
+    return NextResponse.json({ success: true, message: `Account created with ${amount} ETH`, txHash: tx.hash })
+  } else {
+    const tx = await serving.depositFund(
+      broker.signer.address,
+      FINE_TUNE_PROVIDER,
+      0,
+      { value: parseEther(amount) }
+    )
+    console.log('[fine] depositFund tx.to:', tx.to)
+    await tx.wait()
+    return NextResponse.json({ success: true, message: `Deposited ${amount} ETH`, txHash: tx.hash })
   }
 }
 
-export async function DELETE(request: NextRequest) {
-  // Validate environment first
+export async function DELETE() {
   const envValidation = validateComputeEnvironment()
   if (!envValidation.isValid) {
     console.error('[compute/account][DELETE] Environment validation failed:', envValidation.errors)
-    return NextResponse.json({ 
-      error: 'Compute misconfigured', 
-      details: envValidation.errors 
+    return NextResponse.json({
+      error: 'Compute misconfigured',
+      details: envValidation.errors
     }, { status: 503 })
   }
 
-  console.log('[compute/account][DELETE]')
-  
-  let broker: any
-  try {
-    broker = await getBrokerOrThrow()
-  } catch (e: any) {
-    console.error('[compute/account][DELETE] broker init error', e)
-    return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
-  }
-  
-  try {
-    const signerAddress = getSignerAddress(broker)
-    if (!signerAddress) throw new Error('Signer not initialized')
-    
-    const tx = await broker.fineTuning.requestRefundAll(signerAddress, FINE_TUNE_PROVIDER)
-    const result = { success: true, txHash: tx.hash }
-    
-    console.log('[compute/account][DELETE]', { result })
-    return NextResponse.json(result)
-    
-  } catch (e: any) {
-    console.error('[compute/account][DELETE][error]', e)
-    const msg = e.message
-    
-    if (
-      msg?.includes('Missing env') ||
-      msg?.includes('Contract not deployed') ||
-      msg?.includes('Failed to start')
-    ) {
-      return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
-    }
-    
-    return NextResponse.json({ error: msg }, { status: 500 })
-  }
+  const broker = await getBroker()
+  const serving = getServingContract(broker.signer)
+
+  const tx = await serving.requestRefundAll(broker.signer.address, FINE_TUNE_PROVIDER)
+  console.log('[fine] requestRefundAll tx.to:', tx.to)
+  await tx.wait()
+
+  return NextResponse.json({ success: true, message: 'Refund request submitted', txHash: tx.hash })
 }

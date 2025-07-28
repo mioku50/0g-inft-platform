@@ -124,6 +124,21 @@ function formatError(e: any): Error {
   }
 }
 
+function parseSimulationError(e: any): Error {
+  const decoded = decodeRevert(e)
+  const msg = decoded || e?.shortMessage || e?.reason || e?.message || ''
+  if (/AccountExists/i.test(msg)) return new Error('AccountExists')
+  if (/ServiceNotExist|ProviderNotExist/i.test(msg)) return new Error('ProviderNotExist')
+  if (/insufficient funds/i.test(msg)) return new Error('InsufficientBalance')
+  return new Error(`reverted: ${msg}`)
+}
+
+function formatTxUrl(hash: string): string | null {
+  const base = process.env.NEXT_PUBLIC_EXPLORER_BASE_URL
+  if (!base) return null
+  return `${base.replace(/\/$/, '')}/tx/${hash}`
+}
+
 function toWeiSafe(v?: any) {
   try {
     return ethers.toBigInt(v ?? 0)
@@ -233,27 +248,40 @@ export async function addAccountWithDeposit(
 ) {
   const key = `${user}:${provider}:addAccount`
   const value = ethers.parseEther(amount)
-  const base = process.env.EXPLORER_BASE_URL
 
   return withLock(key, async () => {
     try {
-      console.log('[fine] addAccount', { user, provider, value: value.toString() })
-      const tx = await ledger.addAccount(user, provider, extraInfo, { value })
-      const receipt = await tx.wait()
-      return {
-        ok: receipt.status === 1n,
-        txHash: tx.hash,
-        gasUsed: receipt.gasUsed?.toString(),
-        explorerUrl: base ? `${base}${tx.hash}` : null
+      console.log('[fine] addAccount:start', { user, provider, value: value.toString() })
+      try {
+        const gas = await ledger.estimateGas.addAccount(user, provider, extraInfo, { value })
+        console.log('[fine] addAccount:simulate:ok', gas.toString())
+      } catch (simErr: any) {
+        throw parseSimulationError(simErr)
       }
+
+      const tx = await ledger.addAccount(user, provider, extraInfo, { value })
+      console.log('[fine] addAccount:sent', tx.hash)
+      const txUrl = formatTxUrl(tx.hash)
+
+      signer.provider!
+        .waitForTransaction(tx.hash, 1, 60000)
+        .then((rc) => {
+          if (rc)
+            console.log('[fine] addAccount:mined', tx.hash, `${rc.status}/${rc.confirmations}`)
+          else
+            console.log('[fine] addAccount:mined:timeout')
+        })
+        .catch(() => console.log('[fine] addAccount:mined:timeout'))
+
+      return { txHash: tx.hash, txUrl, status: 'submitted' }
     } catch (e: any) {
-      const decoded = decodeRevert(e)
-      throw new Error(decoded ?? `Tx failed: ${e?.shortMessage || e?.message}`)
+      throw formatError(e)
     }
   })
 }
 
 export async function deposit(
+  signer: ethers.Signer,
   ledger: Contract,
   user: string,
   provider: string,
@@ -261,20 +289,34 @@ export async function deposit(
 ) {
   const key = `${user}:${provider}:deposit`
   const value = ethers.parseEther(amount)
-  const base = process.env.EXPLORER_BASE_URL
+
   return withLock(key, async () => {
     try {
-      const tx = await ledger.depositFund(user, provider, 0, { value })
-      const receipt = await tx.wait()
-      return {
-        ok: receipt.status === 1n,
-        txHash: tx.hash,
-        gasUsed: receipt.gasUsed?.toString(),
-        explorerUrl: base ? `${base}${tx.hash}` : null
+      console.log('[fine] deposit:start', { user, provider, value: value.toString() })
+      try {
+        const gas = await ledger.estimateGas.depositFund(user, provider, 0, { value })
+        console.log('[fine] deposit:simulate:ok', gas.toString())
+      } catch (simErr: any) {
+        throw parseSimulationError(simErr)
       }
+
+      const tx = await ledger.depositFund(user, provider, 0, { value })
+      console.log('[fine] deposit:sent', tx.hash)
+      const txUrl = formatTxUrl(tx.hash)
+
+      signer.provider!
+        .waitForTransaction(tx.hash, 1, 60000)
+        .then((rc) => {
+          if (rc)
+            console.log('[fine] deposit:mined', tx.hash, `${rc.status}/${rc.confirmations}`)
+          else
+            console.log('[fine] deposit:mined:timeout')
+        })
+        .catch(() => console.log('[fine] deposit:mined:timeout'))
+
+      return { txHash: tx.hash, txUrl, status: 'submitted' }
     } catch (e: any) {
-      const decoded = decodeRevert(e)
-      throw new Error(decoded ?? `Tx failed: ${e?.shortMessage || e?.message}`)
+      throw formatError(e)
     }
   })
 }
@@ -372,9 +414,29 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       try {
         await ensureProviderRegistered(provider, serving)
         const value = ethers.parseEther(amountEth)
-        console.log('[fine] addAccount', { user, provider, value: value.toString() })
+        console.log('[fine] addAccount:start', { user, provider, value: value.toString() })
+        try {
+          const gas = await ledger.estimateGas.addAccount(user, provider, info, { value })
+          console.log('[fine] addAccount:simulate:ok', gas.toString())
+        } catch (simErr: any) {
+          throw parseSimulationError(simErr)
+        }
+
         const tx = await ledger.addAccount(user, provider, info, { value })
-        return await tx.wait()
+        console.log('[fine] addAccount:sent', tx.hash)
+        const txUrl = formatTxUrl(tx.hash)
+
+        signer.provider!
+          .waitForTransaction(tx.hash, 1, 60000)
+          .then((rc) => {
+            if (rc)
+              console.log('[fine] addAccount:mined', tx.hash, `${rc.status}/${rc.confirmations}`)
+            else
+              console.log('[fine] addAccount:mined:timeout')
+          })
+          .catch(() => console.log('[fine] addAccount:mined:timeout'))
+
+        return { txHash: tx.hash, txUrl, status: 'submitted' }
       } catch (e: any) {
         throw formatError(e)
       }

@@ -1,4 +1,4 @@
-import { Wallet, JsonRpcProvider, ethers, Interface } from 'ethers'
+import { Wallet, JsonRpcProvider, ethers, Interface, Contract } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { fromWei } from '@/lib/constants'
 import {
@@ -23,6 +23,15 @@ export const LEDGER_ABI = [
   'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) payable',
   'function requestRefundAll(address user, address provider)'
 ] as const
+
+const ERROR_ABI = [
+  'error AccountExists(address user,address provider)',
+  'error AccountNotExists(address user,address provider)',
+  'error ServiceNotExist(address provider)',
+  'error RefundLocked(address user,address provider,uint256 index)',
+  'error RefundProcessed(address user,address provider,uint256 index)'
+]
+const ERR_IFACE = new Interface(ERROR_ABI)
 
 const SERVING_ADDR = (
   process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS ??
@@ -66,6 +75,25 @@ const SERVING_IFACE = new Interface([
   'error AccountExists(address user,address provider)',
   'error ServiceNotExist(address provider)'
 ])
+
+export function decodeRevert(err: any): string | null {
+  const data = err?.info?.error?.data || err?.data
+  if (!data) return null
+  try {
+    const p: any = ERR_IFACE.parseError(data)
+    return p ? `${p.name}(${p.args?.map(String).join(',')})` : null
+  } catch {
+    return null
+  }
+}
+
+const inFlight = new Map<string, Promise<any>>()
+function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  if (inFlight.has(key)) return inFlight.get(key)! as Promise<T>
+  const p = fn().finally(() => inFlight.delete(key))
+  inFlight.set(key, p)
+  return p
+}
 
 function formatError(e: any): Error {
   try {
@@ -193,6 +221,62 @@ export const ledgerSafe = {
       return false
     }
   }
+}
+
+export async function addAccountWithDeposit(
+  signer: ethers.Signer,
+  ledger: Contract,
+  user: string,
+  provider: string,
+  amount: string,
+  extraInfo = 'INFT Platform User'
+) {
+  const key = `${user}:${provider}:addAccount`
+  const value = ethers.parseEther(amount)
+  const base = process.env.EXPLORER_BASE_URL
+
+  return withLock(key, async () => {
+    try {
+      console.log('[fine] addAccount', { user, provider, value: value.toString() })
+      const tx = await ledger.addAccount(user, provider, extraInfo, { value })
+      const receipt = await tx.wait()
+      return {
+        ok: receipt.status === 1n,
+        txHash: tx.hash,
+        gasUsed: receipt.gasUsed?.toString(),
+        explorerUrl: base ? `${base}${tx.hash}` : null
+      }
+    } catch (e: any) {
+      const decoded = decodeRevert(e)
+      throw new Error(decoded ?? `Tx failed: ${e?.shortMessage || e?.message}`)
+    }
+  })
+}
+
+export async function deposit(
+  ledger: Contract,
+  user: string,
+  provider: string,
+  amount: string
+) {
+  const key = `${user}:${provider}:deposit`
+  const value = ethers.parseEther(amount)
+  const base = process.env.EXPLORER_BASE_URL
+  return withLock(key, async () => {
+    try {
+      const tx = await ledger.depositFund(user, provider, 0, { value })
+      const receipt = await tx.wait()
+      return {
+        ok: receipt.status === 1n,
+        txHash: tx.hash,
+        gasUsed: receipt.gasUsed?.toString(),
+        explorerUrl: base ? `${base}${tx.hash}` : null
+      }
+    } catch (e: any) {
+      const decoded = decodeRevert(e)
+      throw new Error(decoded ?? `Tx failed: ${e?.shortMessage || e?.message}`)
+    }
+  })
 }
 
 export async function getBrokerOrThrow() {

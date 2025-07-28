@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { formatEther } from 'ethers'
-import { getBroker } from '@/lib/compute/broker'
+import { getBroker, getLedgerContract, addAccountWithDeposit, deposit } from '@/lib/compute/broker'
 import { validateComputeEnvironment } from '@/lib/server/compute-env'
 
 const FINE_TUNE_PROVIDER = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER!
@@ -70,36 +70,35 @@ export async function POST(req: NextRequest) {
   const { amount, action = 'create' } = await req.json()
 
   const broker = await getBroker()
-  const fine = broker.fineTuning
-
-  const explorer = process.env.NEXT_PUBLIC_TURBO_EXPLORER_URL || process.env.NEXT_PUBLIC_STANDARD_EXPLORER_URL
+  const ledger = getLedgerContract(broker.signer)
 
   try {
-    let receipt
-    if (action === 'create') {
-      receipt = await fine.addAccount(
-        broker.signer.address,
-        FINE_TUNE_PROVIDER,
-        'INFT Platform User',
-        amount
-      )
-    } else {
-      receipt = await fine.depositFund(
-        broker.signer.address,
-        FINE_TUNE_PROVIDER,
-        0n,
-        amount
-      )
-    }
+    const result = action === 'create'
+      ? await addAccountWithDeposit(broker.signer, ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)
+      : await deposit(ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)
+
     return NextResponse.json({
       success: true,
-      transaction: {
-        hash: receipt.transactionHash,
-        explorerUrl: explorer ? `${explorer}${receipt.transactionHash}` : undefined
-      }
+      action,
+      txHash: result.txHash,
+      txUrl: result.explorerUrl,
+      gasUsed: result.gasUsed,
+      note: action === 'create'
+        ? 'Account created (or already existed) and funded'
+        : 'Deposit successful'
     })
   } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message }, { status: 400 })
+    const msg = e.message || 'Tx failed'
+    if (msg.startsWith('AccountExists')) {
+      return NextResponse.json({
+        error: msg,
+        hint: 'Use deposit action to add funds'
+      }, { status: 409 })
+    }
+    if (/insufficient funds/i.test(msg)) {
+      return NextResponse.json({ error: msg }, { status: 400 })
+    }
+    return NextResponse.json({ error: msg }, { status: 502 })
   }
 }
 

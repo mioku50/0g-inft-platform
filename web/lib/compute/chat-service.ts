@@ -355,14 +355,17 @@ export class ChatService {
     try {
       console.log('Acknowledging provider...')
       const ackTx = await broker.inference.acknowledgeProviderSigner(providerAddress)
-      console.log(`Acknowledge tx: ${ackTx.hash}`)
-      
-      try {
-        await ackTx?.wait?.()
-      } catch (waitErr: any) {
-        console.log('Ack wait error (non-critical):', waitErr?.message)
+      if (ackTx && (ackTx as any).hash) {
+        console.log(`Acknowledge tx: ${(ackTx as any).hash}`)
+        try {
+          await (ackTx as any)?.wait?.()
+        } catch (waitErr: any) {
+          console.log('Ack wait error (non-critical):', waitErr?.message)
+        }
+      } else {
+        console.log('Provider signer already acknowledged (no tx emitted)')
       }
-      
+
       acknowledgeCache.set(providerAddress, now)
       console.log('Provider acknowledged successfully!')
       

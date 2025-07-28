@@ -1,4 +1,4 @@
-import { Wallet, Contract, JsonRpcProvider } from 'ethers'
+import { Wallet, Contract, JsonRpcProvider, Interface, ethers } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { FINE_TUNING_SERVING_ABI } from '@/lib/contracts/abis'
 import { fromWei } from '@/lib/constants'
@@ -11,6 +11,14 @@ import {
   getComputeInferenceContract
 } from '@/lib/server/compute-env'
 import { create0GProvider } from '@/lib/server/provider'
+
+function toWeiSafe(v?: any) {
+  try {
+    return ethers.toBigInt(v ?? 0)
+  } catch {
+    return 0n
+  }
+}
 
 let broker: any | null = null
 
@@ -36,19 +44,8 @@ export const ledgerSafe = {
       }
       
       const ledgerInfo = await br.ledger.getLedger()
-      
-      // Безопасное преобразование BigNumberish в bigint
-      let balance: bigint
-      if (typeof ledgerInfo.balance === 'bigint') {
-        balance = ledgerInfo.balance
-      } else if (typeof ledgerInfo.balance === 'string') {
-        balance = BigInt(ledgerInfo.balance)
-      } else if (ledgerInfo.balance?._isBigNumber) {
-        // Обработка ethers BigNumber
-        balance = BigInt(ledgerInfo.balance.toString())
-      } else {
-        balance = BigInt(ledgerInfo.balance?.toString?.() ?? '0')
-      }
+
+      const balance = toWeiSafe(ledgerInfo.balance)
       
       console.log(`Ledger balance: ${fromWei(balance)} OG`)
       return { balance }
@@ -175,6 +172,29 @@ export async function getBrokerOrThrow() {
 async function addFineTuningSupport(broker: any, signer: Wallet) {
   const contract = new Contract(getFineTuningServingAddress(), FINE_TUNING_SERVING_ABI, signer)
 
+  const servingAddress = getFineTuningServingAddress()
+  const ledgerAddressEnv = process.env.COMPUTE_LEDGER_CONTRACT
+
+  const servingAbi = FINE_TUNING_SERVING_ABI
+  const serving = new Contract(servingAddress, servingAbi, signer)
+  let ledgerAddress: string | null = ledgerAddressEnv || null
+  if (!ledgerAddress) {
+    try {
+      ledgerAddress = await (serving as any).ledgerAddress()
+    } catch {
+      ledgerAddress = null
+    }
+  }
+
+  let ledger: Contract | null = null
+  const LEDGER_ABI = [
+    'function addAccount(address user, address provider, string info) payable',
+    'function depositFund(address user, address provider, uint256 cancel) payable'
+  ] as const
+  if (ledgerAddress) {
+    ledger = new Contract(ledgerAddress, LEDGER_ABI, signer)
+  }
+
   broker.fineTuning = {
     accountExists: async (user: string, provider: string = getFineTuneProvider()) => {
       try {
@@ -187,11 +207,13 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
     getAccount: async (user: string, provider: string = getFineTuneProvider()) => {
       try {
         const acc = await contract.getAccount(user, provider)
+        const balance = toWeiSafe(acc.balance)
+        const pending = toWeiSafe(acc.pendingRefund)
         return {
-          balanceWei: acc.balance.toString(),
-          balance: fromWei(acc.balance),
-          pendingRefundWei: acc.pendingRefund.toString(),
-          pendingRefund: fromWei(acc.pendingRefund),
+          balanceWei: balance.toString(),
+          balance: fromWei(balance),
+          pendingRefundWei: pending.toString(),
+          pendingRefund: fromWei(pending),
           deliverables: acc.deliverables || [],
           nonce: acc.nonce ? BigInt(acc.nonce) : 0n,
           refunds: acc.refunds || [],
@@ -211,8 +233,11 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       info: string = 'INFT Platform User',
       opts: any = {}
     ) => {
+      if (!ledger) {
+        throw new Error('Ledger contract is not configured. Set COMPUTE_LEDGER_CONTRACT or ensure serving.ledgerAddress() is available.')
+      }
       try {
-        const tx = await contract.addAccount(user, provider, info, opts)
+        const tx = await (ledger as any).addAccount(user, provider, info, opts)
         await tx.wait()
         return tx
       } catch (e: any) {
@@ -226,8 +251,11 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       cancel: bigint = 0n,
       opts: any = {}
     ) => {
+      if (!ledger) {
+        throw new Error('Ledger contract is not configured. Set COMPUTE_LEDGER_CONTRACT or ensure serving.ledgerAddress() is available.')
+      }
       try {
-        const tx = await contract.depositFund(user, provider, cancel, opts)
+        const tx = await (ledger as any).depositFund(user, provider, cancel, opts)
         await tx.wait()
         return tx
       } catch (e: any) {
@@ -241,9 +269,11 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
     ) => {
       try {
         const tx = await contract.acknowledgeProviderSigner(provider, signerAddr)
-        await tx.wait()
-        return tx
+        const rc = await tx.wait()
+        return rc ? tx : null
       } catch (e: any) {
+        const msg = String(e?.message || e)
+        if (/already|acknowledged|known/i.test(msg)) return null
         throw formatError(e)
       }
     },
@@ -308,7 +338,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 
     getPendingRefund: async (user: string, provider: string = getFineTuneProvider()) => {
       try {
-        const amount = await contract.getPendingRefund(user, provider)
+        const amount = toWeiSafe(await contract.getPendingRefund(user, provider))
         return {
           amountWei: amount.toString(),
           amount: fromWei(amount)

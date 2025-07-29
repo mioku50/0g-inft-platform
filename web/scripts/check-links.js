@@ -1,141 +1,133 @@
 #!/usr/bin/env node
 
-require('dotenv').config({ path: '.env.local' })
-const { ethers } = require('ethers')
+/**
+ * Check Links Script
+ * Verifies the connection between Serving.ledgerAddress() and environment configuration
+ */
 
-const colors = {
-  reset: '\x1b[0m',
-  red: '\x1b[31m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  blue: '\x1b[34m',
-  cyan: '\x1b[36m'
-}
+const { ethers } = require('ethers');
+require('dotenv').config({ path: '.env.local' });
 
+// Configuration
+const RPC_URL = process.env.NEXT_PUBLIC_OG_RPC || 'https://evmrpc-testnet.0g.ai';
+const SERVING_ADDRESS = process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS;
+const LEDGER_ADDRESS = process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT;
+const PROVIDER_ADDRESS = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER;
+
+// Contract ABIs
 const SERVING_ABI = [
   'function ledgerAddress() view returns (address)',
-  'function getService(address provider) view returns (tuple(address provider,string url,(uint256,uint256,uint256,uint256,string) quota,uint256 pricePerToken,address providerSigner,bool occupied,string[] models))',
-  'function accountExists(address user, address provider) view returns (bool)'
-]
+  'function getService(address provider) view returns (tuple(address provider,string url,tuple(uint256,uint256,uint256,uint256,string) quota,uint256 pricePerToken,address providerSigner,bool occupied,string[] models))'
+];
 
 async function main() {
-  console.log(`${colors.cyan}🔍 Checking Ledger ↔ Serving contract links...${colors.reset}\n`)
-  
-  // 1. Read environment variables
-  const servingAddress = process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS
-  const ledgerAddress = process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT
-  const providerAddress = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER
-  const rpcUrl = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
-  
-  console.log(`${colors.blue}📋 Environment Variables:${colors.reset}`)
-  console.log(`  RPC URL: ${rpcUrl}`)
-  console.log(`  NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS: ${servingAddress || colors.red + 'NOT SET' + colors.reset}`)
-  console.log(`  NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT: ${ledgerAddress || colors.red + 'NOT SET' + colors.reset}`)
-  console.log(`  NEXT_PUBLIC_FINE_TUNE_PROVIDER: ${providerAddress || colors.red + 'NOT SET' + colors.reset}`)
-  console.log()
-  
-  if (!servingAddress || !ledgerAddress || !providerAddress) {
-    console.log(`${colors.red}❌ Missing required environment variables!${colors.reset}`)
-    process.exit(1)
-  }
-  
-  // 2. Connect to RPC
-  console.log(`${colors.blue}🔌 Connecting to RPC...${colors.reset}`)
-  const provider = new ethers.JsonRpcProvider(rpcUrl)
+  console.log('🔗 Checking contract links and configuration...\n');
   
   try {
-    const network = await provider.getNetwork()
-    console.log(`  ✅ Connected to chain ID: ${network.chainId}`)
-  } catch (err) {
-    console.log(`${colors.red}  ❌ Failed to connect: ${err.message}${colors.reset}`)
-    process.exit(1)
-  }
-  console.log()
-  
-  // 3. Check Serving contract
-  console.log(`${colors.blue}📄 Checking Serving contract...${colors.reset}`)
-  const servingContract = new ethers.Contract(servingAddress, SERVING_ABI, provider)
-  
-  try {
-    // Check if contract is deployed
-    const code = await provider.getCode(servingAddress)
-    if (code === '0x') {
-      console.log(`${colors.red}  ❌ Serving contract not deployed at ${servingAddress}${colors.reset}`)
-      process.exit(1)
-    }
-    console.log(`  ✅ Serving contract deployed at ${servingAddress}`)
+    // Initialize provider
+    const provider = new ethers.JsonRpcProvider(RPC_URL);
+    const network = await provider.getNetwork();
+    console.log(`📡 Connected to network: Chain ID ${network.chainId}`);
     
-    // Get ledger address from Serving
-    const servingLedgerAddr = await servingContract.ledgerAddress()
-    console.log(`  📍 Serving.ledgerAddress() = ${servingLedgerAddr}`)
-    
-    // Compare with ENV
-    if (servingLedgerAddr.toLowerCase() === ledgerAddress.toLowerCase()) {
-      console.log(`${colors.green}  ✅ Ledger address matches ENV${colors.reset}`)
-    } else {
-      console.log(`${colors.red}  ❌ Ledger address mismatch!${colors.reset}`)
-      console.log(`     ENV: ${ledgerAddress}`)
-      console.log(`     Contract: ${servingLedgerAddr}`)
+    // Validate environment variables
+    if (!SERVING_ADDRESS) {
+      throw new Error('NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS not set');
     }
-  } catch (err) {
-    console.log(`${colors.red}  ❌ Error checking Serving contract: ${err.message}${colors.reset}`)
-  }
-  console.log()
-  
-  // 4. Check Ledger contract
-  console.log(`${colors.blue}📄 Checking Ledger contract...${colors.reset}`)
-  
-  try {
-    // Check if contract is deployed
-    const code = await provider.getCode(ledgerAddress)
-    if (code === '0x') {
-      console.log(`${colors.red}  ❌ Ledger contract not deployed at ${ledgerAddress}${colors.reset}`)
-    } else {
-      console.log(`  ✅ Ledger contract deployed at ${ledgerAddress}`)
+    if (!LEDGER_ADDRESS) {
+      throw new Error('NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT not set');
+    }
+    if (!PROVIDER_ADDRESS) {
+      throw new Error('NEXT_PUBLIC_FINE_TUNE_PROVIDER not set');
     }
     
-    // Note: Standard Ledger might not have a serving() method
-    // This is OK - the important link is Serving -> Ledger
-    console.log(`  ℹ️  Note: Ledger may not have a reverse link to Serving (this is normal)`)
-  } catch (err) {
-    console.log(`${colors.red}  ❌ Error checking Ledger contract: ${err.message}${colors.reset}`)
-  }
-  console.log()
-  
-  // 5. Check Provider registration
-  console.log(`${colors.blue}👤 Checking Provider registration...${colors.reset}`)
-  
-  try {
-    const service = await servingContract.getService(providerAddress)
+    console.log('🏗️  Contract Addresses:');
+    console.log(`   FineTuningServing: ${SERVING_ADDRESS}`);
+    console.log(`   Ledger (env):      ${LEDGER_ADDRESS}`);
+    console.log(`   Provider:          ${PROVIDER_ADDRESS}\n`);
     
-    if (!service || !service.url || service.url.length === 0) {
-      console.log(`${colors.red}  ❌ Provider not registered!${colors.reset}`)
-    } else {
-      console.log(`${colors.green}  ✅ Provider exists & OK${colors.reset}`)
-      console.log(`     URL: ${service.url}`)
-      console.log(`     Occupied: ${service.occupied}`)
-      console.log(`     Provider Signer: ${service.providerSigner}`)
-      console.log(`     Models: ${service.models?.length || 0} available`)
+    // Check if contracts are deployed
+    const servingCode = await provider.getCode(SERVING_ADDRESS);
+    const ledgerCode = await provider.getCode(LEDGER_ADDRESS);
+    
+    if (!servingCode || servingCode === '0x') {
+      throw new Error(`FineTuningServing contract not deployed at ${SERVING_ADDRESS}`);
+    }
+    console.log('✅ FineTuningServing contract is deployed');
+    
+    if (!ledgerCode || ledgerCode === '0x') {
+      throw new Error(`Ledger contract not deployed at ${LEDGER_ADDRESS}`);
+    }
+    console.log('✅ Ledger contract is deployed\n');
+    
+    // Check Serving.ledgerAddress() vs NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT
+    const servingContract = new ethers.Contract(SERVING_ADDRESS, SERVING_ABI, provider);
+    
+    let servingLedgerAddress;
+    try {
+      servingLedgerAddress = await servingContract.ledgerAddress();
+      console.log('🔍 Ledger Address Verification:');
+      console.log(`   From Serving.ledgerAddress(): ${servingLedgerAddress}`);
+      console.log(`   From .env (COMPUTE_LEDGER):   ${LEDGER_ADDRESS}`);
       
-      if (service.occupied) {
-        console.log(`${colors.yellow}  ⚠️  Provider is occupied (might not accept new tasks)${colors.reset}`)
+      if (servingLedgerAddress.toLowerCase() === LEDGER_ADDRESS.toLowerCase()) {
+        console.log('✅ Addresses match! Configuration is consistent.\n');
+      } else {
+        console.log('❌ ADDRESS MISMATCH! This is the root cause of the issue.\n');
+        console.log('🚨 CRITICAL: The FineTuningServing contract expects a different Ledger!');
+        console.log(`    Expected: ${servingLedgerAddress}`);
+        console.log(`    Configured: ${LEDGER_ADDRESS}\n`);
+        
+        // Check if the expected ledger is deployed
+        const expectedLedgerCode = await provider.getCode(servingLedgerAddress);
+        if (!expectedLedgerCode || expectedLedgerCode === '0x') {
+          console.log(`❌ Expected Ledger ${servingLedgerAddress} is NOT deployed`);
+        } else {
+          console.log(`✅ Expected Ledger ${servingLedgerAddress} IS deployed`);
+          console.log('💡 Solution: Update NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT to use the correct address');
+        }
       }
+    } catch (error) {
+      console.log(`❌ Failed to read ledgerAddress() from Serving contract: ${error.message}`);
     }
-  } catch (err) {
-    console.log(`${colors.red}  ❌ Error checking provider: ${err.message}${colors.reset}`)
+    
+    // Check if provider service exists and is not occupied
+    try {
+      const service = await servingContract.getService(PROVIDER_ADDRESS);
+      console.log('🔍 Provider Service Check:');
+      console.log(`   Provider: ${PROVIDER_ADDRESS}`);
+      console.log(`   URL: ${service.url || 'NOT SET'}`);
+      console.log(`   Occupied: ${service.occupied}`);
+      console.log(`   Models: ${service.models?.length || 0} available`);
+      console.log(`   Provider Signer: ${service.providerSigner}`);
+      
+      if (!service.url || service.url.length === 0) {
+        console.log('❌ Provider service does not exist or URL is empty');
+      } else if (service.occupied) {
+        console.log('⚠️  Provider is currently occupied');
+      } else {
+        console.log('✅ Provider service exists and is available');
+      }
+    } catch (error) {
+      console.log(`❌ Failed to get provider service: ${error.message}`);
+    }
+    
+    console.log('\n📋 Summary:');
+    console.log('='.repeat(50));
+    
+    if (servingLedgerAddress && servingLedgerAddress.toLowerCase() !== LEDGER_ADDRESS.toLowerCase()) {
+      console.log('🚨 CONFIGURATION ERROR DETECTED:');
+      console.log(`   Update NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT to: ${servingLedgerAddress}`);
+      console.log('   This should resolve the addAccount issues.');
+      process.exit(1);
+    } else {
+      console.log('✅ Configuration appears correct');
+      console.log('   If addAccount still fails, the issue may be with Ledger contract implementation');
+    }
+    
+  } catch (error) {
+    console.error(`❌ Error: ${error.message}`);
+    process.exit(1);
   }
-  console.log()
-  
-  // 6. Summary
-  console.log(`${colors.cyan}📊 Summary:${colors.reset}`)
-  console.log(`  - Serving contract points to Ledger: ${servingAddress} → ${ledgerAddress}`)
-  console.log(`  - Provider ${providerAddress} registration status checked`)
-  console.log(`  - All contract links verified`)
-  
-  console.log(`\n${colors.green}✨ Check complete!${colors.reset}`)
 }
 
-main().catch(err => {
-  console.error(`${colors.red}Fatal error: ${err.message}${colors.reset}`)
-  process.exit(1)
-})
+main().catch(console.error);

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { formatEther } from 'ethers'
 import { getBroker, getLedgerContract, getServingContract, addAccountWithDeposit, deposit } from '@/lib/compute/broker'
-import { validateComputeEnvironment } from '@/lib/server/compute-env'
+import { validateComputeEnvironment, getComputeLedgerContract } from '@/lib/server/compute-env'
 
 const FINE_TUNE_PROVIDER = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER!
 if (!FINE_TUNE_PROVIDER) throw new Error('NEXT_PUBLIC_FINE_TUNE_PROVIDER is not set')
+
+const LEDGER_ADDR = getComputeLedgerContract()
 
 export const runtime = 'nodejs'
 
@@ -82,6 +84,13 @@ export async function GET() {
         needsTopUp: !exists || parseFloat(balance) < 0.001,
         deliverables: 0, // Fine-tune specific, handled separately
         nonce: undefined
+      },
+      // Add diagnostic info for debugging
+      diagnostics: {
+        walletAddress: broker.signer.address,
+        ledgerContract: LEDGER_ADDR,
+        provider: FINE_TUNE_PROVIDER,
+        timestamp: new Date().toISOString()
       }
     })
   } catch (error: any) {

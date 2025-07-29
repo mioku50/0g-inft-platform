@@ -513,12 +513,13 @@ export async function deposit(
         throw existsErr
       }
       
-      // Execute transaction through SDK broker
-      // The SDK broker will handle the proper contract routing
-      const tx = await broker.fineTuning.depositFund(
+      // Use direct contract call instead of SDK broker due to compatibility issues
+      const ledgerContract = new ethers.Contract(ledger, LEDGER_ABI, signer)
+      
+      const tx = await ledgerContract.depositFund(
         user,
         provider,
-        0, // cancelRetrievingAmount
+        0n, // cancelRetrievingAmount
         { value }
       )
       console.log('[fine] deposit:sent', tx.hash)

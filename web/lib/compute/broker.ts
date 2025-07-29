@@ -6,7 +6,8 @@ import {
   getFineTuneProvider,
   getPrivateKey,
   getComputeLedgerContract,
-  getComputeInferenceContract
+  getComputeInferenceContract,
+  logEnvironmentStatus
 } from '@/lib/server/compute-env'
 import { create0GProvider } from '@/lib/server/provider'
 
@@ -102,25 +103,47 @@ function formatError(e: any): Error {
   try {
     const data = e?.info?.error?.data || e?.data
     if (data) {
-      for (const iface of [LEDGER_IFACE, SERVING_IFACE]) {
+      for (const iface of [SERVING_IFACE, LEDGER_IFACE]) {
         try {
           const parsed = iface.parseError(data)
           if (parsed) {
-            return new Error(`${parsed.name}(${parsed.args?.map(String).join(',')})`)
+            const errorName = parsed.name
+            const errorArgs = parsed.args?.map(String).join(',') || ''
+            console.log('[fine] formatError:parsed', { errorName, errorArgs, data })
+            return new Error(`${errorName}(${errorArgs})`)
           }
         } catch {}
       }
     }
 
     const msg = e?.shortMessage || e?.reason || e?.message || String(e)
+    
+    // Enhanced error categorization for FineTuningServing
+    if (/AccountExists/i.test(msg)) {
+      return new Error('AccountExists')
+    }
+    if (/AccountNotExists/i.test(msg)) {
+      return new Error('AccountNotExists')
+    }
+    if (/ServiceNotExist/i.test(msg)) {
+      return new Error('ServiceNotExist')
+    }
     if (/caller is not the ledger contract/i.test(msg)) {
       return new Error(
-        'Wrong contract: call Ledger, not Serving (вызывайте методы аккаунта через Ledger‑контракт)'
+        'Wrong contract: operations should be called on FineTuningServing, not Ledger'
       )
     }
     if (/reverted.*no data/i.test(msg) || msg === 'require(false)' || msg.includes('require(false)')) {
-      return new Error('Transaction reverted without reason (check params, provider, msg.value)')
+      return new Error('Transaction reverted without reason (check params, provider registration, msg.value)')
     }
+    if (/insufficient funds/i.test(msg)) {
+      return new Error('InsufficientBalance')
+    }
+    if (/execution reverted/i.test(msg)) {
+      return new Error('Contract execution failed - likely require(false) or validation error')
+    }
+    
+    console.log('[fine] formatError:unhandled', { msg, type: typeof e, keys: Object.keys(e) })
     return new Error(msg)
   } catch {
     return new Error('Unknown EVM error')
@@ -136,9 +159,35 @@ function parseSimulationError(e: any): Error {
   return new Error(`reverted: ${msg}`)
 }
 
+function generateDiagnostics(method: string, params: any[], value?: bigint, error?: any) {
+  const paramsDigest = ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(params))).slice(0, 10)
+  const rpcUrl = getRpcUrl()
+  const chainId = rpcUrl.includes('galileo') ? 'galileo-testnet' : 'unknown'
+  
+  return {
+    method,
+    paramsDigest,
+    msgValue: value?.toString() || '0',
+    chainId,
+    timestamp: new Date().toISOString(),
+    contracts: {
+      serving: SERVING_ADDR,
+      ledger: LEDGER_ADDR
+    },
+    error: error ? {
+      message: error.message,
+      type: error.constructor.name,
+      code: error.code
+    } : undefined
+  }
+}
+
 function formatTxUrl(hash: string): string | null {
-  const base = 'https://chainscan-galileo.0g.ai'
-  return `${base}/tx/${hash}`
+  const rpcUrl = getRpcUrl()
+  if (rpcUrl.includes('galileo')) {
+    return `https://chainscan-galileo.0g.ai/tx/${hash}`
+  }
+  return `https://explorer.0g.ai/tx/${hash}`
 }
 
 function toWeiSafe(v?: any) {
@@ -255,15 +304,49 @@ export async function addAccountWithDeposit(
     try {
       console.log('[fine] addAccount:start', { user, provider, value: value.toString() })
       
-      // Use Ledger contract for account operations
-      const ledgerContract = getLedgerContract(signer)
-      console.log('[fine] Using Ledger contract for addAccount:', ledgerContract.target || ledgerContract.address)
+      // Use FineTuningServing contract for account operations
+      const servingContract = getServingContract(signer)
+      console.log('[fine] Using FineTuningServing contract for addAccount:', servingContract.target || servingContract.address)
       
+      // Pre-validation: check if provider is registered
       try {
-        // Use direct provider estimateGas to bypass ethers issues
+        const service = await servingContract.getService(provider)
+        if (!service || !service.url || service.url.length === 0) {
+          throw new Error(`ServiceNotExist(provider=${provider})`)
+        }
+        console.log('[fine] addAccount:provider-validation:ok', { 
+          provider, 
+          url: service.url, 
+          occupied: service.occupied,
+          models: service.models?.length || 0
+        })
+      } catch (validationErr: any) {
+        console.log('[fine] addAccount:provider-validation:error', validationErr.message)
+        if (validationErr.message.includes('ServiceNotExist')) {
+          throw new Error('ProviderNotExist')
+        }
+        throw validationErr
+      }
+
+      // Pre-validation: check if account already exists
+      try {
+        const accountExists = await servingContract.accountExists(user, provider)
+        if (accountExists) {
+          console.log('[fine] addAccount:account-exists', { user, provider })
+          throw new Error('AccountExists')
+        }
+      } catch (existsErr: any) {
+        if (existsErr.message.includes('AccountExists')) {
+          throw existsErr
+        }
+        // Ignore other errors as account might not exist yet
+      }
+
+      try {
+        // Simulate transaction on FineTuningServing contract
         const gasEstimate = await signer.estimateGas({
-          to: ledgerContract.target || ledgerContract.address,
-          data: ledgerContract.interface.encodeFunctionData('addAccount', [user, provider, extraInfo]),
+          to: servingContract.target || servingContract.address,
+          data: servingContract.interface.encodeFunctionData('addAccount', [user, provider, extraInfo]),
           value: value
         })
         console.log('[fine] addAccount:simulate:ok', gasEstimate.toString())
@@ -272,7 +355,8 @@ export async function addAccountWithDeposit(
         throw parseSimulationError(simErr)
       }
 
-      const tx = await ledgerContract.addAccount(user, provider, extraInfo, { value })
+      // Execute transaction on FineTuningServing contract
+      const tx = await servingContract.addAccount(user, provider, extraInfo, { value })
       console.log('[fine] addAccount:sent', tx.hash)
       const txUrl = formatTxUrl(tx.hash)
 
@@ -308,15 +392,48 @@ export async function deposit(
     try {
       console.log('[fine] deposit:start', { user, provider, value: value.toString() })
       
-      // Use Ledger contract for deposit operations
-      const ledgerContract = getLedgerContract(signer)
-      console.log('[fine] Using Ledger contract for depositFund:', ledgerContract.target || ledgerContract.address)
+      // Use FineTuningServing contract for deposit operations
+      const servingContract = getServingContract(signer)
+      console.log('[fine] Using FineTuningServing contract for depositFund:', servingContract.target || servingContract.address)
+      
+      // Pre-validation: check if provider is registered
+      try {
+        const service = await servingContract.getService(provider)
+        if (!service || !service.url || service.url.length === 0) {
+          throw new Error(`ServiceNotExist(provider=${provider})`)
+        }
+        console.log('[fine] deposit:provider-validation:ok', { 
+          provider, 
+          url: service.url, 
+          occupied: service.occupied 
+        })
+      } catch (validationErr: any) {
+        console.log('[fine] deposit:provider-validation:error', validationErr.message)
+        if (validationErr.message.includes('ServiceNotExist')) {
+          throw new Error('ProviderNotExist')
+        }
+        throw validationErr
+      }
+
+      // Pre-validation: check if account exists
+      try {
+        const accountExists = await servingContract.accountExists(user, provider)
+        if (!accountExists) {
+          console.log('[fine] deposit:account-not-exists', { user, provider })
+          throw new Error('AccountNotExists')
+        }
+      } catch (existsErr: any) {
+        if (existsErr.message.includes('AccountNotExists')) {
+          throw existsErr
+        }
+        throw existsErr
+      }
       
       try {
-        // Use direct provider estimateGas to bypass ethers issues
+        // Simulate transaction on FineTuningServing contract
         const gasEstimate = await signer.estimateGas({
-          to: ledgerContract.target || ledgerContract.address,
-          data: ledgerContract.interface.encodeFunctionData('depositFund', [user, provider, 0]),
+          to: servingContract.target || servingContract.address,
+          data: servingContract.interface.encodeFunctionData('depositFund', [user, provider, 0]),
           value: value
         })
         console.log('[fine] deposit:simulate:ok', gasEstimate.toString())
@@ -325,7 +442,8 @@ export async function deposit(
         throw parseSimulationError(simErr)
       }
 
-      const tx = await ledgerContract.depositFund(user, provider, 0, { value })
+      // Execute transaction on FineTuningServing contract
+      const tx = await servingContract.depositFund(user, provider, 0, { value })
       console.log('[fine] deposit:sent', tx.hash)
       const txUrl = formatTxUrl(tx.hash)
 
@@ -349,6 +467,9 @@ export async function deposit(
 
 export async function getBrokerOrThrow() {
   if (broker) return broker
+
+  // Log environment status on first initialization
+  logEnvironmentStatus()
 
   const rpcUrl = getRpcUrl()
   const servingAddr = SERVING_ADDR
@@ -396,6 +517,12 @@ export async function getBrokerOrThrow() {
     }
   }
 
+  console.log('[fine] Broker initialized successfully', {
+    signerAddress: broker.signerAddress,
+    servingAddress: servingAddr,
+    ledgerAddress: ledger
+  })
+
   return broker
 }
 
@@ -435,16 +562,33 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         await ensureProviderRegistered(provider, serving)
         const value = ethers.parseEther(amountEth)
         console.log('[fine] addAccount:start', { user, provider, value: value.toString() })
+        
+        // Pre-validation: check if account already exists
         try {
-          const gas = await ledger.estimateGas.addAccount(user, provider, info, { value })
+          const accountExists = await serving.accountExists(user, provider)
+          if (accountExists) {
+            console.log('[fine] addAccount:account-exists', { user, provider })
+            throw new Error('AccountExists')
+          }
+        } catch (existsErr: any) {
+          if (existsErr.message.includes('AccountExists')) {
+            throw existsErr
+          }
+          // Ignore other errors as account might not exist yet
+        }
+        
+        try {
+          const gas = await serving.estimateGas.addAccount(user, provider, info, { value })
           console.log('[fine] addAccount:simulate:ok', gas.toString())
         } catch (simErr: any) {
           throw parseSimulationError(simErr)
         }
 
-        const tx = await ledger.addAccount(user, provider, info, { value })
+        const tx = await serving.addAccount(user, provider, info, { value })
         console.log('[fine] addAccount:sent', tx.hash)
         const txUrl = formatTxUrl(tx.hash)
+        const diagnostics = generateDiagnostics('addAccount', [user, provider, info], value)
+        console.log('[fine] addAccount:diagnostics', diagnostics)
 
         signer.provider!
           .waitForTransaction(tx.hash, 1, 60000)
@@ -471,8 +615,44 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       try {
         await ensureProviderRegistered(provider, serving)
         const value = ethers.parseEther(amountEth)
-        const tx = await ledger.depositFund(user, provider, cancel, { value })
-        return await tx.wait()
+        console.log('[fine] depositFund:start', { user, provider, value: value.toString() })
+        
+        // Pre-validation: check if account exists
+        try {
+          const accountExists = await serving.accountExists(user, provider)
+          if (!accountExists) {
+            console.log('[fine] depositFund:account-not-exists', { user, provider })
+            throw new Error('AccountNotExists')
+          }
+        } catch (existsErr: any) {
+          if (existsErr.message.includes('AccountNotExists')) {
+            throw existsErr
+          }
+          throw existsErr
+        }
+        
+        try {
+          const gas = await serving.estimateGas.depositFund(user, provider, cancel, { value })
+          console.log('[fine] depositFund:simulate:ok', gas.toString())
+        } catch (simErr: any) {
+          throw parseSimulationError(simErr)
+        }
+        
+        const tx = await serving.depositFund(user, provider, cancel, { value })
+        console.log('[fine] depositFund:sent', tx.hash)
+        const txUrl = formatTxUrl(tx.hash)
+
+        signer.provider!
+          .waitForTransaction(tx.hash, 1, 60000)
+          .then((rc) => {
+            if (rc)
+              console.log('[fine] depositFund:mined', tx.hash, `${rc.status}/${rc.confirmations}`)
+            else
+              console.log('[fine] depositFund:mined:timeout')
+          })
+          .catch(() => console.log('[fine] depositFund:mined:timeout'))
+
+        return { txHash: tx.hash, txUrl, status: 'submitted' }
       } catch (e: any) {
         throw formatError(e)
       }
@@ -498,8 +678,21 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 
     requestRefundAll: async (user: string, provider: string) => {
       try {
-        const tx = await ledger.requestRefundAll(user, provider)
-        return await tx.wait()
+        const tx = await serving.requestRefundAll(user, provider)
+        console.log('[fine] requestRefundAll:sent', tx.hash)
+        const txUrl = formatTxUrl(tx.hash)
+
+        signer.provider!
+          .waitForTransaction(tx.hash, 1, 60000)
+          .then((rc) => {
+            if (rc)
+              console.log('[fine] requestRefundAll:mined', tx.hash, `${rc.status}/${rc.confirmations}`)
+            else
+              console.log('[fine] requestRefundAll:mined:timeout')
+          })
+          .catch(() => console.log('[fine] requestRefundAll:mined:timeout'))
+
+        return { txHash: tx.hash, txUrl, status: 'submitted' }
       } catch (e: any) {
         throw formatError(e)
       }

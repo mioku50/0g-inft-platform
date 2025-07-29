@@ -17,8 +17,8 @@
     "clean:web": "cd web && rm -rf .next node_modules/.cache",
     "clean:contracts": "cd contracts && rm -rf cache artifacts",
     "check:health": "curl http://localhost:3000/api/storage/health | jq",
-    "check:env": "node scripts/check-env.js"
-    ,"e2e:fine-tune": "pnpm --filter ./web run e2e:fine-tune"
+    "check:env": "node scripts/check-env.js",
+    "e2e:fine-tune": "pnpm --filter ./web run e2e:fine-tune"
   },
   "keywords": [
     "0g",
@@ -30,6 +30,6 @@
   "author": "0G INFT Team",
   "license": "MIT",
   "devDependencies": {
-    "ethers": "^6.0.0"
+    "ethers": "^6.15.0"
   }
 }

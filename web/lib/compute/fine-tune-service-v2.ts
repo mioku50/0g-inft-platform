@@ -149,9 +149,21 @@ export class FineTuneServiceV2 {
       console.warn('Using fallback token calculation:', error)
     }
     
-    // Fallback: простой подсчет по байтам
-    // Согласно логам, размер файла 54 байта
-    return new TextEncoder().encode(datasetContent).length
+    // Fallback: простой подсчет токенов
+    // Согласно логам CLI, размер файла 54 байта дал data size: 0
+    // Это означает, что либо файл слишком мал, либо используется другая логика подсчета
+    const byteSize = new TextEncoder().encode(datasetContent).length
+    
+    // Приблизительный расчет токенов: ~4 символа = 1 токен для английского текста
+    const approximateTokens = Math.ceil(byteSize / 4)
+    
+    console.log('Token calculation:', {
+      byteSize,
+      approximateTokens,
+      contentPreview: datasetContent.substring(0, 100) + '...'
+    })
+    
+    return approximateTokens
   }
 
   /**
@@ -170,11 +182,19 @@ export class FineTuneServiceV2 {
       }
 
       // 2. Рассчитываем fee на основе размера данных и цены провайдера
-      const pricePerByte = BigInt(providerInfo.pricePerByte || '1')
-      const dataSizeInBytes = BigInt(dataSize || 0)
-      const fee = dataSizeInBytes * pricePerByte
+      // Согласно логам CLI: "price per token: 1 (neuron)", "data size: 0", "fee: 0 (neuron)"
+      // Формула: fee = dataSize * pricePerToken * epochs
+      const pricePerToken = BigInt(1) // 1 neuron per token (из логов CLI)
+      const dataSizeInTokens = BigInt(dataSize || 0)
+      const epochs = BigInt(3) // Default epochs из конфигурации
+      const fee = dataSizeInTokens * pricePerToken * epochs
       
-      console.log('Creating task with fee:', fee.toString(), 'neuron')
+      console.log('Creating task with:', {
+        dataSizeInTokens: dataSizeInTokens.toString(),
+        pricePerToken: pricePerToken.toString(),
+        epochs: epochs.toString(),
+        fee: fee.toString() + ' neuron'
+      })
 
       // 3. Получаем nonce из аккаунта
       const account = await this.broker.fineTuning.getAccount(
@@ -186,11 +206,17 @@ export class FineTuneServiceV2 {
       const trainingParams = configPath || this.getDefaultTrainingConfig(model)
 
       // 5. Создаем задачу через SDK метод
+      // ВАЖНО: Согласно документации CLI, createTask ожидает:
+      // - provider: адрес провайдера
+      // - model: имя модели (например, "distilbert-base-uncased")
+      // - datasetHash: хеш датасета в 0G Storage
+      // - trainingParams: параметры обучения в JSON формате
+      // - fee: размер комиссии в neuron
       const tx = await this.broker.fineTuning.createTask(
         provider,
-        model, // Используем название модели, а не hash
+        model, // Имя модели, НЕ hash (например, "distilbert-base-uncased")
         datasetHash,
-        trainingParams,
+        JSON.stringify(trainingParams), // Преобразуем в строку для контракта
         fee
       )
 

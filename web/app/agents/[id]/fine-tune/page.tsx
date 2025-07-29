@@ -160,7 +160,8 @@ function FineTunePageContent() {
       const accountData = {
         balance: data.result?.balance || data.balance || '0',
         exists: data.result?.exists || data.exists || false,
-        needsTopUp: parseFloat(data.result?.balance || data.balance || '0') < 0.001
+        needsTopUp: parseFloat(data.result?.balance || data.balance || '0') < 0.001,
+        diagnostics: data.diagnostics // Include diagnostics if available
       }
       
       setAccountInfo(accountData)
@@ -397,6 +398,10 @@ function FineTunePageContent() {
     if (parseFloat(accountInfo.balance) === 0) return 'Created (0 OG)'
     return 'Ready'
   }
+  
+  // Extract diagnostics from accountInfo
+  const diagnostics = accountInfo && 'diagnostics' in accountInfo ? 
+    (accountInfo as any).diagnostics : null
 
   // Start fine-tuning
   const startFineTuning = async () => {
@@ -570,6 +575,24 @@ function FineTunePageContent() {
                     {getAccountStatusLabel()}
                   </Badge>
                 </div>
+                {/* Show wallet addresses for clarity */}
+                {diagnostics && diagnostics.walletAddress && (
+                  <div className="mt-2 p-2 bg-black/20 rounded text-xs space-y-1">
+                    <div className="text-gray-400">
+                      <span className="text-gray-500">Fine-Tune wallet:</span>{' '}
+                      <span className="font-mono">{diagnostics.walletAddress}</span>
+                    </div>
+                    {address && address !== diagnostics.walletAddress && (
+                      <div className="text-yellow-400">
+                        <span className="text-gray-500">Your wallet:</span>{' '}
+                        <span className="font-mono">{address}</span>
+                        <div className="text-yellow-300 mt-1">
+                          ⚠️ Different from Fine-Tune wallet
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {accountInfo.needsTopUp && (
                   <Alert className="bg-yellow-500/10 border-yellow-500/30 mt-3">
                     <AlertCircle className="h-4 w-4 text-yellow-400" />

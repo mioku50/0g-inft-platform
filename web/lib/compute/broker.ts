@@ -23,7 +23,12 @@ export const SERVING_ABI = [
 ] as const
 
 export const LEDGER_ABI = [
-  // Account management
+  // Account management - SDK compatible methods
+  'function addLedger() external',
+  'function depositFund() external payable',
+  'function getLedger(address user) external view returns (tuple(address user, uint256 amount, uint256 lastUpdated))',
+  
+  // Legacy methods for backward compatibility
   'function addAccount(address user, address provider, string memory additionalInfo) external payable',
   'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) external payable',
   'function requestRefundAll(address user, address provider) external',

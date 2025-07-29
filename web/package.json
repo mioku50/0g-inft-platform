@@ -40,6 +40,7 @@
     "lucide-react": "^0.290.0",
     "next": "14.0.0",
     "node-cache": "^5.1.2",
+    "node-fetch": "^2.7.0",
     "openai": "^4.0.0",
     "p-limit": "^4.0.0",
     "process": "^0.11.10",

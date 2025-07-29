@@ -9,7 +9,7 @@ importers:
   .:
     devDependencies:
       ethers:
-        specifier: ^6.0.0
+        specifier: ^6.15.0
         version: 6.15.0
 
 packages:

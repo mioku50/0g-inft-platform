@@ -18,6 +18,7 @@ import {
   Alert,
   AlertDescription
 } from '@/components/ui'
+import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { toast } from '@/components/ui/use-toast'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 import { 
@@ -32,7 +33,8 @@ import {
   Download,
   Activity,
   Wallet,
-  Plus
+  Plus,
+  RefreshCw
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -42,7 +44,13 @@ interface AccountInfo {
   needsTopUp: boolean
 }
 
-export default function FineTunePage() {
+interface APIError {
+  error: string
+  details?: string
+  diagnostics?: any
+}
+
+function FineTunePageContent() {
   const params = useParams()
   const router = useRouter()
   const { address } = useAccount()
@@ -72,16 +80,19 @@ export default function FineTunePage() {
   const [backendError, setBackendError] = useState<string | null>(null)
   const [txUrl, setTxUrl] = useState<string | null>(null)
   const [txStatus, setTxStatus] = useState<string | null>(null)
+  const [lastApiError, setLastApiError] = useState<APIError | null>(null)
 
   // Load cached dataset info
   useEffect(() => {
-    const cached = localStorage.getItem(`ds-${tokenId}`)
-    if (cached) {
-      try {
+    try {
+      const cached = localStorage.getItem(`ds-${tokenId}`)
+      if (cached) {
         const { root, size } = JSON.parse(cached)
         setDatasetRoot(root)
         setDataSize(size)
-      } catch {}
+      }
+    } catch (error) {
+      console.warn('Failed to load cached dataset info:', error)
     }
   }, [tokenId])
 
@@ -92,46 +103,88 @@ export default function FineTunePage() {
     }
   }, [address])
 
+  const parseAPIError = (response: Response, data: any): APIError => {
+    const apiError: APIError = {
+      error: data.error || 'Unknown error',
+      details: data.details,
+      diagnostics: data.diagnostics
+    }
+
+    // Log diagnostic information
+    if (apiError.diagnostics) {
+      console.log('[fine-tune] API Error Diagnostics:', apiError.diagnostics)
+    }
+
+    return apiError
+  }
+
   const checkAccountStatus = async (silent = false) => {
     try {
       setIsCheckingAccount(true)
+      setLastApiError(null)
       console.log('GET /api/compute/account')
+      
       const response = await fetch('/api/compute/account')
       const data = await response.json().catch(() => ({}))
+      
       if (response.status === 503) {
+        const error = parseAPIError(response, data)
         setBackendError('Backend misconfigured')
+        setLastApiError(error)
         setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
         return null
       }
+      
       if (!response.ok) {
+        const error = parseAPIError(response, data)
+        setLastApiError(error)
+        
         if (!silent) {
           toast({
             variant: 'destructive',
-            description: data.details || data.error || 'Failed to fetch account info',
+            title: 'Account Check Failed',
+            description: error.details || error.error || 'Failed to fetch account info',
             action: (
-              <Button variant="outline" onClick={() => checkAccountStatus()}>Повторить</Button>
+              <Button variant="outline" onClick={() => checkAccountStatus()}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Retry
+              </Button>
             )
           })
         }
         setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
         return null
       }
+      
       console.log('GET /api/compute/account result', data)
-      setAccountInfo({
-        balance: data.balance,
-        exists: data.exists,
-        needsTopUp: parseFloat(data.balance) < 0.001
-      })
+      const accountData = {
+        balance: data.result?.balance || data.balance || '0',
+        exists: data.result?.exists || data.exists || false,
+        needsTopUp: parseFloat(data.result?.balance || data.balance || '0') < 0.001
+      }
+      
+      setAccountInfo(accountData)
       setBackendError(null)
-      return { balance: data.balance, exists: data.exists, needsTopUp: parseFloat(data.balance) < 0.001 }
+      setLastApiError(null)
+      return accountData
     } catch (error: any) {
       console.error('Error checking account:', error)
+      const apiError: APIError = {
+        error: 'NetworkError',
+        details: error.message || 'Network connection failed'
+      }
+      setLastApiError(apiError)
+      
       if (!silent) {
         toast({
           variant: 'destructive',
-          description: error.details || error.message || 'Failed to fetch account info',
+          title: 'Network Error',
+          description: 'Failed to connect to the server. Please check your connection.',
           action: (
-            <Button variant="outline" onClick={() => checkAccountStatus()}>Повторить</Button>
+            <Button variant="outline" onClick={() => checkAccountStatus()}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Retry
+            </Button>
           )
         })
       }
@@ -168,6 +221,7 @@ export default function FineTunePage() {
     setBackendError(null)
     setTxUrl(null)
     setTxStatus(null)
+    setLastApiError(null)
 
     try {
       console.log('Creating account with deposit:', depositAmount)
@@ -184,7 +238,7 @@ export default function FineTunePage() {
       console.log('Account API response:', data)
 
       if (response.ok && data.success) {
-        setTxUrl(data.txUrl)
+        setTxUrl(data.explorerUrl || data.txUrl)
         setTxStatus('submitted')
         
         toast({
@@ -198,15 +252,20 @@ export default function FineTunePage() {
             const balanceResponse = await fetch('/api/compute/account')
             const balanceData = await balanceResponse.json()
             
-            if (balanceResponse.ok && balanceData.result) {
-              setAccountInfo(balanceData.result)
+            if (balanceResponse.ok && (balanceData.result || balanceData)) {
+              const result = balanceData.result || balanceData
+              setAccountInfo({
+                balance: result.balance,
+                exists: result.exists,
+                needsTopUp: parseFloat(result.balance) < 0.001
+              })
               
-              if (parseFloat(balanceData.result.balance) > 0) {
+              if (parseFloat(result.balance) > 0) {
                 setTxStatus('completed')
                 clearInterval(pollInterval)
                 toast({
                   title: "Success!",
-                  description: `Account funded with ${balanceData.result.balance} OG`,
+                  description: `Account funded with ${result.balance} OG`,
                 })
               }
             }
@@ -225,15 +284,19 @@ export default function FineTunePage() {
 
       } else {
         console.error('Account API error:', data)
-        let errorMessage = data.error || 'Unknown error occurred'
+        const apiError = parseAPIError(response, data)
+        setLastApiError(apiError)
         
-        if (data.error === 'Contract validation failed') {
+        let errorMessage = apiError.details || apiError.error || 'Unknown error occurred'
+        
+        // Enhanced error message mapping
+        if (apiError.error === 'ContractValidationFailed') {
           errorMessage = 'The contract rejected the transaction. This might be due to provider configuration issues. Please try again later or contact support.'
-        } else if (data.error === 'ProviderNotRegistered') {
+        } else if (apiError.error === 'ProviderNotRegistered') {
           errorMessage = 'The fine-tuning provider is not properly registered. Please contact support.'
-        } else if (data.error === 'AccountExists') {
+        } else if (apiError.error === 'AccountExists') {
           errorMessage = 'Account already exists. Try using the deposit action instead.'
-        } else if (data.error === 'InsufficientBalance') {
+        } else if (apiError.error === 'InsufficientBalance') {
           errorMessage = 'Insufficient wallet balance for this transaction.'
         }
         
@@ -245,9 +308,14 @@ export default function FineTunePage() {
           variant: "destructive",
         })
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Create account error:', error)
       const errorMessage = 'Network error occurred. Please check your connection and try again.'
+      const apiError: APIError = {
+        error: 'NetworkError',
+        details: errorMessage
+      }
+      setLastApiError(apiError)
       setBackendError(errorMessage)
       
       toast({
@@ -432,6 +500,35 @@ export default function FineTunePage() {
     }, 2 * 60 * 60 * 1000)
   }
 
+  // Render diagnostic information
+  const renderDiagnosticInfo = () => {
+    if (!lastApiError) return null
+
+    return (
+      <Alert className="bg-orange-500/10 border-orange-500/30 mt-4">
+        <AlertCircle className="h-4 w-4 text-orange-400" />
+        <AlertDescription className="text-orange-200">
+          <div className="space-y-2">
+            <div><strong>Error:</strong> {lastApiError.error}</div>
+            {lastApiError.details && (
+              <div><strong>Details:</strong> {lastApiError.details}</div>
+            )}
+            {lastApiError.diagnostics && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-orange-300">
+                  Diagnostic Information
+                </summary>
+                <pre className="text-xs mt-1 bg-black/20 p-2 rounded overflow-auto">
+                  {JSON.stringify(lastApiError.diagnostics, null, 2)}
+                </pre>
+              </details>
+            )}
+          </div>
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
   // Render account setup section
   const renderAccountSetup = () => (
     <Card className="bg-white/10 backdrop-blur-xl border-white/20 mb-6">
@@ -514,17 +611,20 @@ export default function FineTunePage() {
                   )}
                 </Button>
                 {txUrl && (
-                  <p className="text-center text-sm text-purple-200 mt-2">
-                    <a href={txUrl} target="_blank" rel="noreferrer" className="underline">
+                  <div className="text-center text-sm text-purple-200 mt-2">
+                    <a href={txUrl} target="_blank" rel="noreferrer" className="underline hover:text-purple-100">
                       View on Explorer
                     </a>
                     {txStatus && txStatus === 'submitted' && (
                       <span className="ml-2 text-purple-300">({txStatus})</span>
                     )}
-                  </p>
+                  </div>
                 )}
               </div>
             )}
+            
+            {/* Diagnostic information */}
+            {renderDiagnosticInfo()}
           </div>
         )}
       </div>
@@ -815,5 +915,13 @@ export default function FineTunePage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function FineTunePage() {
+  return (
+    <ErrorBoundary>
+      <FineTunePageContent />
+    </ErrorBoundary>
   )
 }

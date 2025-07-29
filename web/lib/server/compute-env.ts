@@ -41,21 +41,83 @@ export function getComputeInferenceContract(): string {
   )
 }
 
-export function validateComputeEnvironment(): { isValid: boolean; errors: string[] } {
+export function validateComputeEnvironment(): { isValid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = []
+  const warnings: string[] = []
+  
+  // Required environment variables
   const rpcUrl = process.env.OG_RPC_URL || process.env.NEXT_PUBLIC_0G_RPC_URL
-  if (!rpcUrl) errors.push('Missing OG_RPC_URL or NEXT_PUBLIC_0G_RPC_URL')
+  if (!rpcUrl) {
+    errors.push('Missing OG_RPC_URL or NEXT_PUBLIC_0G_RPC_URL')
+  } else if (!rpcUrl.startsWith('http')) {
+    errors.push('RPC_URL must be a valid HTTP/HTTPS URL')
+  }
 
   const serving = process.env.FINE_TUNING_SERVING_ADDRESS || process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS
-  if (!serving) errors.push('Missing FINE_TUNING_SERVING_ADDRESS')
+  if (!serving) {
+    errors.push('Missing FINE_TUNING_SERVING_ADDRESS')
+  } else if (!/^0x[a-fA-F0-9]{40}$/.test(serving)) {
+    errors.push('FINE_TUNING_SERVING_ADDRESS must be a valid Ethereum address')
+  }
 
   const provider = process.env.FINE_TUNE_PROVIDER || process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER
-  if (!provider) errors.push('Missing FINE_TUNE_PROVIDER')
+  if (!provider) {
+    errors.push('Missing FINE_TUNE_PROVIDER')
+  } else if (!/^0x[a-fA-F0-9]{40}$/.test(provider)) {
+    errors.push('FINE_TUNE_PROVIDER must be a valid Ethereum address')
+  }
 
+  const ledger = getComputeLedgerContract()
+  if (!/^0x[a-fA-F0-9]{40}$/.test(ledger)) {
+    errors.push('COMPUTE_LEDGER_CONTRACT must be a valid Ethereum address')
+  }
+
+  const inference = getComputeInferenceContract()
+  if (!/^0x[a-fA-F0-9]{40}$/.test(inference)) {
+    errors.push('COMPUTE_INFERENCE_CONTRACT must be a valid Ethereum address')
+  }
+
+  // Private key validation
   const pk = process.env.OG_COMPUTE_PRIVATE_KEY
-  if (pk && !/^(0x)?[a-fA-F0-9]{64}$/.test(pk)) errors.push('OG_COMPUTE_PRIVATE_KEY must be 64 hex chars')
+  if (!pk) {
+    warnings.push('OG_COMPUTE_PRIVATE_KEY not set - some operations will fail')
+  } else if (!/^(0x)?[a-fA-F0-9]{64}$/.test(pk)) {
+    errors.push('OG_COMPUTE_PRIVATE_KEY must be 64 hex characters')
+  }
 
-  return { isValid: errors.length === 0, errors }
+  // Feature flags
+  const useLedger = process.env.FINE_TUNE_USE_LEDGER === 'true'
+  if (useLedger) {
+    warnings.push('FINE_TUNE_USE_LEDGER=true - using legacy Ledger contract (not recommended)')
+  }
+
+  return { isValid: errors.length === 0, errors, warnings }
+}
+
+export function logEnvironmentStatus(): void {
+  const validation = validateComputeEnvironment()
+  const rpcUrl = getRpcUrl()
+  const chainId = rpcUrl.includes('galileo') ? 'galileo-testnet' : 'unknown'
+  
+  console.log('[compute-env] Environment validation:', {
+    isValid: validation.isValid,
+    chainId,
+    contracts: {
+      serving: process.env.FINE_TUNING_SERVING_ADDRESS || process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS,
+      ledger: getComputeLedgerContract(),
+      inference: getComputeInferenceContract()
+    },
+    provider: process.env.FINE_TUNE_PROVIDER || process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER,
+    hasPrivateKey: !!process.env.OG_COMPUTE_PRIVATE_KEY
+  })
+
+  if (validation.errors.length > 0) {
+    console.error('[compute-env] Environment errors:', validation.errors)
+  }
+  
+  if (validation.warnings.length > 0) {
+    console.warn('[compute-env] Environment warnings:', validation.warnings)
+  }
 }
 
 export async function validateRPCConnection(): Promise<{ isValid: boolean; error?: string; chainId?: number }> {

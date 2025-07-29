@@ -347,16 +347,38 @@ export async function addAccountWithDeposit(
         // Ignore other errors as account might not exist yet
       }
 
-      // IMPORTANT: Check if we're using the correct Ledger
-      // The current Ledger (0x1a85Dd32...) appears to be incompatible with FineTuningServing
+      // SAFETY FLAG: Test Ledger compatibility before sending transaction
       const ledgerAddress = getComputeLedgerContract()
-      if (ledgerAddress && ledgerAddress.toLowerCase() === '0x1a85dd32da10c170f4f138d082ddc496ab3e5baa') {
-        console.log('[fine] addAccount:ledger-compatibility-warning')
-        throw new Error(
-          'Configuration Issue: The current Ledger contract appears to be incompatible with FineTuningServing. ' +
-          'Fine-tuning functionality requires a specific Ledger contract that can forward calls to FineTuningServing. ' +
-          'Please contact support for the correct Ledger address.'
-        )
+      console.log('[fine] addAccount:safety-check', { ledgerAddress })
+      
+      try {
+        // Create a temporary Ledger contract instance for testing
+        const ledgerContract = getLedgerContract(signer)
+        
+        // Perform callStatic test to check if the method exists and works
+        console.log('[fine] addAccount:testing-callStatic')
+        await ledgerContract.addAccount.staticCall(user, provider, extraInfo, { value })
+        console.log('[fine] addAccount:callStatic-success')
+        
+      } catch (staticError: any) {
+        const errorMsg = staticError?.message || staticError?.toString() || 'Unknown error'
+        console.log('[fine] addAccount:callStatic-failed', errorMsg)
+        
+        // Check for specific error patterns that indicate incompatible contract
+        if (
+          errorMsg.includes('revert') && !staticError?.data ||
+          staticError?.data === '0x' ||
+          errorMsg.includes('require(false)') ||
+          errorMsg.includes('function does not exist')
+        ) {
+          throw new Error(
+            `Контракт Ledger по адресу ${ledgerAddress} не поддерживает операции fine-tune (несоответствие версии/ABI). ` +
+            'Уточните корректный Ledger у провайдера.'
+          )
+        }
+        
+        // If it's a different error, continue with the transaction (might be validation that requires actual execution)
+        console.log('[fine] addAccount:callStatic-failed-but-continuing', 'Error might be validation-related')
       }
 
       // Use SDK broker to handle the complex flow

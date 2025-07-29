@@ -1,3 +1,173 @@
+0G Compute SDK
+The 0G Compute Network SDK enables developers to integrate AI inference services from the 0G Compute Network into their applications. Currently, the 0G Compute Network SDK supports Large Language Model (LLM) inference services, with fine-tuning and additional features planned for future releases.
+
+In just five minutes, you can initialize your broker to manage operations, set up and fund your account to pay for inference services, and learn how to send inference requests and handle responses.
+
+Quick Start
+Installation
+pnpm add @0glabs/0g-serving-broker @types/crypto-js@4.2.2 crypto-js@4.2.0
+
+Core Concepts
+1. The Broker
+Your interface to the 0G Compute Network:
+
+Handles authentication and billing
+Manages provider connections
+Verifies computations
+2. Providers
+GPU owners offering AI services:
+
+Each has a unique address
+Set their own prices
+Run specific models
+3. Prepaid Accounts
+Fund account before usage
+Automatic micropayments
+No surprise bills
+Step-by-Step Guide
+Initialize the Broker
+Using Private Key
+Browser Wallet
+import { ethers } from "ethers";
+import { createZGComputeNetworkBroker } from "@0glabs/0g-serving-broker";
+
+const provider = new ethers.JsonRpcProvider("https://evmrpc-testnet.0g.ai");
+const wallet = new ethers.Wallet(process.env.PRIVATE_KEY!, provider);
+const broker = await createZGComputeNetworkBroker(wallet);
+
+Fund Your Account
+// Add 0.1 OG tokens (~10,000 requests)
+await broker.ledger.addLedger(ethers.parseEther("0.1"));
+
+// Check balance
+const account = await broker.ledger.getLedger();
+console.log(`Balance: ${ethers.formatEther(account.balance)} OG`);
+
+Discover Available Services
+The 0G Compute Network hosts multiple AI service providers. The service discovery process helps you find and select the appropriate services for your needs.
+
+🎯 Official 0G Services
+Model	Provider Address	Description	Verification
+llama-3.3-70b-instruct	0xf07240Efa67755B5311bc75784a061eDB47165Dd	State-of-the-art 70B parameter model for general AI tasks	TEE (TeeML)
+deepseek-r1-70b	0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3	Advanced reasoning model optimized for complex problem solving	TEE (TeeML)
+const services = await broker.inference.listService();
+
+Each service contains the following information:
+
+type ServiceStructOutput = {
+  provider: string; // Provider's wallet address (unique identifier)
+  serviceType: string; // Type of service
+  url: string; // Service URL
+  inputPrice: bigint; // Price for input processing
+  outputPrice: bigint; // Price for output generation
+  updatedAt: bigint; // Last update timestamp
+  model: string; // Model identifier
+  verifiability: string; // Indicates how the service's outputs can be verified. 'TeeML' means it runs with verification in a Trusted Execution Environment. An empty value means no verification.
+};
+
+
+Acknowledge Provider
+Before using a service provided by a provider, you must first acknowledge the provider on-chain by following API:
+
+await broker.inference.acknowledgeProviderSigner(providerAddress)
+
+The providerAddress can be obtained from from service metadata. For details on how to retrieve it, see Discover Available Services
+
+Service Requests
+Service usage in the 0G Network involves two key steps:
+
+Retrieving service metadata
+Generating authenticated request headers
+  
+  // Get service details
+  const { endpoint, model } = await broker.inference.getServiceMetadata(provider);
+  
+  // Generate auth headers (single use)
+  const headers = await broker.inference.getRequestHeaders(provider, question);
+  
+
+Send a Request to the Service
+Using Fetch API
+Using OpenAI SDK
+const response = await fetch(`${endpoint}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify({
+      messages: [{ role: "user", content: question }],
+      model: model,
+    }),
+  });
+  
+const data = await response.json();
+const answer = data.choices[0].message.content;
+
+
+Response Processing
+This function is used to verify the response. If it is a verifiable service, it will return whether the response is valid.
+
+const valid = await broker.inference.processResponse(
+  providerAddress,
+  content,
+  chatID // Optional: Only for verifiable services
+);
+
+Fee Settlement
+Fee settlement by the broker service occurs at scheduled intervals.
+
+Account Management
+Check Balance
+const ledger = await broker.ledger.getLedger();
+console.log(`
+  Balance: ${ethers.formatEther(ledger.balance)} OG
+  Locked: ${ethers.formatEther(ledger.locked)} OG
+  Available: ${ethers.formatEther(ledger.balance - ledger.locked)} OG
+`);
+
+Add Funds
+// Add more funds
+await broker.ledger.depositFund(ethers.parseEther("0.5"));
+
+Request Refund
+// Withdraw unused funds
+const amount = ethers.parseEther("0.1");
+await broker.ledger.retrieveFund("inference", amount);
+
+Troubleshooting
+Common Issues
+Error: Insufficient balance
+Your account doesn't have enough funds. Add more:
+
+await broker.ledger.addLedger(ethers.parseEther("0.1"));
+
+Error: Headers already used
+Request headers are single-use. Generate new ones for each request:
+
+// ❌ Wrong
+const headers = await broker.inference.getRequestHeaders(provider, content);
+await makeRequest(headers);
+await makeRequest(headers); // Will fail!
+
+// ✅ Correct
+const headers1 = await broker.inference.getRequestHeaders(provider, content);
+await makeRequest(headers1);
+const headers2 = await broker.inference.getRequestHeaders(provider, content);
+await makeRequest(headers2);
+
+Error: Provider not responding
+The provider might be offline. Try another:
+
+// Try all official providers
+for (const [model, provider] of Object.entries(OFFICIAL_PROVIDERS)) {
+  try {
+    console.log(`Trying ${model}...`);
+    return await makeRequestToProvider(provider);
+  } catch (e) {
+    console.log(`${model} failed, trying next...`);
+    continue; // Try next provider
+  }
+}
+
+Next Steps
 Fine-tuning CLI
 Customize AI models with your own data using 0G's distributed GPU network.
 

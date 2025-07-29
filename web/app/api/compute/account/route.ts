@@ -58,8 +58,14 @@ export async function GET() {
     try {
       const ledgerInfo = await broker.ledger.getLedger()
       exists = true
-      balance = formatEther(ledgerInfo[0])
-      locked = formatEther(ledgerInfo[1])
+      // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
+      if (ledgerInfo.ledgerInfo) {
+        balance = formatEther(ledgerInfo.ledgerInfo[0])
+        locked = formatEther(ledgerInfo.ledgerInfo[1])
+      } else {
+        balance = formatEther(ledgerInfo[0])
+        locked = formatEther(ledgerInfo[1])
+      }
       console.log('[fine] Ledger account found:', { balance, locked })
     } catch (error) {
       console.log('[fine] No ledger account found')
@@ -140,11 +146,20 @@ export async function POST(req: NextRequest) {
     try {
       const ledgerInfo = await broker.ledger.getLedger()
       hasLedgerAccount = true
-      currentBalance = formatEther(ledgerInfo[0])
-      console.log('[fine] Existing ledger account found:', {
-        balance: currentBalance,
-        locked: formatEther(ledgerInfo[1])
-      })
+      // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
+      if (ledgerInfo.ledgerInfo) {
+        currentBalance = formatEther(ledgerInfo.ledgerInfo[0])
+        console.log('[fine] Existing ledger account found:', {
+          balance: currentBalance,
+          locked: formatEther(ledgerInfo.ledgerInfo[1])
+        })
+      } else {
+        currentBalance = formatEther(ledgerInfo[0])
+        console.log('[fine] Existing ledger account found:', {
+          balance: currentBalance,
+          locked: formatEther(ledgerInfo[1])
+        })
+      }
     } catch (error) {
       console.log('[fine] No ledger account found')
     }
@@ -191,7 +206,13 @@ export async function POST(req: NextRequest) {
 
     // Verify the operation by checking new balance
     const newLedgerInfo = await broker.ledger.getLedger()
-    const newBalance = formatEther(newLedgerInfo[0])
+    let newBalance: string
+    // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
+    if (newLedgerInfo.ledgerInfo) {
+      newBalance = formatEther(newLedgerInfo.ledgerInfo[0])
+    } else {
+      newBalance = formatEther(newLedgerInfo[0])
+    }
     console.log(`[fine] ${action}Ledger:success`, { 
       newBalance,
       previousBalance: currentBalance,

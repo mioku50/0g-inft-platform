@@ -28,6 +28,11 @@ const SERVING_ABI = [
   'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) payable'
 ]
 
+const LEDGER_ABI = [
+  'function addAccount(address user, address provider, string memory additionalInfo) external payable',
+  'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) external payable'
+]
+
 class FineTuneFlowTester {
   constructor() {
     this.config = this.loadConfig()
@@ -189,11 +194,12 @@ class FineTuneFlowTester {
     console.log('=' .repeat(50))
 
     try {
-      const servingContract = new ethers.Contract(this.config.servingAddress, SERVING_ABI, this.provider)
+      // Use Ledger contract, not Serving directly
+      const ledgerContract = new ethers.Contract(this.config.ledgerAddress, LEDGER_ABI, this.provider)
       const value = ethers.parseEther(amount.toString())
 
-      // Estimate gas
-      const gasEstimate = await servingContract.addAccount.estimateGas(
+      // Estimate gas for Ledger.addAccount
+      const gasEstimate = await ledgerContract.addAccount.estimateGas(
         userAddress,
         this.config.providerAddress,
         'INFT Platform User Test',
@@ -203,6 +209,7 @@ class FineTuneFlowTester {
       console.log(`✅ Gas Estimate: ${gasEstimate.toString()}`)
       console.log(`💰 Value: ${amount} OG`)
       console.log(`📝 Additional Info: INFT Platform User Test`)
+      console.log(`📄 Calling via Ledger contract: ${this.config.ledgerAddress}`)
       
       // Get current gas price
       const feeData = await this.provider.getFeeData()

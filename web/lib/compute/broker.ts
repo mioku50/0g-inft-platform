@@ -304,16 +304,17 @@ export async function addAccountWithDeposit(
     try {
       console.log('[fine] addAccount:start', { user, provider, value: value.toString() })
       
-      // Use Ledger contract for account operations (it will call FineTuningServing internally)
-      const ledgerContract = getLedgerContract(signer)
-      console.log('[fine] Using Ledger contract for addAccount:', ledgerContract.target || ledgerContract.address)
-      
-      // Get Serving contract for validation checks
-      const servingContract = getServingContract(signer)
+      // Get broker instance to use SDK methods
+      const broker = await getBroker()
+      if (!broker || !broker.fineTuning) {
+        throw new Error('Broker not available or fineTuning module missing')
+      }
       
       // Pre-validation: check if provider is registered
+      const servingContract = getServingContract(signer)
+      let service: any
       try {
-        const service = await servingContract.getService(provider)
+        service = await servingContract.getService(provider)
         if (!service || !service.url || service.url.length === 0) {
           throw new Error(`ServiceNotExist(provider=${provider})`)
         }
@@ -321,7 +322,8 @@ export async function addAccountWithDeposit(
           provider, 
           url: service.url, 
           occupied: service.occupied,
-          models: service.models?.length || 0
+          models: service.models?.length || 0,
+          providerSigner: service.providerSigner
         })
       } catch (validationErr: any) {
         console.log('[fine] addAccount:provider-validation:error', validationErr.message)
@@ -345,35 +347,85 @@ export async function addAccountWithDeposit(
         // Ignore other errors as account might not exist yet
       }
 
-      try {
-        // Simulate transaction on Ledger contract
-        const gasEstimate = await signer.estimateGas({
-          to: ledgerContract.target || ledgerContract.address,
-          data: ledgerContract.interface.encodeFunctionData('addAccount', [user, provider, extraInfo]),
-          value: value
-        })
-        console.log('[fine] addAccount:simulate:ok', gasEstimate.toString())
-      } catch (simErr: any) {
-        console.log('[fine] addAccount:simulate:error', simErr.message)
-        throw parseSimulationError(simErr)
+      // IMPORTANT: Check if we're using the correct Ledger
+      // The current Ledger (0x1a85Dd32...) appears to be incompatible with FineTuningServing
+      const ledgerAddress = getComputeLedgerContract()
+      if (ledgerAddress && ledgerAddress.toLowerCase() === '0x1a85dd32da10c170f4f138d082ddc496ab3e5baa') {
+        console.log('[fine] addAccount:ledger-compatibility-warning')
+        throw new Error(
+          'Configuration Issue: The current Ledger contract appears to be incompatible with FineTuningServing. ' +
+          'Fine-tuning functionality requires a specific Ledger contract that can forward calls to FineTuningServing. ' +
+          'Please contact support for the correct Ledger address.'
+        )
       }
 
-      // Execute transaction on Ledger contract
-      const tx = await ledgerContract.addAccount(user, provider, extraInfo, { value })
-      console.log('[fine] addAccount:sent', tx.hash)
-      const txUrl = formatTxUrl(tx.hash)
+      // Use SDK broker to handle the complex flow
+      try {
+        console.log('[fine] addAccount:using-sdk-broker')
+        
+        // The SDK broker handles all the complexity internally
+        const tx = await broker.fineTuning.addAccount(
+          user,
+          provider,
+          extraInfo,
+          { value }
+        )
+        
+        console.log('[fine] addAccount:sent', tx.hash)
+        const txUrl = formatTxUrl(tx.hash)
 
-      signer.provider!
-        .waitForTransaction(tx.hash, 1, 60000)
-        .then((rc) => {
-          if (rc)
-            console.log('[fine] addAccount:mined', tx.hash, `${rc.status}/${rc.confirmations}`)
-          else
-            console.log('[fine] addAccount:mined:timeout')
-        })
-        .catch(() => console.log('[fine] addAccount:mined:timeout'))
+        signer.provider!
+          .waitForTransaction(tx.hash, 1, 60000)
+          .then((rc) => {
+            if (rc)
+              console.log('[fine] addAccount:mined', tx.hash, `${rc.status}/${rc.confirmations}`)
+            else
+              console.log('[fine] addAccount:mined:timeout')
+          })
+          .catch(() => console.log('[fine] addAccount:mined:timeout'))
 
-      return { txHash: tx.hash, txUrl, status: 'submitted' }
+        return { txHash: tx.hash, txUrl, status: 'submitted' }
+      } catch (sdkErr: any) {
+        console.log('[fine] addAccount:sdk-error', sdkErr.message)
+        
+        // If SDK also fails, try our fallback approach with acknowledgeProviderSigner first
+        if (service.providerSigner && service.providerSigner !== ethers.ZeroAddress) {
+          try {
+            console.log('[fine] addAccount:trying-acknowledge-first')
+            
+            // Acknowledge provider signer first
+            const ackTx = await servingContract.acknowledgeProviderSigner(provider, service.providerSigner)
+            console.log('[fine] addAccount:acknowledge-sent', ackTx.hash)
+            await ackTx.wait()
+            
+            // Try SDK again after acknowledgment
+            const tx = await broker.fineTuning.addAccount(
+              user,
+              provider,
+              extraInfo,
+              { value }
+            )
+            
+            console.log('[fine] addAccount:retry-sent', tx.hash)
+            const txUrl = formatTxUrl(tx.hash)
+
+            signer.provider!
+              .waitForTransaction(tx.hash, 1, 60000)
+              .then((rc) => {
+                if (rc)
+                  console.log('[fine] addAccount:retry-mined', tx.hash, `${rc.status}/${rc.confirmations}`)
+              })
+              .catch(() => console.log('[fine] addAccount:retry-mined:timeout'))
+
+            return { txHash: tx.hash, txUrl, status: 'submitted' }
+          } catch (retryErr: any) {
+            console.log('[fine] addAccount:retry-error', retryErr.message)
+            throw parseSimulationError(retryErr)
+          }
+        }
+        
+        throw parseSimulationError(sdkErr)
+      }
     } catch (e: any) {
       console.log('[fine] addAccount:error', e.message, e.stack)
       throw formatError(e)

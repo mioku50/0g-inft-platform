@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { formatEther } from 'ethers'
+import { formatEther, parseEther } from 'ethers'
 import { getBroker, getLedgerContract, getServingContract, addAccountWithDeposit, deposit } from '@/lib/compute/broker'
 import { validateComputeEnvironment } from '@/lib/server/compute-env'
 
@@ -58,11 +58,23 @@ export async function GET() {
     try {
       const ledgerInfo = await broker.ledger.getLedger()
       exists = true
-      // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
-      if (ledgerInfo.ledgerInfo) {
+      if (ledgerInfo.balance !== undefined) {
+        balance = typeof ledgerInfo.balance === 'bigint' ? formatEther(ledgerInfo.balance) : formatEther(BigInt(ledgerInfo.balance))
+        // Some ledger implementations expose locked as "locked" or "lockedBalance"
+        if (ledgerInfo.locked !== undefined) {
+          locked = typeof ledgerInfo.locked === 'bigint' ? formatEther(ledgerInfo.locked) : formatEther(BigInt(ledgerInfo.locked))
+        } else if (ledgerInfo.lockedBalance !== undefined) {
+          locked = typeof ledgerInfo.lockedBalance === 'bigint' ? formatEther(ledgerInfo.lockedBalance) : formatEther(BigInt(ledgerInfo.lockedBalance))
+        }
+      } else if (ledgerInfo.AvailableBalance !== undefined) {
+        // Fallback for LedgerManager struct { AvailableBalance, TotalBalance }
+        balance = typeof ledgerInfo.AvailableBalance === 'bigint' ? formatEther(ledgerInfo.AvailableBalance) : formatEther(BigInt(ledgerInfo.AvailableBalance))
+        locked = typeof ledgerInfo.TotalBalance === 'bigint' ? formatEther(BigInt(ledgerInfo.TotalBalance) - BigInt(ledgerInfo.AvailableBalance)) : '0'
+      } else if (ledgerInfo.ledgerInfo) {
+        // Legacy SDK shape with nested array
         balance = formatEther(ledgerInfo.ledgerInfo[0])
         locked = formatEther(ledgerInfo.ledgerInfo[1])
-      } else {
+      } else if (Array.isArray(ledgerInfo)) {
         balance = formatEther(ledgerInfo[0])
         locked = formatEther(ledgerInfo[1])
       }
@@ -146,19 +158,14 @@ export async function POST(req: NextRequest) {
     try {
       const ledgerInfo = await broker.ledger.getLedger()
       hasLedgerAccount = true
-      // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
-      if (ledgerInfo.ledgerInfo) {
+      if (ledgerInfo.balance !== undefined) {
+        currentBalance = typeof ledgerInfo.balance === 'bigint' ? formatEther(ledgerInfo.balance) : formatEther(BigInt(ledgerInfo.balance))
+      } else if (ledgerInfo.AvailableBalance !== undefined) {
+        currentBalance = typeof ledgerInfo.AvailableBalance === 'bigint' ? formatEther(ledgerInfo.AvailableBalance) : formatEther(BigInt(ledgerInfo.AvailableBalance))
+      } else if (ledgerInfo.ledgerInfo) {
         currentBalance = formatEther(ledgerInfo.ledgerInfo[0])
-        console.log('[fine] Existing ledger account found:', {
-          balance: currentBalance,
-          locked: formatEther(ledgerInfo.ledgerInfo[1])
-        })
-      } else {
+      } else if (Array.isArray(ledgerInfo)) {
         currentBalance = formatEther(ledgerInfo[0])
-        console.log('[fine] Existing ledger account found:', {
-          balance: currentBalance,
-          locked: formatEther(ledgerInfo[1])
-        })
       }
     } catch (error) {
       console.log('[fine] No ledger account found')
@@ -190,28 +197,33 @@ export async function POST(req: NextRequest) {
 
     // Execute transaction using SDK ledger methods
     let result: any
-    const amountOG = parseFloat(amount) // SDK expects number in OG, not BigInt in wei
+    const amountWei = parseEther(String(amount))
     
     if (action === 'create') {
       // Create new ledger account
       console.log('[fine] Creating new ledger account...')
-      await broker.ledger.addLedger(amountOG)
+      await broker.ledger.addLedger(amountWei)
       result = { status: 'completed' }
     } else {
       // Deposit to existing ledger account
       console.log('[fine] Depositing to existing ledger account...')
-      await broker.ledger.depositFund(amountOG)
+      await broker.ledger.depositFund(amountWei)
       result = { status: 'completed' }
     }
 
     // Verify the operation by checking new balance
     const newLedgerInfo = await broker.ledger.getLedger()
     let newBalance: string
-    // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
-    if (newLedgerInfo.ledgerInfo) {
+    if (newLedgerInfo.balance !== undefined) {
+      newBalance = typeof newLedgerInfo.balance === 'bigint' ? formatEther(newLedgerInfo.balance) : formatEther(BigInt(newLedgerInfo.balance))
+    } else if (newLedgerInfo.AvailableBalance !== undefined) {
+      newBalance = typeof newLedgerInfo.AvailableBalance === 'bigint' ? formatEther(newLedgerInfo.AvailableBalance) : formatEther(BigInt(newLedgerInfo.AvailableBalance))
+    } else if (newLedgerInfo.ledgerInfo) {
       newBalance = formatEther(newLedgerInfo.ledgerInfo[0])
-    } else {
+    } else if (Array.isArray(newLedgerInfo)) {
       newBalance = formatEther(newLedgerInfo[0])
+    } else {
+      newBalance = '0'
     }
     console.log(`[fine] ${action}Ledger:success`, { 
       newBalance,

@@ -61,7 +61,16 @@ export async function GET() {
     let ledgerBalance = '0'
     try {
       const ledgerInfo = await broker.ledger.getLedger()
-      ledgerBalance = formatEther(ledgerInfo[0])
+      // Normalized parsing based on available struct fields handled below
+      if (ledgerInfo.balance !== undefined) {
+        ledgerBalance = typeof ledgerInfo.balance === 'bigint' ? formatEther(ledgerInfo.balance) : formatEther(BigInt(ledgerInfo.balance))
+      } else if (ledgerInfo.AvailableBalance !== undefined) {
+        ledgerBalance = typeof ledgerInfo.AvailableBalance === 'bigint' ? formatEther(ledgerInfo.AvailableBalance) : formatEther(BigInt(ledgerInfo.AvailableBalance))
+      } else if (ledgerInfo.ledgerInfo) {
+        ledgerBalance = formatEther(ledgerInfo.ledgerInfo[0])
+      } else if (Array.isArray(ledgerInfo)) {
+        ledgerBalance = formatEther(ledgerInfo[0])
+      }
     } catch (error) {
       console.log('[fine] No main ledger account')
     }
@@ -137,7 +146,15 @@ export async function POST(req: NextRequest) {
     let ledgerBalance = '0'
     try {
       const ledgerInfo = await broker.ledger.getLedger()
-      ledgerBalance = formatEther(ledgerInfo[0])
+      if (ledgerInfo.balance !== undefined) {
+        ledgerBalance = typeof ledgerInfo.balance === 'bigint' ? formatEther(ledgerInfo.balance) : formatEther(BigInt(ledgerInfo.balance))
+      } else if (ledgerInfo.AvailableBalance !== undefined) {
+        ledgerBalance = typeof ledgerInfo.AvailableBalance === 'bigint' ? formatEther(ledgerInfo.AvailableBalance) : formatEther(BigInt(ledgerInfo.AvailableBalance))
+      } else if (ledgerInfo.ledgerInfo) {
+        ledgerBalance = formatEther(ledgerInfo.ledgerInfo[0])
+      } else if (Array.isArray(ledgerInfo)) {
+        ledgerBalance = formatEther(ledgerInfo[0])
+      }
       console.log('[fine] Main ledger balance:', ledgerBalance, 'OG')
     } catch (error) {
       return NextResponse.json({ 

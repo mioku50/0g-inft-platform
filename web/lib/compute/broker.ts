@@ -525,7 +525,11 @@ export async function deposit(
       }
       
       // Use direct contract call instead of SDK broker due to compatibility issues
-      const ledgerContract = new ethers.Contract(ledger, LEDGER_ABI, signer)
+      const ledgerAddr = typeof ledger === 'string' ? ledger : (ledger as any).address ?? (ledger as any).target ?? undefined
+      if (!ledgerAddr) {
+        throw new Error('Invalid ledger address')
+      }
+      const ledgerContract = new ethers.Contract(ledgerAddr, LEDGER_ABI, signer)
       
       const tx = await ledgerContract.depositFund(
         user,

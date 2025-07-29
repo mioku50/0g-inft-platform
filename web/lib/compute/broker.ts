@@ -595,6 +595,10 @@ export async function getBrokerOrThrow() {
   await addFineTuningSupport(broker, signer)
 
   // Ensure ledger contract is properly attached
+  // NOTE: We should NOT override SDK methods! The SDK has its own implementation
+  // that handles ledger operations differently than direct contract calls.
+  // Removing this override to fix the depositFund conflict.
+  /*
   if (!broker.ledger || typeof broker.ledger.addAccount !== 'function') {
     console.log('[fine] Adding manual ledger contract methods')
     const ledgerContract = getLedgerContract(signer)
@@ -605,6 +609,7 @@ export async function getBrokerOrThrow() {
       requestRefundAll: ledgerContract.requestRefundAll.bind(ledgerContract)
     }
   }
+  */
 
   console.log('[fine] Broker initialized successfully', {
     signerAddress: broker.signerAddress,
@@ -714,17 +719,18 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
           account = await broker.ledger.getLedger();
           hasExistingAccount = true;
           console.log('[fine] depositFund:existing-account', {
-            balance: ethers.formatEther(account.ledgerInfo[0]),
-            locked: ethers.formatEther(account.ledgerInfo[1])
+            balance: ethers.formatEther(account[0]),
+            locked: ethers.formatEther(account[1])
           });
         } catch (error) {
-          console.log('[fine] depositFund:no-existing-account, creating new one');
+          console.log('[fine] depositFund:no-existing-account');
         }
         
         // Use appropriate method based on account existence
         if (hasExistingAccount) {
           // Use depositFund for existing accounts (SDK expects number in OG)
           try {
+            console.log('[fine] Calling SDK depositFund with amount:', amountOG)
             await broker.ledger.depositFund(amountOG)
             console.log('[fine] depositFund:existing-account:completed')
           } catch (depositError: any) {
@@ -735,13 +741,14 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
               console.log('[fine] depositFund:handling-ledger-exists-error')
               // The error suggests the account exists but depositFund failed
               // This might be a timing issue or SDK inconsistency
-              throw new Error(`Deposit failed: Account exists but unable to add funds. Current balance: ${ethers.formatEther(account.ledgerInfo[0])} OG. Please try again.`)
+              throw new Error(`Deposit failed: Account exists but unable to add funds. Current balance: ${ethers.formatEther(account[0])} OG. Please try again.`)
             }
             throw depositError
           }
         } else {
           // Use addLedger for new accounts (SDK expects number in OG)
           try {
+            console.log('[fine] Calling SDK addLedger with amount:', amountOG)
             await broker.ledger.addLedger(amountOG)
             console.log('[fine] depositFund:new-account:completed')
           } catch (addError: any) {

@@ -1,4 +1,4 @@
-const { ethers } = require('./node_modules/ethers');
+const { ethers } = require('ethers');
 
 // Environment configuration
 const config = {

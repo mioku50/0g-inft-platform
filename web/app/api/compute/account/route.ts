@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { formatEther } from 'ethers'
-import { getBroker, getLedgerContract, getServingContract, addAccountWithDeposit, deposit } from '@/lib/compute/broker'
+import { getBroker, getLedgerContract, getServingContract, addAccountWithDeposit, deposit, depositDirect, addAccountDirect, depositFinal, addAccountFinal } from '@/lib/compute/broker'
 import { validateComputeEnvironment } from '@/lib/server/compute-env'
 
 const FINE_TUNE_PROVIDER = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER!
@@ -179,10 +179,10 @@ export async function POST(req: NextRequest) {
       servingAddress: serving.target || serving.address
     })
 
-    // Execute transaction through Ledger contract (which calls FineTuningServing internally)
+    // Execute transaction through final SDK solution
     const result = action === 'create'
-      ? await addAccountWithDeposit(broker.signer, null as any, broker.signer.address, FINE_TUNE_PROVIDER, amount)
-      : await deposit(broker.signer, null as any, broker.signer.address, FINE_TUNE_PROVIDER, amount)
+      ? await addAccountFinal(broker.signer, broker.signer.address, FINE_TUNE_PROVIDER, amount)
+      : await depositFinal(broker.signer, broker.signer.address, FINE_TUNE_PROVIDER, amount)
 
     console.log(`[fine] ${action}Account:success`, { txHash: result.txHash })
 

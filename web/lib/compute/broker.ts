@@ -15,7 +15,10 @@ export const SERVING_ABI = [
   'function getAccount(address user, address provider) view returns (tuple(address user,address provider,uint256 nonce,uint256 balance,uint256 pendingRefund,tuple(uint256 index,uint256 amount,uint256 createdAt,bool processed)[] refunds,string additionalInfo,address providerSigner,tuple(bytes modelRootHash,bytes encryptedSecret,bool acknowledged)[] deliverables))',
   'function getService(address provider) view returns (tuple(address provider,string url,(uint256,uint256,uint256,uint256,string) quota,uint256 pricePerToken,address providerSigner,bool occupied,string[] models))',
   'function acknowledgeProviderSigner(address provider, address providerSigner)',
-  'function acknowledgeDeliverable(address provider, uint256 index)'
+  'function acknowledgeDeliverable(address provider, uint256 index)',
+  'function addAccount(address user, address provider, string additionalInfo) payable',
+  'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) payable',
+  'function requestRefundAll(address user, address provider)'
 ] as const
 
 export const LEDGER_ABI = [
@@ -134,9 +137,8 @@ function parseSimulationError(e: any): Error {
 }
 
 function formatTxUrl(hash: string): string | null {
-  const base = process.env.NEXT_PUBLIC_EXPLORER_BASE_URL
-  if (!base) return null
-  return `${base.replace(/\/$/, '')}/tx/${hash}`
+  const base = 'https://chainscan-galileo.0g.ai'
+  return `${base}/tx/${hash}`
 }
 
 function toWeiSafe(v?: any) {
@@ -252,14 +254,25 @@ export async function addAccountWithDeposit(
   return withLock(key, async () => {
     try {
       console.log('[fine] addAccount:start', { user, provider, value: value.toString() })
+      
+      // Use Ledger contract for account operations
+      const ledgerContract = getLedgerContract(signer)
+      console.log('[fine] Using Ledger contract for addAccount:', ledgerContract.target || ledgerContract.address)
+      
       try {
-        const gas = await ledger.estimateGas.addAccount(user, provider, extraInfo, { value })
-        console.log('[fine] addAccount:simulate:ok', gas.toString())
+        // Use direct provider estimateGas to bypass ethers issues
+        const gasEstimate = await signer.estimateGas({
+          to: ledgerContract.target || ledgerContract.address,
+          data: ledgerContract.interface.encodeFunctionData('addAccount', [user, provider, extraInfo]),
+          value: value
+        })
+        console.log('[fine] addAccount:simulate:ok', gasEstimate.toString())
       } catch (simErr: any) {
+        console.log('[fine] addAccount:simulate:error', simErr.message)
         throw parseSimulationError(simErr)
       }
 
-      const tx = await ledger.addAccount(user, provider, extraInfo, { value })
+      const tx = await ledgerContract.addAccount(user, provider, extraInfo, { value })
       console.log('[fine] addAccount:sent', tx.hash)
       const txUrl = formatTxUrl(tx.hash)
 
@@ -275,6 +288,7 @@ export async function addAccountWithDeposit(
 
       return { txHash: tx.hash, txUrl, status: 'submitted' }
     } catch (e: any) {
+      console.log('[fine] addAccount:error', e.message, e.stack)
       throw formatError(e)
     }
   })
@@ -293,14 +307,25 @@ export async function deposit(
   return withLock(key, async () => {
     try {
       console.log('[fine] deposit:start', { user, provider, value: value.toString() })
+      
+      // Use Ledger contract for deposit operations
+      const ledgerContract = getLedgerContract(signer)
+      console.log('[fine] Using Ledger contract for depositFund:', ledgerContract.target || ledgerContract.address)
+      
       try {
-        const gas = await ledger.estimateGas.depositFund(user, provider, 0, { value })
-        console.log('[fine] deposit:simulate:ok', gas.toString())
+        // Use direct provider estimateGas to bypass ethers issues
+        const gasEstimate = await signer.estimateGas({
+          to: ledgerContract.target || ledgerContract.address,
+          data: ledgerContract.interface.encodeFunctionData('depositFund', [user, provider, 0]),
+          value: value
+        })
+        console.log('[fine] deposit:simulate:ok', gasEstimate.toString())
       } catch (simErr: any) {
+        console.log('[fine] deposit:simulate:error', simErr.message)
         throw parseSimulationError(simErr)
       }
 
-      const tx = await ledger.depositFund(user, provider, 0, { value })
+      const tx = await ledgerContract.depositFund(user, provider, 0, { value })
       console.log('[fine] deposit:sent', tx.hash)
       const txUrl = formatTxUrl(tx.hash)
 
@@ -316,6 +341,7 @@ export async function deposit(
 
       return { txHash: tx.hash, txUrl, status: 'submitted' }
     } catch (e: any) {
+      console.log('[fine] deposit:error', e.message, e.stack)
       throw formatError(e)
     }
   })
@@ -334,10 +360,13 @@ export async function getBrokerOrThrow() {
   const provider = create0GProvider()
   const signer = new Wallet(pk, provider)
 
+  // Verify contracts are deployed
   await assertContractDeployed(provider, servingAddr)
+  await assertContractDeployed(provider, ledger)
+  await assertContractDeployed(provider, inference)
 
   try {
-  broker = await createZGComputeNetworkBroker(
+    broker = await createZGComputeNetworkBroker(
       signer,
       ledger,
       inference,
@@ -355,24 +384,15 @@ export async function getBrokerOrThrow() {
 
   await addFineTuningSupport(broker, signer)
 
-  // Attach minimal Ledger helper (used in /api/compute/account)
-  if (!broker.ledger?.openFineTuningAccount) {
-    const LEDGER_ABI = [
-      'function openFineTuningAccount(address user, address provider) payable',
-    ] as const
-    const { ethers } = await import('ethers')
-    const ledgerHelper = new ethers.Contract(
-      getComputeLedgerContract(),
-      LEDGER_ABI,
-      signer
-    )
+  // Ensure ledger contract is properly attached
+  if (!broker.ledger || typeof broker.ledger.addAccount !== 'function') {
+    console.log('[fine] Adding manual ledger contract methods')
+    const ledgerContract = getLedgerContract(signer)
     broker.ledger = {
       ...(broker.ledger || {}),
-      openFineTuningAccount: (
-        user: string,
-        provider: string,
-        overrides?: any
-      ) => ledgerHelper.openFineTuningAccount(user, provider, overrides),
+      addAccount: ledgerContract.addAccount.bind(ledgerContract),
+      depositFund: ledgerContract.depositFund.bind(ledgerContract),
+      requestRefundAll: ledgerContract.requestRefundAll.bind(ledgerContract)
     }
   }
 

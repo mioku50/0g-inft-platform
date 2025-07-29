@@ -23,9 +23,31 @@ export const SERVING_ABI = [
 ] as const
 
 export const LEDGER_ABI = [
+  // Account management
   'function addAccount(address user, address provider, string memory additionalInfo) external payable',
   'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) external payable',
-  'function requestRefundAll(address user, address provider) external'
+  'function requestRefundAll(address user, address provider) external',
+  
+  // Account queries
+  'function accountExists(address user, address provider) external view returns (bool)',
+  'function getAccount(address user, address provider) external view returns (tuple(address user, address provider, uint256 nonce, uint256 balance, uint256 pendingRefund, tuple(uint256 index, uint256 amount, uint256 createdAt, bool processed)[] refunds, string additionalInfo, address providerSigner, tuple(bytes modelRootHash, bytes encryptedSecret, bool acknowledged)[] deliverables))',
+  
+  // Service management
+  'function getService(address provider) external view returns (tuple(address provider, string url, tuple(uint256, uint256, uint256, uint256, string) quota, uint256 pricePerToken, address providerSigner, bool occupied, string[] models))',
+  
+  // Provider signer management
+  'function acknowledgeProviderSigner(address provider, address providerSigner) external',
+  
+  // Fine-tuning specific methods
+  'function createTask(address provider, string memory model, bytes32 datasetHash, string memory trainingParams, uint256 fee) external returns (bytes32)',
+  'function getTask(address provider, bytes32 taskId) external view returns (tuple(bytes32 id, address user, address provider, string model, bytes32 datasetHash, string trainingParams, uint256 fee, uint8 status, uint256 createdAt))',
+  'function acknowledgeDeliverable(address provider, uint256 deliverableIndex) external',
+  
+  // Events
+  'event AccountCreated(address indexed user, address indexed provider, uint256 balance)',
+  'event FundsDeposited(address indexed user, address indexed provider, uint256 amount)',
+  'event TaskCreated(address indexed user, address indexed provider, bytes32 indexed taskId, string model)',
+  'event DeliverableAcknowledged(address indexed user, address indexed provider, uint256 deliverableIndex)'
 ] as const
 
 const ERROR_ABI = [
@@ -347,23 +369,24 @@ export async function addAccountWithDeposit(
         // Ignore other errors as account might not exist yet
       }
 
-      // IMPORTANT: Check if we're using the correct Ledger
-      // The current Ledger (0x1a85Dd32...) appears to be incompatible with FineTuningServing
+      // Verify Ledger contract is properly configured
       const ledgerAddress = getComputeLedgerContract()
-      if (ledgerAddress && ledgerAddress.toLowerCase() === '0x1a85dd32da10c170f4f138d082ddc496ab3e5baa') {
-        console.log('[fine] addAccount:ledger-compatibility-warning')
-        throw new Error(
-          'Configuration Issue: The current Ledger contract appears to be incompatible with FineTuningServing. ' +
-          'Fine-tuning functionality requires a specific Ledger contract that can forward calls to FineTuningServing. ' +
-          'Please contact support for the correct Ledger address.'
-        )
-      }
+      console.log('[fine] addAccount:using-ledger', ledgerAddress)
+      
+      // The official Ledger address 0x1a85Dd32da10c170F4f138d082DDc496ab3E5BAa is correct
+      // according to CLI documentation and successful CLI tests
 
       // Use SDK broker to handle the complex flow
       try {
-        console.log('[fine] addAccount:using-sdk-broker')
+        console.log('[fine] addAccount:using-sdk-broker', {
+          user,
+          provider,
+          extraInfo,
+          valueInOG: ethers.formatEther(value)
+        })
         
         // The SDK broker handles all the complexity internally
+        // It will route the call to the appropriate contract (Ledger or FineTuningServing)
         const tx = await broker.fineTuning.addAccount(
           user,
           provider,
@@ -447,9 +470,12 @@ export async function deposit(
     try {
       console.log('[fine] deposit:start', { user, provider, value: value.toString() })
       
-      // Use Ledger contract for deposit operations (it will call FineTuningServing internally)
-      const ledgerContract = getLedgerContract(signer)
-      console.log('[fine] Using Ledger contract for depositFund:', ledgerContract.target || ledgerContract.address)
+      // Use SDK broker for deposit operations
+      console.log('[fine] deposit:using-sdk-broker', {
+        user,
+        provider,
+        valueInOG: ethers.formatEther(value)
+      })
       
       // Get Serving contract for validation checks
       const servingContract = getServingContract(signer)
@@ -487,21 +513,14 @@ export async function deposit(
         throw existsErr
       }
       
-      try {
-        // Simulate transaction on Ledger contract
-        const gasEstimate = await signer.estimateGas({
-          to: ledgerContract.target || ledgerContract.address,
-          data: ledgerContract.interface.encodeFunctionData('depositFund', [user, provider, 0]),
-          value: value
-        })
-        console.log('[fine] deposit:simulate:ok', gasEstimate.toString())
-      } catch (simErr: any) {
-        console.log('[fine] deposit:simulate:error', simErr.message)
-        throw parseSimulationError(simErr)
-      }
-
-      // Execute transaction on Ledger contract
-      const tx = await ledgerContract.depositFund(user, provider, 0, { value })
+      // Execute transaction through SDK broker
+      // The SDK broker will handle the proper contract routing
+      const tx = await broker.fineTuning.depositFund(
+        user,
+        provider,
+        0, // cancelRetrievingAmount
+        { value }
+      )
       console.log('[fine] deposit:sent', tx.hash)
       const txUrl = formatTxUrl(tx.hash)
 

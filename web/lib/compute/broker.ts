@@ -130,7 +130,7 @@ function formatError(e: any): Error {
     }
     if (/caller is not the ledger contract/i.test(msg)) {
       return new Error(
-        'Wrong contract: operations should be called on FineTuningServing, not Ledger'
+        'Operations must be called through Ledger contract, not directly on FineTuningServing'
       )
     }
     if (/reverted.*no data/i.test(msg) || msg === 'require(false)' || msg.includes('require(false)')) {
@@ -304,9 +304,12 @@ export async function addAccountWithDeposit(
     try {
       console.log('[fine] addAccount:start', { user, provider, value: value.toString() })
       
-      // Use FineTuningServing contract for account operations
+      // Use Ledger contract for account operations (it will call FineTuningServing internally)
+      const ledgerContract = getLedgerContract(signer)
+      console.log('[fine] Using Ledger contract for addAccount:', ledgerContract.target || ledgerContract.address)
+      
+      // Get Serving contract for validation checks
       const servingContract = getServingContract(signer)
-      console.log('[fine] Using FineTuningServing contract for addAccount:', servingContract.target || servingContract.address)
       
       // Pre-validation: check if provider is registered
       try {
@@ -343,10 +346,10 @@ export async function addAccountWithDeposit(
       }
 
       try {
-        // Simulate transaction on FineTuningServing contract
+        // Simulate transaction on Ledger contract
         const gasEstimate = await signer.estimateGas({
-          to: servingContract.target || servingContract.address,
-          data: servingContract.interface.encodeFunctionData('addAccount', [user, provider, extraInfo]),
+          to: ledgerContract.target || ledgerContract.address,
+          data: ledgerContract.interface.encodeFunctionData('addAccount', [user, provider, extraInfo]),
           value: value
         })
         console.log('[fine] addAccount:simulate:ok', gasEstimate.toString())
@@ -355,8 +358,8 @@ export async function addAccountWithDeposit(
         throw parseSimulationError(simErr)
       }
 
-      // Execute transaction on FineTuningServing contract
-      const tx = await servingContract.addAccount(user, provider, extraInfo, { value })
+      // Execute transaction on Ledger contract
+      const tx = await ledgerContract.addAccount(user, provider, extraInfo, { value })
       console.log('[fine] addAccount:sent', tx.hash)
       const txUrl = formatTxUrl(tx.hash)
 
@@ -392,9 +395,12 @@ export async function deposit(
     try {
       console.log('[fine] deposit:start', { user, provider, value: value.toString() })
       
-      // Use FineTuningServing contract for deposit operations
+      // Use Ledger contract for deposit operations (it will call FineTuningServing internally)
+      const ledgerContract = getLedgerContract(signer)
+      console.log('[fine] Using Ledger contract for depositFund:', ledgerContract.target || ledgerContract.address)
+      
+      // Get Serving contract for validation checks
       const servingContract = getServingContract(signer)
-      console.log('[fine] Using FineTuningServing contract for depositFund:', servingContract.target || servingContract.address)
       
       // Pre-validation: check if provider is registered
       try {
@@ -430,10 +436,10 @@ export async function deposit(
       }
       
       try {
-        // Simulate transaction on FineTuningServing contract
+        // Simulate transaction on Ledger contract
         const gasEstimate = await signer.estimateGas({
-          to: servingContract.target || servingContract.address,
-          data: servingContract.interface.encodeFunctionData('depositFund', [user, provider, 0]),
+          to: ledgerContract.target || ledgerContract.address,
+          data: ledgerContract.interface.encodeFunctionData('depositFund', [user, provider, 0]),
           value: value
         })
         console.log('[fine] deposit:simulate:ok', gasEstimate.toString())
@@ -442,8 +448,8 @@ export async function deposit(
         throw parseSimulationError(simErr)
       }
 
-      // Execute transaction on FineTuningServing contract
-      const tx = await servingContract.depositFund(user, provider, 0, { value })
+      // Execute transaction on Ledger contract
+      const tx = await ledgerContract.depositFund(user, provider, 0, { value })
       console.log('[fine] deposit:sent', tx.hash)
       const txUrl = formatTxUrl(tx.hash)
 

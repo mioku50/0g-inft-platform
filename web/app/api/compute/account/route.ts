@@ -179,10 +179,10 @@ export async function POST(req: NextRequest) {
       servingAddress: serving.target || serving.address
     })
 
-    // Execute transaction using FineTuningServing contract
+    // Execute transaction through Ledger contract (which calls FineTuningServing internally)
     const result = action === 'create'
-      ? await addAccountWithDeposit(broker.signer, ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)
-      : await deposit(broker.signer, ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)
+      ? await addAccountWithDeposit(broker.signer, null as any, broker.signer.address, FINE_TUNE_PROVIDER, amount)
+      : await deposit(broker.signer, null as any, broker.signer.address, FINE_TUNE_PROVIDER, amount)
 
     console.log(`[fine] ${action}Account:success`, { txHash: result.txHash })
 

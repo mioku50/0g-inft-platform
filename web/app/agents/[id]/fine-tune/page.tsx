@@ -298,6 +298,8 @@ function FineTunePageContent() {
           errorMessage = 'Account already exists. Try using the deposit action instead.'
         } else if (apiError.error === 'InsufficientBalance') {
           errorMessage = 'Insufficient wallet balance for this transaction.'
+        } else if (apiError.details && apiError.details.includes('Operations must be called through Ledger')) {
+          errorMessage = 'Операция должна выполняться через Ledger контракт, а не напрямую через FineTuningServing.'
         }
         
         setBackendError(errorMessage)

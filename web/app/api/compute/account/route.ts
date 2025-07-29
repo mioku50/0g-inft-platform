@@ -76,23 +76,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
   }
 
-  const broker = await getBroker()
-  const ledger = getLedgerContract(broker.signer)
-  const serving = getServingContract(broker.signer)
-
   try {
-    await serving.getService(FINE_TUNE_PROVIDER)
-  } catch {
-    return NextResponse.json({ error: 'ProviderNotRegistered' }, { status: 409 })
-  }
+    const broker = await getBroker()
+    const ledger = getLedgerContract(broker.signer)
+    const serving = getServingContract(broker.signer)
 
-  try {
+    // Verify provider is registered
+    try {
+      await serving.getService(FINE_TUNE_PROVIDER)
+    } catch {
+      return NextResponse.json({ error: 'ProviderNotRegistered' }, { status: 409 })
+    }
+
     console.log(`[fine] ${action}Account:start`, { 
       user: broker.signer.address, 
       provider: FINE_TUNE_PROVIDER, 
-      amount: amount + ' OG' 
+      amount: amount + ' OG',
+      ledgerAddress: ledger.target || ledger.address
     })
 
+    // Account operations go through Ledger contract
     const result = action === 'create'
       ? await addAccountWithDeposit(broker.signer, ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)
       : await deposit(broker.signer, ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)

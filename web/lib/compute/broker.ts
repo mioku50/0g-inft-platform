@@ -140,7 +140,7 @@ function formatError(e: any): Error {
 
     const msg = e?.shortMessage || e?.reason || e?.message || String(e)
     
-    // Enhanced error categorization for FineTuningServing
+    // Enhanced error categorization for FineTuningServing and SDK
     if (/AccountExists/i.test(msg)) {
       return new Error('AccountExists')
     }
@@ -149,6 +149,12 @@ function formatError(e: any): Error {
     }
     if (/ServiceNotExist/i.test(msg)) {
       return new Error('ServiceNotExist')
+    }
+    if (/Ledger already exists/i.test(msg)) {
+      // Extract balance from the error message if possible
+      const balanceMatch = msg.match(/balance:\s*([\d.]+)\s*A0GI/)
+      const balance = balanceMatch ? balanceMatch[1] : 'unknown'
+      return new Error(`Ledger already exists with balance: ${balance} A0GI`)
     }
     if (/caller is not the ledger contract/i.test(msg)) {
       return new Error(
@@ -713,12 +719,38 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         // Use appropriate method based on account existence
         if (hasExistingAccount) {
           // Use depositFund for existing accounts (SDK expects number in OG)
-          await broker.ledger.depositFund(amountOG)
-          console.log('[fine] depositFund:existing-account:completed')
+          try {
+            await broker.ledger.depositFund(amountOG)
+            console.log('[fine] depositFund:existing-account:completed')
+          } catch (depositError: any) {
+            console.log('[fine] depositFund:existing-account:error', depositError.message)
+            // If depositFund fails, the account might be in an inconsistent state
+            // Let's try to handle the specific "Ledger already exists" error
+            if (depositError.message && depositError.message.includes('Ledger already exists')) {
+              console.log('[fine] depositFund:handling-ledger-exists-error')
+              // The error suggests the account exists but depositFund failed
+              // This might be a timing issue or SDK inconsistency
+              throw new Error(`Deposit failed: Account exists but unable to add funds. Current balance: ${ethers.formatEther(account.ledgerInfo[0])} OG. Please try again.`)
+            }
+            throw depositError
+          }
         } else {
           // Use addLedger for new accounts (SDK expects number in OG)
-          await broker.ledger.addLedger(amountOG)
-          console.log('[fine] depositFund:new-account:completed')
+          try {
+            await broker.ledger.addLedger(amountOG)
+            console.log('[fine] depositFund:new-account:completed')
+          } catch (addError: any) {
+            console.log('[fine] depositFund:new-account:error', addError.message)
+            // If addLedger fails with "already exists", account was created between our check
+            if (addError.message && addError.message.includes('Ledger already exists')) {
+              console.log('[fine] depositFund:race-condition-detected, retrying with depositFund')
+              // Retry with depositFund since account now exists
+              await broker.ledger.depositFund(amountOG)
+              console.log('[fine] depositFund:race-condition:resolved')
+            } else {
+              throw addError
+            }
+          }
         }
         
         // Create a mock transaction response since SDK doesn't return transaction objects

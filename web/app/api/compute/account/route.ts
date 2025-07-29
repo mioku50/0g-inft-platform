@@ -87,9 +87,17 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    console.log(`[fine] ${action}Account:start`, { 
+      user: broker.signer.address, 
+      provider: FINE_TUNE_PROVIDER, 
+      amount: amount + ' OG' 
+    })
+
     const result = action === 'create'
       ? await addAccountWithDeposit(broker.signer, ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)
       : await deposit(broker.signer, ledger, broker.signer.address, FINE_TUNE_PROVIDER, amount)
+
+    console.log(`[fine] ${action}Account:success`, { txHash: result.txHash })
 
     return NextResponse.json({
       success: true,
@@ -100,6 +108,8 @@ export async function POST(req: NextRequest) {
     })
   } catch (e: any) {
     const msg = e.message || 'Tx failed'
+    console.error(`[fine] ${action}Account:error`, { error: msg, stack: e.stack })
+    
     if (msg === 'AccountExists') {
       return NextResponse.json({ error: msg }, { status: 409 })
     }
@@ -108,6 +118,12 @@ export async function POST(req: NextRequest) {
     }
     if (/insufficient funds/i.test(msg) || msg === 'InsufficientBalance') {
       return NextResponse.json({ error: msg }, { status: 402 })
+    }
+    if (/require\(false\)/i.test(msg)) {
+      return NextResponse.json({ 
+        error: 'Contract validation failed', 
+        details: 'The contract rejected the transaction. This might be due to provider configuration or access control issues.' 
+      }, { status: 502 })
     }
     return NextResponse.json({ error: msg, details: msg }, { status: 502 })
   }

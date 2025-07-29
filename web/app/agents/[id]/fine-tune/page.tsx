@@ -154,69 +154,109 @@ export default function FineTunePage() {
     setIsPolling(false)
   }
 
-  const handleAccountSetup = async () => {
-    if (!depositAmount || parseFloat(depositAmount) <= 0) {
+  const createAccountAndDeposit = async () => {
+    if (!address) {
       toast({
-        title: 'Error',
-        description: 'Please enter a valid deposit amount',
-        variant: 'destructive'
+        title: "Wallet not connected",
+        description: "Please connect your wallet first",
+        variant: "destructive",
       })
       return
     }
 
     setIsDepositing(true)
-    setTxStatus('Submitting transaction...')
+    setBackendError(null)
     setTxUrl(null)
+    setTxStatus(null)
+
     try {
-      const action = accountInfo?.exists ? 'deposit' : 'create'
-      console.log('POST /api/compute/account', { amount: depositAmount, action })
-      const res = await fetch('/api/compute/account', {
+      console.log('Creating account with deposit:', depositAmount)
+      const response = await fetch('/api/compute/account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: depositAmount, action })
+        body: JSON.stringify({ 
+          amount: depositAmount, 
+          action: accountInfo?.exists ? 'deposit' : 'create' 
+        }),
       })
-      const data = await res.json().catch(() => ({}))
-      console.log('POST /api/compute/account result', data)
 
-      if (res.status === 503) {
-        setBackendError('Backend misconfigured')
-        return
-      }
+      const data = await response.json()
+      console.log('Account API response:', data)
 
-      if (!res.ok) {
-        toast({
-          variant: 'destructive',
-          description: data.details || data.error || 'Account setup failed'
-        })
-        return
-      }
-
-      if (data.txUrl) {
+      if (response.ok && data.success) {
         setTxUrl(data.txUrl)
+        setTxStatus('submitted')
+        
         toast({
-          title: 'Transaction Sent',
-          description: (
-            <a href={data.txUrl} target="_blank" rel="noreferrer" className="underline">
-              View on Explorer
-            </a>
-          )
+          title: "Transaction submitted",
+          description: `${accountInfo?.exists ? 'Deposit' : 'Account creation'} transaction has been sent to the network`,
+        })
+
+        // Start polling for balance updates
+        const pollInterval = setInterval(async () => {
+          try {
+            const balanceResponse = await fetch('/api/compute/account')
+            const balanceData = await balanceResponse.json()
+            
+            if (balanceResponse.ok && balanceData.result) {
+              setAccountInfo(balanceData.result)
+              
+              if (parseFloat(balanceData.result.balance) > 0) {
+                setTxStatus('completed')
+                clearInterval(pollInterval)
+                toast({
+                  title: "Success!",
+                  description: `Account funded with ${balanceData.result.balance} OG`,
+                })
+              }
+            }
+          } catch (pollError) {
+            console.error('Balance polling error:', pollError)
+          }
+        }, 3000)
+
+        // Stop polling after 2 minutes
+        setTimeout(() => {
+          clearInterval(pollInterval)
+          if (txStatus === 'submitted') {
+            setTxStatus('timeout')
+          }
+        }, 120000)
+
+      } else {
+        console.error('Account API error:', data)
+        let errorMessage = data.error || 'Unknown error occurred'
+        
+        if (data.error === 'Contract validation failed') {
+          errorMessage = 'The contract rejected the transaction. This might be due to provider configuration issues. Please try again later or contact support.'
+        } else if (data.error === 'ProviderNotRegistered') {
+          errorMessage = 'The fine-tuning provider is not properly registered. Please contact support.'
+        } else if (data.error === 'AccountExists') {
+          errorMessage = 'Account already exists. Try using the deposit action instead.'
+        } else if (data.error === 'InsufficientBalance') {
+          errorMessage = 'Insufficient wallet balance for this transaction.'
+        }
+        
+        setBackendError(errorMessage)
+        
+        toast({
+          title: "Transaction failed",
+          description: errorMessage,
+          variant: "destructive",
         })
       }
-
-      pollAccount()
-      setTimeout(() => {
-        setIsDepositing(false)
-        setTxStatus('Submitted')
-      }, 3500)
-    } catch (error: any) {
-      console.error('Account setup error:', error)
+    } catch (error) {
+      console.error('Create account error:', error)
+      const errorMessage = 'Network error occurred. Please check your connection and try again.'
+      setBackendError(errorMessage)
+      
       toast({
-        variant: 'destructive',
-        description: error.details || error.message
+        title: "Network error",
+        description: errorMessage,
+        variant: "destructive",
       })
-      setIsDepositing(false)
     } finally {
-      // do nothing
+      setIsDepositing(false)
     }
   }
 
@@ -457,7 +497,7 @@ export default function FineTunePage() {
                 </div>
                 
                 <Button
-                  onClick={handleAccountSetup}
+                  onClick={createAccountAndDeposit}
                   disabled={isDepositing}
                   className="w-full bg-purple-500 hover:bg-purple-600"
                 >
@@ -478,7 +518,7 @@ export default function FineTunePage() {
                     <a href={txUrl} target="_blank" rel="noreferrer" className="underline">
                       View on Explorer
                     </a>
-                    {txStatus && txStatus === 'Submitted' && (
+                    {txStatus && txStatus === 'submitted' && (
                       <span className="ml-2 text-purple-300">({txStatus})</span>
                     )}
                   </p>

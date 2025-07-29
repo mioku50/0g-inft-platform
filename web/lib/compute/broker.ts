@@ -19,9 +19,9 @@ export const SERVING_ABI = [
 ] as const
 
 export const LEDGER_ABI = [
-  'function addAccount(address user, address provider, string additionalInfo) payable',
-  'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) payable',
-  'function requestRefundAll(address user, address provider)'
+  'function addAccount(address user, address provider, string memory additionalInfo) external payable',
+  'function depositFund(address user, address provider, uint256 cancelRetrievingAmount) external payable',
+  'function requestRefundAll(address user, address provider) external'
 ] as const
 
 const ERROR_ABI = [

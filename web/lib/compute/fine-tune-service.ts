@@ -68,11 +68,18 @@ export class FineTuneService {
       const preTrainedModelHash = MODEL_MAPPING[params.baseModel as keyof typeof MODEL_MAPPING] 
         || MODEL_MAPPING['llama-3.3-70b']
 
-      // 3. Получение account для nonce и fee calculation
+      // 3. Получение nonce из главного Ledger account
+      let nonce = '0'
+      try {
         const account = await this.broker.fineTuning.getAccount(
           this.broker.signer.address,
           getFineTuneProvider()
         )
+        nonce = account.nonce?.toString() || '0'
+      } catch (error) {
+        // Fine-Tune sub-account не существует, используем nonce = 0
+        console.log('Fine-Tune sub-account not found, using nonce = 0')
+      }
 
       // 4. Подготовка данных для запроса согласно официальной схеме
       const taskRequest: FineTuningTaskRequest = {
@@ -81,7 +88,7 @@ export class FineTuneService {
         datasetHash: params.datasetRootHash,
         trainingParams: JSON.stringify(trainingParams),
         fee: toWei('0.001').toString(), // Базовая fee, может быть рассчитана динамически
-        nonce: account.nonce.toString(),
+        nonce: nonce,
         signature: '0x', // Подпись создается автоматически через SDK
         wait: false
       }

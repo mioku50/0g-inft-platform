@@ -550,8 +550,11 @@ function FineTunePageContent() {
             {accountInfo ? (
               <div className="bg-black/20 rounded-lg p-4">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-300">Current Balance:</span>
+                  <span className="text-gray-300">Platform Service Balance:</span>
                   <span className="text-white font-semibold">{accountInfo.balance} {NATIVE_SYMBOL}</span>
+                </div>
+                <div className="text-xs text-gray-400 italic">
+                  Fine-tune operations are funded by the platform
                 </div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-300">Account Status:</span>
@@ -876,8 +879,11 @@ function FineTunePageContent() {
                     <>
                       <div className="h-px bg-white/10"></div>
                       <div className="flex justify-between items-center">
-                        <span className="text-gray-300 font-medium">Account Balance:</span>
+                        <span className="text-gray-300 font-medium">Platform Balance:</span>
                         <span className="text-white font-semibold">{accountInfo.balance} {NATIVE_SYMBOL}</span>
+                      </div>
+                      <div className="text-xs text-gray-400 italic text-center mt-1">
+                        Operations funded by platform
                       </div>
                     </>
                   )}

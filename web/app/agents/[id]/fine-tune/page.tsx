@@ -657,7 +657,7 @@ function FineTunePageContent() {
               <AlertDescription className="text-red-200 flex-1">
                 {backendError}
               </AlertDescription>
-              <Button size="sm" variant="outline" onClick={checkAccountStatus}>
+              <Button size="sm" variant="outline" onClick={() => checkAccountStatus()}>
                 Повторить
               </Button>
             </Alert>

@@ -1,19 +1,27 @@
 // web/app/api/compute/balance/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { getBroker } from '@/lib/compute/broker'
-import { ethers } from 'ethers'
+import { ethers, parseEther, formatEther } from 'ethers'
 
 export async function GET() {
   try {
     const broker = await getBroker()
-    const account = await broker.ledger.getAccount()
+    const account = await broker.ledger.getLedger ? await broker.ledger.getLedger() : await broker.ledger.getAccount()
     
     let balance = '0'
     let balanceA0GI = 0
     
-    if (account && account.ledgerInfo && account.ledgerInfo.length > 0) {
-      balance = account.ledgerInfo[0].toString()
-      balanceA0GI = parseFloat(ethers.formatEther(balance))
+    if (account) {
+      if (account.balance !== undefined) {
+        balance = typeof account.balance === 'bigint' ? formatEther(account.balance) : formatEther(BigInt(account.balance))
+      } else if (account.AvailableBalance !== undefined) {
+        balance = typeof account.AvailableBalance === 'bigint' ? formatEther(account.AvailableBalance) : formatEther(BigInt(account.AvailableBalance))
+      } else if (account.ledgerInfo) {
+        balance = formatEther(account.ledgerInfo[0])
+      } else if (Array.isArray(account)) {
+        balance = formatEther(account[0])
+      }
+      balanceA0GI = parseFloat(balance)
     }
     
     return NextResponse.json({
@@ -35,8 +43,8 @@ export async function POST(req: NextRequest) {
   try {
     const { amount } = await req.json()
     const broker = await getBroker()
-    
-    await broker.ledger.depositFund(amount || 0.1)
+    const wei = parseEther(String(amount || 0.1))
+    await broker.ledger.depositFund(wei)
     
     return NextResponse.json({
       success: true,

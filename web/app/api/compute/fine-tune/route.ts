@@ -1,5 +1,6 @@
 // app/api/compute/fine-tune/route.ts
 import { NextRequest, NextResponse } from 'next/server'
+import { ethers } from 'ethers'
 import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
 import { NATIVE_SYMBOL } from '@/lib/constants'
@@ -63,31 +64,35 @@ export async function POST(request: NextRequest) {
     
     const fineTuneService = new FineTuneService(broker)
 
-    // Проверяем существование аккаунта
-    const exists = await broker.fineTuning.accountExists(signerAddress, getFineTuneProvider())
-    if (!exists) {
+    // Проверяем баланс главного Ledger аккаунта
+    let ledgerBalance = '0'
+    try {
+      const ledgerInfo = await broker.ledger.getLedger()
+      // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
+      if (ledgerInfo.ledgerInfo) {
+        ledgerBalance = ethers.formatEther(ledgerInfo.ledgerInfo[0])
+      } else {
+        ledgerBalance = ethers.formatEther(ledgerInfo[0])
+      }
+      console.log('Main ledger balance:', ledgerBalance, NATIVE_SYMBOL)
+    } catch (error) {
       return NextResponse.json(
-        { error: 'Fine-tune account not found. Please create an account first.' },
+        { error: 'Main ledger account not found. Please create a ledger account first at /api/compute/account.' },
         { status: 400 }
       )
     }
 
-    // Проверяем баланс
-    const acc = await broker.fineTuning.getAccount(signerAddress, getFineTuneProvider())
-    const balance = parseFloat(acc.balance)
-    console.log('Account balance:', balance, NATIVE_SYMBOL)
-
+    const balance = parseFloat(ledgerBalance)
     if (balance < 0.001) {
       return NextResponse.json(
         { 
           error: 'Insufficient balance for fine-tuning', 
-          currentBalance: acc.balance,
+          currentBalance: ledgerBalance,
           requiredBalance: '0.001'
         },
         { status: 400 }
       )
     }
-
     // Создание задачи fine-tuning
     let taskId: string
     try {

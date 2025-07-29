@@ -49,17 +49,20 @@ export async function GET() {
 
   try {
     const broker = await getBroker()
-    const fine = broker.fineTuning
-
-    const exists = await fine.accountExists(broker.signer.address, FINE_TUNE_PROVIDER)
-
-    let balance = '0', pendingRefund = '0', deliverables = 0, nonce: string | undefined
-    if (exists) {
-      const acc = await fine.getAccount(broker.signer.address, FINE_TUNE_PROVIDER)
-      balance = formatEther(acc.balance)
-      pendingRefund = formatEther(acc.pendingRefund)
-      deliverables = acc.deliverables?.length ?? 0
-      nonce = acc.nonce?.toString()
+    
+    // Check ledger account using SDK
+    let exists = false
+    let balance = '0'
+    let locked = '0'
+    
+    try {
+      const ledgerInfo = await broker.ledger.getLedger()
+      exists = true
+      balance = formatEther(ledgerInfo[0])
+      locked = formatEther(ledgerInfo[1])
+      console.log('[fine] Ledger account found:', { balance, locked })
+    } catch (error) {
+      console.log('[fine] No ledger account found')
     }
 
     return NextResponse.json({
@@ -67,11 +70,12 @@ export async function GET() {
         exists,
         balance,
         balanceWei: exists ? undefined : '0',
-        pendingRefund,
+        locked,
+        pendingRefund: '0', // SDK ledger doesn't have separate pendingRefund
         pendingRefundWei: undefined,
         needsTopUp: !exists || parseFloat(balance) < 0.001,
-        deliverables,
-        nonce
+        deliverables: 0, // Fine-tune specific, handled separately
+        nonce: undefined
       }
     })
   } catch (error: any) {
@@ -129,101 +133,90 @@ export async function POST(req: NextRequest) {
     const ledger = getLedgerContract(broker.signer)
     const serving = getServingContract(broker.signer)
 
-    // Pre-validation: Verify provider is registered
+    // Check ledger account status using SDK
+    let hasLedgerAccount = false
+    let currentBalance = '0'
+    
     try {
-      const service = await serving.getService(FINE_TUNE_PROVIDER)
-      if (!service || !service.url || service.url.length === 0) {
-        return NextResponse.json({ 
-          error: 'ProviderNotRegistered',
-          details: `Fine-tuning provider ${FINE_TUNE_PROVIDER} is not properly registered`,
-          diagnostics: generateResponseDiagnostics('POST')
-        }, { status: 409 })
-      }
-    } catch (serviceError: any) {
-      console.error('[compute/account][POST] Provider validation failed:', serviceError.message)
-      return NextResponse.json({ 
-        error: 'ProviderNotRegistered',
-        details: 'Failed to validate provider registration',
-        diagnostics: generateResponseDiagnostics('POST', serviceError)
-      }, { status: 409 })
+      const ledgerInfo = await broker.ledger.getLedger()
+      hasLedgerAccount = true
+      currentBalance = formatEther(ledgerInfo[0])
+      console.log('[fine] Existing ledger account found:', {
+        balance: currentBalance,
+        locked: formatEther(ledgerInfo[1])
+      })
+    } catch (error) {
+      console.log('[fine] No ledger account found')
     }
 
-    // Pre-validation: Check account status for action consistency
-    let accountExists = false
-    try {
-      accountExists = await serving.accountExists(broker.signer.address, FINE_TUNE_PROVIDER)
-    } catch (existsError: any) {
-      console.error('[compute/account][POST] Account existence check failed:', existsError.message)
-    }
-
-    if (action === 'create' && accountExists) {
+    // Validate action against account status
+    if (action === 'create' && hasLedgerAccount) {
       return NextResponse.json({ 
-        error: 'AccountExists',
-        details: 'Account already exists. Use action="deposit" to add funds.',
+        error: 'LedgerExists',
+        details: `Ledger already exists with balance: ${currentBalance} OG. Use action="deposit" to add funds.`,
         diagnostics: generateResponseDiagnostics('POST')
       }, { status: 409 })
     }
 
-    if (action === 'deposit' && !accountExists) {
+    if (action === 'deposit' && !hasLedgerAccount) {
       return NextResponse.json({ 
-        error: 'AccountNotExists', 
-        details: 'Account does not exist. Use action="create" first.',
+        error: 'LedgerNotExists', 
+        details: 'Ledger account does not exist. Use action="create" first.',
         diagnostics: generateResponseDiagnostics('POST')
       }, { status: 409 })
     }
 
-    console.log(`[fine] ${action}Account:start`, { 
+    console.log(`[fine] ${action}Ledger:start`, { 
       user: broker.signer.address, 
-      provider: FINE_TUNE_PROVIDER, 
       amount: amount + ' OG',
-      servingAddress: serving.target || serving.address
+      hasLedgerAccount,
+      currentBalance
     })
 
-    // Execute transaction through SDK broker (updated to use official SDK)
-    const result = await broker.fineTuning.depositFund(
-      broker.signer.address,
-      FINE_TUNE_PROVIDER,
-      0n, // cancelRetrievingAmount
-      amount
-    )
+    // Execute transaction using SDK ledger methods
+    let result: any
+    const amountOG = parseFloat(amount) // SDK expects number in OG, not BigInt in wei
+    
+    if (action === 'create') {
+      // Create new ledger account
+      console.log('[fine] Creating new ledger account...')
+      await broker.ledger.addLedger(amountOG)
+      result = { status: 'completed' }
+    } else {
+      // Deposit to existing ledger account
+      console.log('[fine] Depositing to existing ledger account...')
+      await broker.ledger.depositFund(amountOG)
+      result = { status: 'completed' }
+    }
 
-    console.log(`[fine] ${action}Account:success`, { txHash: result.txHash })
+    // Verify the operation by checking new balance
+    const newLedgerInfo = await broker.ledger.getLedger()
+    const newBalance = formatEther(newLedgerInfo[0])
+    console.log(`[fine] ${action}Ledger:success`, { 
+      newBalance,
+      previousBalance: currentBalance,
+      increase: (parseFloat(newBalance) - parseFloat(currentBalance)).toFixed(6)
+    })
 
     return NextResponse.json({
       success: true,
       action,
-      txHash: result.txHash,
-      explorerUrl: result.txUrl || formatTxUrl(result.txHash),
-      status: result.status,
-      simulation: false,
+      previousBalance: currentBalance,
+      newBalance,
+      deposited: amount,
+      status: 'completed',
       diagnostics: generateResponseDiagnostics('POST')
     }, { status: 201 })
 
   } catch (e: any) {
     const msg = e.message || 'Transaction failed'
-    console.error(`[fine] ${action}Account:error`, { error: msg, stack: e.stack })
+    console.error(`[fine] ${action}Ledger:error`, { error: msg, stack: e.stack })
     
-    // Enhanced error categorization with proper status codes
-    if (msg === 'AccountExists') {
+    // Enhanced error categorization
+    if (msg.includes('Ledger already exists')) {
       return NextResponse.json({ 
-        error: msg,
-        details: 'Account already exists for this user and provider',
-        diagnostics: generateResponseDiagnostics('POST', e)
-      }, { status: 409 })
-    }
-    
-    if (msg === 'AccountNotExists') {
-      return NextResponse.json({ 
-        error: msg,
-        details: 'Account does not exist for this user and provider',
-        diagnostics: generateResponseDiagnostics('POST', e)
-      }, { status: 409 })
-    }
-    
-    if (msg === 'ProviderNotExist' || msg === 'ServiceNotExist') {
-      return NextResponse.json({ 
-        error: 'ProviderNotExist',
-        details: 'The fine-tuning provider is not registered or available',
+        error: 'LedgerExists',
+        details: msg,
         diagnostics: generateResponseDiagnostics('POST', e)
       }, { status: 409 })
     }
@@ -239,7 +232,7 @@ export async function POST(req: NextRequest) {
     if (/require\(false\)|execution reverted|contract validation failed/i.test(msg)) {
       return NextResponse.json({ 
         error: 'ContractValidationFailed', 
-        details: 'The contract rejected the transaction. This might be due to provider configuration, access control, or validation issues.',
+        details: 'The contract rejected the transaction.',
         reason: msg,
         diagnostics: generateResponseDiagnostics('POST', e)
       }, { status: 502 })

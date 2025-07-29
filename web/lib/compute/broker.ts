@@ -691,32 +691,25 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       amountEth: string
     ) => {
       try {
-        await ensureProviderRegistered(provider, serving)
+        console.log('[fine] depositFund:start', { user, provider, amountEth })
+        
+        // Use the official SDK broker method for deposits
         const value = ethers.parseEther(amountEth)
-        console.log('[fine] depositFund:start', { user, provider, value: value.toString() })
         
-        // Pre-validation: check if account exists
+        // Try to get existing ledger first
+        let account;
         try {
-          const accountExists = await serving.accountExists(user, provider)
-          if (!accountExists) {
-            console.log('[fine] depositFund:account-not-exists', { user, provider })
-            throw new Error('AccountNotExists')
-          }
-        } catch (existsErr: any) {
-          if (existsErr.message.includes('AccountNotExists')) {
-            throw existsErr
-          }
-          throw existsErr
+          account = await broker.ledger.getLedger();
+          console.log('[fine] depositFund:existing-account', {
+            balance: ethers.formatEther(account.ledgerInfo[0]),
+            locked: ethers.formatEther(account.ledgerInfo[1])
+          });
+        } catch (error) {
+          console.log('[fine] depositFund:no-existing-account, creating new one');
         }
         
-        try {
-          const gas = await serving.estimateGas.depositFund(user, provider, cancel, { value })
-          console.log('[fine] depositFund:simulate:ok', gas.toString())
-        } catch (simErr: any) {
-          throw parseSimulationError(simErr)
-        }
-        
-        const tx = await serving.depositFund(user, provider, cancel, { value })
+        // Add funds using SDK broker
+        const tx = await broker.ledger.addLedger(value)
         console.log('[fine] depositFund:sent', tx.hash)
         const txUrl = formatTxUrl(tx.hash)
 
@@ -772,6 +765,49 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 
         return { txHash: tx.hash, txUrl, status: 'submitted' }
       } catch (e: any) {
+        throw formatError(e)
+      }
+    },
+
+    acknowledgeProviderSigner: async (provider: string) => {
+      try {
+        console.log('[fine] acknowledgeProviderSigner:start', { provider })
+        
+        // Use the official SDK broker method for Fine Tune acknowledge
+        const result = await broker.fineTuning.acknowledgeProviderSigner(provider)
+        
+        console.log('[fine] acknowledgeProviderSigner:success', result)
+        return result
+      } catch (e: any) {
+        console.error('[fine] acknowledgeProviderSigner:error', e)
+        throw formatError(e)
+      }
+    },
+
+    createTask: async (
+      provider: string,
+      model: string,
+      dataSize: number,
+      datasetHash: string,
+      configPath: string
+    ) => {
+      try {
+        console.log('[fine] createTask:start', { provider, model, dataSize, datasetHash })
+        
+        // Use the official SDK broker method for task creation
+        const result = await broker.fineTuning.createTask(
+          provider,
+          model,
+          dataSize,
+          datasetHash,
+          configPath,
+          undefined // gasPrice
+        )
+        
+        console.log('[fine] createTask:success', result)
+        return result
+      } catch (e: any) {
+        console.error('[fine] createTask:error', e)
         throw formatError(e)
       }
     }

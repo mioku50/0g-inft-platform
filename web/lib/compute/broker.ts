@@ -391,7 +391,7 @@ export async function addAccountWithDeposit(
           user,
           provider,
           extraInfo,
-          { value }
+          ethers.formatEther(value)  // SDK expects ETH amount as string
         )
         
         console.log('[fine] addAccount:sent', tx.hash)
@@ -426,7 +426,7 @@ export async function addAccountWithDeposit(
               user,
               provider,
               extraInfo,
-              { value }
+              ethers.formatEther(value)  // SDK expects ETH amount as string
             )
             
             console.log('[fine] addAccount:retry-sent', tx.hash)

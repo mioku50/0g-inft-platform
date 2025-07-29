@@ -276,7 +276,7 @@ export class FineTuneService {
         this.broker.signer.address,
         getFineTuneProvider(),
         0n,
-        { value: toWei(amount) }
+        amount  // SDK expects ETH amount as string, not { value: bigint }
       )
       return tx
     } catch (error) {

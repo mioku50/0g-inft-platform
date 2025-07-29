@@ -205,26 +205,53 @@ export class FineTuneServiceV2 {
       // 4. Подготавливаем параметры обучения
       const trainingParams = configPath || this.getDefaultTrainingConfig(model)
 
-      // 5. Создаем задачу через SDK метод
-      // ВАЖНО: Согласно документации CLI, createTask ожидает:
-      // - provider: адрес провайдера
-      // - model: имя модели (например, "distilbert-base-uncased")
-      // - datasetHash: хеш датасета в 0G Storage
-      // - trainingParams: параметры обучения в JSON формате
-      // - fee: размер комиссии в neuron
-      const tx = await this.broker.fineTuning.createTask(
-        provider,
-        model, // Имя модели, НЕ hash (например, "distilbert-base-uncased")
-        datasetHash,
-        JSON.stringify(trainingParams), // Преобразуем в строку для контракта
-        fee
-      )
-
-      // 6. Ждем подтверждения транзакции
-      const receipt = await tx.wait()
+      // 5. Создаем временный файл конфигурации для SDK
+      const fs = require('fs')
+      const path = require('path')
+      const configFilePath = path.join(process.cwd(), `temp-config-${Date.now()}.json`)
       
-      // 7. Получаем ID задачи из событий
-      const taskId = this.extractTaskIdFromReceipt(receipt)
+      const trainingConfig = configPath || this.getDefaultTrainingConfig(model)
+      fs.writeFileSync(configFilePath, JSON.stringify(trainingConfig, null, 2))
+      
+      try {
+        // 6. Создаем задачу через SDK метод с правильным порядком параметров
+        // Правильный порядок: providerAddress, preTrainedModelName, dataSize, datasetHash, trainingPath, gasPrice
+        const taskResult = await this.broker.fineTuning.createTask(
+          provider,
+          model, // Имя модели (например, "distilbert-base-uncased")
+          Number(dataSize || 0), // Размер данных как число
+          datasetHash,
+          configFilePath, // Путь к файлу конфигурации
+          undefined // gasPrice (optional)
+        )
+
+        // 7. Обрабатываем результат
+        let taskId: string
+        if (taskResult && typeof taskResult.wait === 'function') {
+          // Это транзакция
+          const receipt = await taskResult.wait()
+          taskId = this.extractTaskIdFromReceipt(receipt)
+        } else if (taskResult && taskResult.taskId) {
+          // Прямой результат с taskId
+          taskId = taskResult.taskId
+        } else {
+          throw new Error('No task ID returned from createTask')
+        }
+        
+        // 8. Очищаем временный файл
+        fs.unlinkSync(configFilePath)
+        
+        return taskId
+        
+      } catch (error) {
+        // Очищаем временный файл даже при ошибке
+        try {
+          fs.unlinkSync(configFilePath)
+        } catch (cleanupError) {
+          // Игнорируем ошибки очистки
+        }
+        throw error
+      }
       
       console.log('Created Task ID:', taskId)
       return taskId

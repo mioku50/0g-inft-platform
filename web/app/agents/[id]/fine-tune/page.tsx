@@ -745,6 +745,22 @@ function FineTunePageContent() {
           <p className="text-purple-200">
             Train your agent with custom data using 0G Compute Network
           </p>
+          
+          {/* Wallet Connection Warning */}
+          {!address && (
+            <Alert className="bg-yellow-500/10 border-yellow-500/30 mt-4">
+              <AlertCircle className="h-4 w-4 text-yellow-400" />
+              <AlertDescription className="text-yellow-200">
+                <div className="flex justify-between items-center">
+                  <span>Please connect your wallet to use Fine-tuning. Transactions require user signatures.</span>
+                  <Button size="sm" variant="outline" className="ml-4">
+                    Connect Wallet
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+          
           {backendError && (
             <Alert className="bg-red-500/10 border-red-500/30 mt-4 flex items-center gap-4">
               <AlertCircle className="h-4 w-4 text-red-400" />
@@ -966,10 +982,44 @@ function FineTunePageContent() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="llama-3.3-70b">Llama 3.3 70B</SelectItem>
-                        <SelectItem value="deepseek-r1-70b">DeepSeek R1 70B</SelectItem>
+                        <SelectItem value="llama-3.3-70b">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span>Llama 3.3 70B</span>
+                              <Badge variant="secondary" className="text-xs">Recommended</Badge>
+                            </div>
+                            <span className="text-xs text-gray-400">Language generation & conversation</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="deepseek-r1-70b">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span>DeepSeek R1 70B</span>
+                              <Badge variant="outline" className="text-xs">Reasoning</Badge>
+                            </div>
+                            <span className="text-xs text-gray-400">Complex problem solving</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="distilbert-base-uncased">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span>DistilBERT Base</span>
+                              <Badge variant="outline" className="text-xs">Official</Badge>
+                            </div>
+                            <span className="text-xs text-gray-400">Text classification</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="deepseek-r1-distill-qwen-1.5b">
+                          <div className="flex flex-col">
+                            <span>DeepSeek R1 Distill Qwen 1.5B</span>
+                            <span className="text-xs text-gray-400">Lightweight reasoning model</span>
+                          </div>
+                        </SelectItem>
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Different models are optimized for different tasks
+                    </p>
                   </div>
                   
                   <div>

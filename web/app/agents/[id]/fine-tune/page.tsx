@@ -4,7 +4,9 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useAccount, useSigner } from 'wagmi'
+import { useAccount } from 'wagmi'
+import { useWalletClient } from 'wagmi'
+import { walletClientToSigner } from '@/lib/utils/wagmi-utils'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -61,7 +63,7 @@ export default function FineTunePage() {
   const params = useParams()
   const router = useRouter()
   const { address, isConnected } = useAccount()
-  const { data: signer } = useSigner()
+  const { data: walletClient } = useWalletClient()
   
   const tokenId = params.id as string
 
@@ -81,16 +83,29 @@ export default function FineTunePage() {
     isValid: boolean
     errors: string[]
     warnings: string[]
+    userAddress?: string
+    balance?: string
+    chainId?: number
   } | null>(null)
 
-  // Validate wallet when signer changes
+  // Validate wallet when wallet client changes
   useEffect(() => {
-    if (signer && isConnected) {
-      validateUserWallet(signer).then(setWalletValidation)
+    if (walletClient && isConnected) {
+      try {
+        walletClientToSigner(walletClient).then(signer => {
+          validateUserWallet(signer).then(setWalletValidation)
+        }).catch(error => {
+          console.error('Failed to create signer:', error)
+          setWalletValidation(null)
+        })
+      } catch (error) {
+        console.error('Failed to create signer:', error)
+        setWalletValidation(null)
+      }
     } else {
       setWalletValidation(null)
     }
-  }, [signer, isConnected])
+  }, [walletClient, isConnected])
 
   // Load account info and tasks
   useEffect(() => {
@@ -204,7 +219,7 @@ export default function FineTunePage() {
       return
     }
 
-    if (!isConnected || !signer) {
+    if (!isConnected || !walletClient) {
       toast({
         title: 'Wallet Not Connected',
         description: 'Please connect your wallet to start fine-tuning',
@@ -600,7 +615,7 @@ export default function FineTunePage() {
 
                 <Button 
                   onClick={startFineTuning}
-                  disabled={!datasetRoot || !isConnected || isStarting || (walletValidation && !walletValidation.isValid)}
+                  disabled={!datasetRoot || !isConnected || isStarting || (walletValidation !== null && !walletValidation.isValid)}
                   className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold py-3"
                 >
                   {isStarting ? (

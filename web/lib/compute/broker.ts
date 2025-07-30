@@ -672,7 +672,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         }
         
         try {
-          const gas = await serving.estimateGas.addAccount(user, provider, info, { value })
+          const gas = await serving.addAccount.estimateGas(user, provider, info, { value })
           console.log('[fine] addAccount:simulate:ok', gas.toString())
         } catch (simErr: any) {
           throw parseSimulationError(simErr)
@@ -778,14 +778,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       }
     },
 
-    acknowledgeProviderSigner: async (provider: string, providerSigner: string = provider) => {
-      try {
-        const tx = await serving.acknowledgeProviderSigner(provider, providerSigner)
-        return await tx.wait()
-      } catch (e: any) {
-        throw formatError(e)
-      }
-    },
+
 
     acknowledgeDeliverable: async (provider: string, index: bigint) => {
       try {

@@ -13,7 +13,7 @@ import * as TypechainTypes from "../../typechain-types";
 // 2. We import the values at runtime and silently ignore any exceptions.
 export let Factories = {} as typeof TypechainTypes;
 try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // eslint-disable-next-line
     Factories = require("../../typechain-types") as typeof TypechainTypes;
 } catch (err) {
     // ignore

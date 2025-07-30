@@ -241,6 +241,7 @@ export class FineTuneServiceV2 {
         // 8. Очищаем временный файл
         fs.unlinkSync(configFilePath)
         
+        console.log('Created Task ID:', taskId)
         return taskId
         
       } catch (error) {
@@ -252,9 +253,6 @@ export class FineTuneServiceV2 {
         }
         throw error
       }
-      
-      console.log('Created Task ID:', taskId)
-      return taskId
 
     } catch (error) {
       console.error('Error creating task:', error)

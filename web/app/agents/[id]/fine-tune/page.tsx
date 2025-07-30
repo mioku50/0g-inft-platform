@@ -514,9 +514,11 @@ export default function FineTunePage() {
                     <AlertCircle className="h-4 w-4 text-blue-400" />
                     <AlertDescription className="text-blue-200">
                       <div className="space-y-2">
-                        <div className="font-semibold">Required Dataset Format:</div>
+                        <div className="font-semibold">Supported Dataset Formats:</div>
                         <div className="text-sm space-y-1">
-                          <div>• <strong>JSONL format</strong> - Each line is a JSON object</div>
+                          <div>• <strong>JSONL format</strong> (recommended) - Each line is a JSON object</div>
+                          <div>• <strong>JSON format</strong> - Single JSON array or object</div>
+                          <div>• <strong>TXT format</strong> - Plain text with conversation structure</div>
                           <div>• <strong>Messages structure</strong> - Use "messages" array with "role" and "content"</div>
                           <div>• <strong>Roles:</strong> "system", "user", "assistant"</div>
                           <div>• <strong>Size:</strong> 100-10,000 examples (varies by model)</div>
@@ -524,9 +526,12 @@ export default function FineTunePage() {
                         
                         <details className="mt-3">
                           <summary className="cursor-pointer text-sm font-medium text-blue-300 hover:text-blue-200">
-                            Show Example Format
+                            Show Example Formats
                           </summary>
-                          <pre className="text-xs mt-2 bg-black/30 p-3 rounded overflow-auto text-green-300">
+                          <div className="mt-2 space-y-3">
+                            <div>
+                              <div className="text-xs font-semibold text-blue-300 mb-1">JSONL Format (Recommended):</div>
+                              <pre className="text-xs bg-black/30 p-3 rounded overflow-auto text-green-300">
 {`{"messages": [
   {"role": "system", "content": "You are a helpful AI assistant."},
   {"role": "user", "content": "What is machine learning?"},
@@ -536,15 +541,42 @@ export default function FineTunePage() {
   {"role": "user", "content": "Explain neural networks"},
   {"role": "assistant", "content": "Neural networks are computing systems..."}
 ]}`}
-                          </pre>
-                          <div className="mt-2">
+                              </pre>
+                            </div>
+                            
+                            <div>
+                              <div className="text-xs font-semibold text-blue-300 mb-1">JSON Format:</div>
+                              <pre className="text-xs bg-black/30 p-3 rounded overflow-auto text-green-300">
+{`[
+  {"messages": [
+    {"role": "system", "content": "You are a helpful AI assistant."},
+    {"role": "user", "content": "What is machine learning?"},
+    {"role": "assistant", "content": "Machine learning is a subset of AI..."}
+  ]},
+  {"messages": [
+    {"role": "user", "content": "Explain neural networks"},
+    {"role": "assistant", "content": "Neural networks are computing systems..."}
+  ]}
+]`}
+                              </pre>
+                            </div>
+                          </div>
+                          <div className="mt-2 space-y-1">
                             <a 
                               href="/example-dataset.jsonl" 
                               download
                               className="text-sm text-blue-300 hover:text-blue-200 underline flex items-center gap-1"
                             >
                               <ExternalLink className="h-3 w-3" />
-                              Download Example Dataset
+                              Download Example Dataset (JSONL)
+                            </a>
+                            <a 
+                              href="/example-dataset.json" 
+                              download
+                              className="text-sm text-blue-300 hover:text-blue-200 underline flex items-center gap-1"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              Download Example Dataset (JSON)
                             </a>
                           </div>
                         </details>

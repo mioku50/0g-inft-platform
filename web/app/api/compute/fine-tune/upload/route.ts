@@ -47,11 +47,30 @@ export async function POST(request: NextRequest) {
     // Parse dataset and count examples
     let dataSize = 0
     try {
-      const lines = fileContent.trim().split('\n').filter(line => line.trim())
-      dataSize = lines.length
-      console.log('[fine-tune-upload] Dataset contains', dataSize, 'examples')
+      const fileExtension = file.name.split('.').pop()?.toLowerCase()
+      
+      if (fileExtension === 'json') {
+        // Handle JSON format - could be array of objects or single object
+        const jsonData = JSON.parse(fileContent)
+        if (Array.isArray(jsonData)) {
+          dataSize = jsonData.length
+        } else if (jsonData.messages) {
+          dataSize = 1 // Single conversation
+        } else {
+          dataSize = 1 // Fallback for other JSON structures
+        }
+        console.log('[fine-tune-upload] JSON dataset contains', dataSize, 'examples')
+      } else {
+        // Handle JSONL format (default) - count non-empty lines
+        const lines = fileContent.trim().split('\n').filter(line => line.trim())
+        dataSize = lines.length
+        console.log('[fine-tune-upload] JSONL dataset contains', dataSize, 'examples')
+      }
     } catch (error) {
       console.warn('[fine-tune-upload] Could not parse dataset for counting:', error)
+      // Fallback to line counting
+      const lines = fileContent.trim().split('\n').filter(line => line.trim())
+      dataSize = lines.length
     }
 
     // Upload to 0G Storage

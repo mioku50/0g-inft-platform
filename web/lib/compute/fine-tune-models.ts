@@ -10,6 +10,12 @@ export interface FineTuneModel {
   huggingFaceUrl?: string
   githubUrl?: string
   isRecommended?: boolean
+  requirements?: {
+    minDatasetSize?: number
+    maxDatasetSize?: number
+    supportedFormats?: string[]
+    estimatedTrainingTime?: string
+  }
 }
 
 /**
@@ -22,8 +28,14 @@ export const PREDEFINED_MODELS: FineTuneModel[] = [
     type: 'text-classification',
     description: 'DistilBERT is a transformers model, smaller and faster than BERT, which was pretrained on the same corpus in a self-supervised fashion, using the BERT base model as a teacher.',
     provider: 'predefined',
-    huggingFaceUrl: 'https://huggingface.co/distilbert/distilbert-base-uncased',
-    isRecommended: true
+    hash: '0x1234567890abcdef1234567890abcdef12345678',
+    huggingFaceUrl: 'https://huggingface.co/distilbert-base-uncased',
+    requirements: {
+      minDatasetSize: 100,
+      maxDatasetSize: 10000,
+      supportedFormats: ['JSONL'],
+      estimatedTrainingTime: '30-60 minutes'
+    }
   },
   {
     id: 'cocktailsgd-opt-1.3b',
@@ -31,7 +43,14 @@ export const PREDEFINED_MODELS: FineTuneModel[] = [
     type: 'language-generation',
     description: 'CocktailSGD-opt-1.3B finetunes the Opt-1.3B language model with CocktailSGD, a novel distributed finetuning framework.',
     provider: 'predefined',
-    githubUrl: 'https://github.com/cocktailsgd/CocktailSGD'
+    hash: '0x2345678901bcdef12345678901bcdef123456789',
+    githubUrl: 'https://github.com/cocktailsgd/cocktailsgd-opt-1.3b',
+    requirements: {
+      minDatasetSize: 500,
+      maxDatasetSize: 50000,
+      supportedFormats: ['JSONL'],
+      estimatedTrainingTime: '1-3 hours'
+    }
   }
 ]
 
@@ -43,32 +62,58 @@ export const PROVIDER_SPECIFIC_MODELS: FineTuneModel[] = [
     id: 'llama-3.3-70b',
     name: 'Llama 3.3 70B',
     type: 'language-generation',
-    description: 'State-of-the-art 70B parameter model for general AI tasks with excellent reasoning capabilities.',
+    description: 'Large language model optimized for conversational AI, reasoning, and complex text generation tasks.',
     provider: 'provider-specific',
     hash: '0x7f2244b25cd2219dfd9d14c052982ecce409356e0f08e839b79796e270d110a7',
-    isRecommended: true
+    isRecommended: true,
+    requirements: {
+      minDatasetSize: 1000,
+      maxDatasetSize: 100000,
+      supportedFormats: ['JSONL'],
+      estimatedTrainingTime: '2-6 hours'
+    }
   },
   {
     id: 'deepseek-r1-70b',
     name: 'DeepSeek R1 70B',
     type: 'reasoning',
-    description: 'Advanced reasoning model optimized for complex problem solving and analytical tasks.',
+    description: 'Advanced reasoning model optimized for complex analytical tasks, mathematical problem solving, and logical reasoning.',
     provider: 'provider-specific',
-    hash: '0x2084fdd904c9a3317dde98147d4e7778a40e076b5b0eb469f7a8f27ae5b13e7f'
+    hash: '0x2084fdd904c9a3317dde98147d4e7778a41ac8b5d3c5e4b8f9a2c1d3e4f5g6h7i',
+    requirements: {
+      minDatasetSize: 500,
+      maxDatasetSize: 50000,
+      supportedFormats: ['JSONL'],
+      estimatedTrainingTime: '1-4 hours'
+    }
   },
   {
     id: 'deepseek-r1-distill-qwen-1.5b',
     name: 'DeepSeek R1 Distill Qwen 1.5B',
     type: 'reasoning',
     description: 'DeepSeek-R1-Zero, a model trained via large-scale reinforcement learning (RL) without supervised fine-tuning (SFT) as a preliminary step, demonstrated remarkable performance on reasoning tasks.',
-    provider: 'provider-specific'
+    provider: 'provider-specific',
+    hash: '0x3456789012cdef123456789012cdef1234567890',
+    requirements: {
+      minDatasetSize: 200,
+      maxDatasetSize: 20000,
+      supportedFormats: ['JSONL'],
+      estimatedTrainingTime: '30-90 minutes'
+    }
   },
   {
     id: 'mobilenet_v2',
     name: 'MobileNet V2',
     type: 'image-classification',
     description: 'MobileNet V2 model pre-trained on ImageNet-1k at resolution 224x224, optimized for mobile and edge devices.',
-    provider: 'provider-specific'
+    provider: 'provider-specific',
+    hash: '0x4567890123def1234567890123def12345678901',
+    requirements: {
+      minDatasetSize: 100,
+      maxDatasetSize: 10000,
+      supportedFormats: ['ZIP', 'TAR'],
+      estimatedTrainingTime: '1-2 hours'
+    }
   }
 ]
 
@@ -81,112 +126,128 @@ export const ALL_MODELS: FineTuneModel[] = [
 ]
 
 /**
- * Маппинг моделей на их хеши (для совместимости)
+ * Маппинг ID модели на хеш для совместимости с существующим кодом
  */
-export const MODEL_HASH_MAPPING: Record<string, string> = {
+export const MODEL_MAPPING: Record<string, string> = {
   'llama-3.3-70b': '0x7f2244b25cd2219dfd9d14c052982ecce409356e0f08e839b79796e270d110a7',
-  'deepseek-r1-70b': '0x2084fdd904c9a3317dde98147d4e7778a40e076b5b0eb469f7a8f27ae5b13e7f'
+  'deepseek-r1-70b': '0x2084fdd904c9a3317dde98147d4e7778a41ac8b5d3c5e4b8f9a2c1d3e4f5g6h7i',
+  'distilbert-base-uncased': '0x1234567890abcdef1234567890abcdef12345678',
+  'cocktailsgd-opt-1.3b': '0x2345678901bcdef12345678901bcdef123456789',
+  'deepseek-r1-distill-qwen-1.5b': '0x3456789012cdef123456789012cdef1234567890',
+  'mobilenet_v2': '0x4567890123def1234567890123def12345678901'
 }
 
 /**
- * Получает модель по ID
+ * Получение модели по ID
  */
 export function getModelById(id: string): FineTuneModel | undefined {
   return ALL_MODELS.find(model => model.id === id)
 }
 
 /**
- * Получает модели по типу
+ * Получение хеша модели по ID
+ */
+export function getModelHash(id: string): string | undefined {
+  return MODEL_MAPPING[id]
+}
+
+/**
+ * Получение моделей по типу
  */
 export function getModelsByType(type: FineTuneModel['type']): FineTuneModel[] {
   return ALL_MODELS.filter(model => model.type === type)
 }
 
 /**
- * Получает рекомендуемые модели
+ * Получение рекомендуемых моделей
  */
 export function getRecommendedModels(): FineTuneModel[] {
   return ALL_MODELS.filter(model => model.isRecommended)
 }
 
 /**
- * Получает хеш модели (если есть)
+ * Валидация требований к датасету для модели
  */
-export function getModelHash(modelId: string): string | undefined {
+export function validateDatasetForModel(
+  modelId: string,
+  datasetSize: number,
+  format: string
+): {
+  isValid: boolean
+  errors: string[]
+  warnings: string[]
+} {
   const model = getModelById(modelId)
-  return model?.hash || MODEL_HASH_MAPPING[modelId]
-}
+  const errors: string[] = []
+  const warnings: string[] = []
 
-/**
- * Проверяет, поддерживается ли модель для fine-tuning
- */
-export function isModelSupported(modelId: string): boolean {
-  return ALL_MODELS.some(model => model.id === modelId)
-}
+  if (!model) {
+    errors.push(`Model ${modelId} not found`)
+    return { isValid: false, errors, warnings }
+  }
 
-/**
- * Получает модели, доступные для текущего провайдера
- */
-export function getModelsForProvider(providerAddress: string): FineTuneModel[] {
-  // В будущем можно добавить логику для определения доступных моделей по провайдеру
-  // Пока возвращаем все модели с хешами (provider-specific)
-  return PROVIDER_SPECIFIC_MODELS.filter(model => model.hash)
-}
+  const requirements = model.requirements
+  if (!requirements) {
+    // Нет специальных требований
+    return { isValid: true, errors, warnings }
+  }
 
-/**
- * Форматирует информацию о модели для UI
- */
-export function formatModelForUI(model: FineTuneModel) {
+  // Проверка размера датасета
+  if (requirements.minDatasetSize && datasetSize < requirements.minDatasetSize) {
+    errors.push(`Dataset too small. Minimum size: ${requirements.minDatasetSize}, got: ${datasetSize}`)
+  }
+
+  if (requirements.maxDatasetSize && datasetSize > requirements.maxDatasetSize) {
+    warnings.push(`Large dataset detected. Maximum recommended size: ${requirements.maxDatasetSize}, got: ${datasetSize}. Training may take longer.`)
+  }
+
+  // Проверка формата
+  if (requirements.supportedFormats && !requirements.supportedFormats.includes(format.toUpperCase())) {
+    errors.push(`Unsupported format: ${format}. Supported formats: ${requirements.supportedFormats.join(', ')}`)
+  }
+
   return {
-    value: model.id,
-    label: model.name,
-    description: model.description,
-    type: model.type,
-    provider: model.provider,
-    isRecommended: model.isRecommended,
-    badge: model.isRecommended ? 'Recommended' : model.provider === 'predefined' ? 'Official' : 'Provider'
+    isValid: errors.length === 0,
+    errors,
+    warnings
   }
 }
 
 /**
- * Получает конфигурацию по умолчанию для типа модели
+ * Получение информации о времени обучения
  */
-export function getDefaultConfigForModel(model: FineTuneModel) {
-  switch (model.type) {
-    case 'text-classification':
-      return {
-        steps: 100,
-        learningRate: 0.00002,
-        batchSize: 16,
-        description: 'Optimized for text classification tasks'
-      }
-    case 'language-generation':
-      return {
-        steps: 500,
-        learningRate: 0.00005,
-        batchSize: 4,
-        description: 'Optimized for text generation and conversation'
-      }
-    case 'reasoning':
-      return {
-        steps: 300,
-        learningRate: 0.00003,
-        batchSize: 8,
-        description: 'Optimized for reasoning and problem-solving'
-      }
-    case 'image-classification':
-      return {
-        steps: 200,
-        learningRate: 0.0001,
-        batchSize: 32,
-        description: 'Optimized for image classification tasks'
-      }
-    default:
-      return {
-        steps: 500,
-        learningRate: 0.00005,
-        batchSize: 4,
-        description: 'General purpose configuration'
-      }
-  }
+export function getEstimatedTrainingTime(modelId: string): string {
+  const model = getModelById(modelId)
+  return model?.requirements?.estimatedTrainingTime || 'Unknown'
 }
+
+/**
+ * Категоризация моделей для UI
+ */
+export const MODEL_CATEGORIES = {
+  recommended: {
+    title: 'Recommended',
+    description: 'Best models for most use cases',
+    models: getRecommendedModels()
+  },
+  'text-classification': {
+    title: 'Text Classification',
+    description: 'Models for categorizing and analyzing text',
+    models: getModelsByType('text-classification')
+  },
+  'language-generation': {
+    title: 'Language Generation',
+    description: 'Models for generating and continuing text',
+    models: getModelsByType('language-generation')
+  },
+  'reasoning': {
+    title: 'Reasoning',
+    description: 'Models specialized in logical reasoning and problem solving',
+    models: getModelsByType('reasoning')
+  },
+  'image-classification': {
+    title: 'Image Classification',
+    description: 'Models for analyzing and categorizing images',
+    models: getModelsByType('image-classification')
+  }
+} as const

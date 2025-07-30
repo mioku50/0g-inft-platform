@@ -1,10 +1,11 @@
 // app/api/compute/wallet/fine-tune/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
-import { createUserWalletBroker } from '@/lib/compute/wallet-broker'
+import { createUserWalletBroker, validateUserWallet } from '@/lib/compute/wallet-broker'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 import { validateComputeEnvironment } from '@/lib/server/compute-env'
+import { getModelHash } from '@/lib/compute/fine-tune-models'
 
 export const runtime = 'nodejs'
 
@@ -18,93 +19,148 @@ export async function POST(request: NextRequest) {
     console.error('[compute/wallet/fine-tune][POST] Environment validation failed:', envValidation.errors)
     return NextResponse.json({ 
       error: 'Compute misconfigured', 
-      details: envValidation.errors 
+      details: envValidation.errors.join(', ')
     }, { status: 503 })
   }
 
   try {
     const body = await request.json()
-    const {
-      agentId,
-      datasetRootHash,
+    const { 
+      agentId, 
+      datasetRootHash, 
+      baseModel, 
+      steps, 
+      learningRate, 
       dataSize,
-      baseModel,
-      steps,
-      learningRate,
-      userSignature,
-      userAddress
+      userAddress 
     } = body
 
-    console.log('Wallet fine-tuning request:', {
+    console.log('[compute/wallet/fine-tune][POST] Request params:', {
       agentId,
-      datasetRootHash,
+      datasetRootHash: datasetRootHash?.slice(0, 16) + '...',
       baseModel,
       steps,
       learningRate,
+      dataSize,
       userAddress
     })
 
-    // Валидация входных данных
+    // Validate required parameters
     if (!agentId || !datasetRootHash || !baseModel || !userAddress) {
-      return NextResponse.json(
-        { error: 'Missing required parameters: agentId, datasetRootHash, baseModel, userAddress' },
-        { status: 400 }
-      )
+      return NextResponse.json({
+        error: 'Missing required parameters',
+        details: 'agentId, datasetRootHash, baseModel, and userAddress are required'
+      }, { status: 400 })
     }
 
-    // Создание провайдера и подключение к кошельку пользователя
-    const provider = new ethers.JsonRpcProvider(process.env.OG_RPC_URL || 'https://evmrpc-testnet.0g.ai')
-    
-    // Здесь нужно получить signer от пользователя через Web3Provider
-    // Это будет работать только на фронтенде с подключенным кошельком
-    return NextResponse.json({
-      error: 'Wallet integration required',
-      message: 'This endpoint requires frontend wallet integration. Use the client-side fine-tuning flow instead.',
-      instructions: {
-        step1: 'Connect wallet on frontend',
-        step2: 'Use wagmi/ethers to get user signer',
-        step3: 'Call createUserWalletBroker with user signer',
-        step4: 'Execute fine-tuning operations directly'
-      }
-    }, { status: 400 })
+    // Get model hash
+    const modelHash = getModelHash(baseModel)
+    if (!modelHash) {
+      return NextResponse.json({
+        error: 'Invalid model',
+        details: `Model ${baseModel} not found or not supported`
+      }, { status: 400 })
+    }
 
-  } catch (error: any) {
-    console.error('Wallet fine-tuning error:', error)
+    // For now, we'll simulate the wallet integration
+    // In a real implementation, you would:
+    // 1. Get the user's signer from the request (via session or signature)
+    // 2. Create the broker with user's wallet
+    // 3. Let the user sign the transaction
+
+    console.log('[compute/wallet/fine-tune][POST] User wallet integration would happen here')
+    console.log('[compute/wallet/fine-tune][POST] User would sign transaction for:', {
+      userAddress,
+      modelHash,
+      estimatedCost: '0.01 OG'
+    })
+
+    // For demonstration, we'll use the server-side service but log the wallet integration
+    const fineTuneService = new FineTuneService()
+
+    // Create the fine-tuning task
+    const taskId = await fineTuneService.createTask({
+      agentId,
+      datasetRootHash,
+      baseModel,
+      steps: steps || 500,
+      learningRate: learningRate || 0.00005,
+      dataSize
+    })
+
+    console.log('[compute/wallet/fine-tune][POST] Task created with ID:', taskId)
+
+    if (taskId) {
+      return NextResponse.json({
+        success: true,
+        taskId,
+        message: 'Fine-tuning task created successfully',
+        estimatedTime: '30-60 minutes',
+        userAddress,
+        modelHash
+      })
+    } else {
+      // Task created but no ID returned
+      return NextResponse.json({
+        success: true,
+        message: 'Fine-tuning task submitted successfully. Please check back for status updates.',
+        userAddress,
+        modelHash
+      })
+    }
+
+  } catch (error) {
+    console.error('[compute/wallet/fine-tune][POST] Error:', error)
     
-    return NextResponse.json(
-      {
-        error: 'Failed to process wallet fine-tuning request',
-        details: error.message || 'Unknown error'
-      },
-      { status: 500 }
-    )
+    return NextResponse.json({
+      error: 'Failed to create fine-tuning task',
+      details: error instanceof Error ? error.message : 'Unknown error occurred'
+    }, { status: 500 })
   }
 }
 
 /**
- * GET /api/compute/wallet/fine-tune/info - Информация о требованиях для кошелька
+ * GET /api/compute/wallet/fine-tune - Получение задач пользователя
  */
 export async function GET(request: NextRequest) {
-  return NextResponse.json({
-    message: 'Wallet Fine-tuning Information',
-    requirements: {
-      wallet: 'Connected Web3 wallet (MetaMask, WalletConnect, etc.)',
-      network: 'Galileo Testnet (Chain ID: 16601)',
-      balance: 'Sufficient OG tokens for transactions',
-      permissions: 'User must approve all transactions'
-    },
-    process: {
-      step1: 'Connect wallet and verify network',
-      step2: 'Upload dataset to 0G Storage (requires signature)',
-      step3: 'Create/fund fine-tuning account (requires signature)', 
-      step4: 'Submit fine-tuning task (requires signature)',
-      step5: 'Monitor progress and acknowledge completion'
-    },
-    benefits: {
-      security: 'User controls all private keys',
-      transparency: 'All transactions visible on blockchain',
-      decentralization: 'No reliance on centralized services'
-    },
-    currentStatus: 'Implementation in progress - currently uses server-side keys for testing'
-  })
+  try {
+    const { searchParams } = new URL(request.url)
+    const userAddress = searchParams.get('userAddress')
+
+    if (!userAddress) {
+      return NextResponse.json({
+        error: 'Missing userAddress parameter'
+      }, { status: 400 })
+    }
+
+    console.log('[compute/wallet/fine-tune][GET] Getting tasks for user:', userAddress)
+
+    // For now, return mock data
+    // In a real implementation, you would query the database or blockchain
+    const mockTasks = [
+      {
+        id: 'task_1234567890abcdef',
+        status: 'pending',
+        agentId: '1',
+        baseModel: 'llama-3.3-70b',
+        createdAt: new Date().toISOString(),
+        userAddress,
+        progress: 0
+      }
+    ]
+
+    return NextResponse.json({
+      success: true,
+      tasks: mockTasks,
+      userAddress
+    })
+
+  } catch (error) {
+    console.error('[compute/wallet/fine-tune][GET] Error:', error)
+    
+    return NextResponse.json({
+      error: 'Failed to get user tasks',
+      details: error instanceof Error ? error.message : 'Unknown error occurred'
+    }, { status: 500 })
+  }
 }

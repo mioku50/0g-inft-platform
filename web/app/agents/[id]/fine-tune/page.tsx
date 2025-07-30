@@ -3,336 +3,130 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useAccount } from 'wagmi'
+import Link from 'next/link'
+import { useAccount, useSigner } from 'wagmi'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Progress } from '@/components/ui/progress'
+import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
-  Card,
-  Button,
-  Input,
-  Label,
-  Badge,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Alert,
-  AlertDescription
-} from '@/components/ui'
-import { ErrorBoundary } from '@/components/ui/error-boundary'
-import { toast } from '@/components/ui/use-toast'
+  ArrowLeft, 
+  Upload, 
+  Play, 
+  AlertCircle, 
+  CheckCircle, 
+  Clock,
+  Wallet,
+  ExternalLink,
+  Info,
+  Zap,
+  Brain,
+  Image,
+  FileText
+} from 'lucide-react'
+import { toast } from '@/hooks/use-toast'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 import { 
-  Brain, 
-  Upload, 
-  Loader2, 
-  ArrowLeft,
-  FileUp,
-  Bot,
-  Check,
-  AlertCircle,
-  Download,
-  Activity,
-  Wallet,
-  Plus,
-  RefreshCw
-} from 'lucide-react'
-import Link from 'next/link'
+  ALL_MODELS, 
+  MODEL_CATEGORIES, 
+  getModelById, 
+  validateDatasetForModel,
+  getEstimatedTrainingTime,
+  type FineTuneModel 
+} from '@/lib/compute/fine-tune-models'
+import { validateUserWallet } from '@/lib/compute/wallet-broker'
 
 interface AccountInfo {
   balance: string
-  exists: boolean
   needsTopUp: boolean
 }
 
-interface APIError {
-  error: string
-  details?: string
-  diagnostics?: any
+interface TaskInfo {
+  id: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  progress?: number
+  logs?: string[]
+  createdAt: string
+  completedAt?: string
 }
 
-function FineTunePageContent() {
+export default function FineTunePage() {
   const params = useParams()
   const router = useRouter()
-  const { address } = useAccount()
+  const { address, isConnected } = useAccount()
+  const { data: signer } = useSigner()
   
   const tokenId = params.id as string
-  
-  // States
-  const [dataset, setDataset] = useState<File | null>(null)
-  const [datasetRoot, setDatasetRoot] = useState('')
-  const [dataSize, setDataSize] = useState<number | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
-  const [baseModel, setBaseModel] = useState('llama-3.3-70b')
+
+  // State
+  const [isLoading, setIsLoading] = useState(false)
+  const [isStarting, setIsStarting] = useState(false)
+  const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null)
+  const [tasks, setTasks] = useState<TaskInfo[]>([])
+  const [selectedModel, setSelectedModel] = useState<string>('llama-3.3-70b')
   const [steps, setSteps] = useState(500)
   const [learningRate, setLearningRate] = useState(0.00005)
-  const [taskId, setTaskId] = useState<string | null>(null)
-  const [taskStatus, setTaskStatus] = useState<string>('')
-  const [taskProgress, setTaskProgress] = useState<any>(null)
-  const [isStarting, setIsStarting] = useState(false)
-  const [isPolling, setIsPolling] = useState(false)
-  const [modelRootHash, setModelRootHash] = useState<string | null>(null)
-  
-  // Account management states
-  const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null)
-  const [isCheckingAccount, setIsCheckingAccount] = useState(true)
-  const [depositAmount, setDepositAmount] = useState('0.01')
-  const [isDepositing, setIsDepositing] = useState(false)
-  const [backendError, setBackendError] = useState<string | null>(null)
-  const [txUrl, setTxUrl] = useState<string | null>(null)
-  const [txStatus, setTxStatus] = useState<string | null>(null)
-  const [lastApiError, setLastApiError] = useState<APIError | null>(null)
+  const [datasetFile, setDatasetFile] = useState<File | null>(null)
+  const [datasetRoot, setDatasetRoot] = useState<string>('')
+  const [dataSize, setDataSize] = useState<number>(0)
+  const [isUploading, setIsUploading] = useState(false)
+  const [walletValidation, setWalletValidation] = useState<{
+    isValid: boolean
+    errors: string[]
+    warnings: string[]
+  } | null>(null)
 
-  // Load cached dataset info
+  // Validate wallet when signer changes
   useEffect(() => {
+    if (signer && isConnected) {
+      validateUserWallet(signer).then(setWalletValidation)
+    } else {
+      setWalletValidation(null)
+    }
+  }, [signer, isConnected])
+
+  // Load account info and tasks
+  useEffect(() => {
+    if (isConnected && address) {
+      loadAccountInfo()
+      loadTasks()
+    }
+  }, [isConnected, address])
+
+  const loadAccountInfo = async () => {
     try {
-      const cached = localStorage.getItem(`ds-${tokenId}`)
-      if (cached) {
-        const { root, size } = JSON.parse(cached)
-        setDatasetRoot(root)
-        setDataSize(size)
+      const response = await fetch('/api/compute/fine-tune/account')
+      if (response.ok) {
+        const data = await response.json()
+        setAccountInfo(data)
       }
     } catch (error) {
-      console.warn('Failed to load cached dataset info:', error)
+      console.error('Failed to load account info:', error)
     }
-  }, [tokenId])
-
-  // Check account status on mount
-  useEffect(() => {
-    if (address) {
-      checkAccountStatus()
-    }
-  }, [address])
-
-  const parseAPIError = (response: Response, data: any): APIError => {
-    const apiError: APIError = {
-      error: data.error || 'Unknown error',
-      details: data.details,
-      diagnostics: data.diagnostics
-    }
-
-    // Log diagnostic information
-    if (apiError.diagnostics) {
-      console.log('[fine-tune] API Error Diagnostics:', apiError.diagnostics)
-    }
-
-    return apiError
   }
 
-  const checkAccountStatus = async (silent = false) => {
+  const loadTasks = async () => {
     try {
-      setIsCheckingAccount(true)
-      setLastApiError(null)
-      console.log('GET /api/compute/account')
-      
-      const response = await fetch('/api/compute/account')
-      const data = await response.json().catch(() => ({}))
-      
-      if (response.status === 503) {
-        const error = parseAPIError(response, data)
-        setBackendError('Backend misconfigured')
-        setLastApiError(error)
-        setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
-        return null
+      const response = await fetch('/api/compute/fine-tune/tasks')
+      if (response.ok) {
+        const data = await response.json()
+        setTasks(data.tasks || [])
       }
-      
-      if (!response.ok) {
-        const error = parseAPIError(response, data)
-        setLastApiError(error)
-        
-        if (!silent) {
-          toast({
-            variant: 'destructive',
-            title: 'Account Check Failed',
-            description: error.details || error.error || 'Failed to fetch account info',
-            action: (
-              <Button variant="outline" onClick={() => checkAccountStatus()}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Retry
-              </Button>
-            )
-          })
-        }
-        setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
-        return null
-      }
-      
-      console.log('GET /api/compute/account result', data)
-      const accountData = {
-        balance: data.result?.balance || data.balance || '0',
-        exists: data.result?.exists || data.exists || false,
-        needsTopUp: parseFloat(data.result?.balance || data.balance || '0') < 0.001
-      }
-      
-      setAccountInfo(accountData)
-      setBackendError(null)
-      setLastApiError(null)
-      return accountData
-    } catch (error: any) {
-      console.error('Error checking account:', error)
-      const apiError: APIError = {
-        error: 'NetworkError',
-        details: error.message || 'Network connection failed'
-      }
-      setLastApiError(apiError)
-      
-      if (!silent) {
-        toast({
-          variant: 'destructive',
-          title: 'Network Error',
-          description: 'Failed to connect to the server. Please check your connection.',
-          action: (
-            <Button variant="outline" onClick={() => checkAccountStatus()}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Retry
-            </Button>
-          )
-        })
-      }
-      setAccountInfo({ balance: '0', exists: false, needsTopUp: true })
-      return null
-    } finally {
-      setIsCheckingAccount(false)
+    } catch (error) {
+      console.error('Failed to load tasks:', error)
     }
   }
 
-  const pollAccount = async () => {
-    if (isPolling) return
-    setIsPolling(true)
-    const end = Date.now() + 60000
-    while (Date.now() < end) {
-      const info = await checkAccountStatus(true)
-      if (info && parseFloat(info.balance) > 0) break
-      await new Promise((r) => setTimeout(r, 5000 + Math.random() * 3000))
-    }
-    setIsPolling(false)
-  }
-
-  const createAccountAndDeposit = async () => {
-    if (!address) {
-      toast({
-        title: "Wallet not connected",
-        description: "Please connect your wallet first",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setIsDepositing(true)
-    setBackendError(null)
-    setTxUrl(null)
-    setTxStatus(null)
-    setLastApiError(null)
-
-    try {
-      console.log('Creating account with deposit:', depositAmount)
-      const response = await fetch('/api/compute/account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          amount: depositAmount, 
-          action: accountInfo?.exists ? 'deposit' : 'create' 
-        }),
-      })
-
-      const data = await response.json()
-      console.log('Account API response:', data)
-
-      if (response.ok && data.success) {
-        setTxUrl(data.explorerUrl || data.txUrl)
-        setTxStatus('submitted')
-        
-        toast({
-          title: "Transaction submitted",
-          description: `${accountInfo?.exists ? 'Deposit' : 'Account creation'} transaction has been sent to the network`,
-        })
-
-        // Start polling for balance updates
-        const pollInterval = setInterval(async () => {
-          try {
-            const balanceResponse = await fetch('/api/compute/account')
-            const balanceData = await balanceResponse.json()
-            
-            if (balanceResponse.ok && (balanceData.result || balanceData)) {
-              const result = balanceData.result || balanceData
-              setAccountInfo({
-                balance: result.balance,
-                exists: result.exists,
-                needsTopUp: parseFloat(result.balance) < 0.001
-              })
-              
-              if (parseFloat(result.balance) > 0) {
-                setTxStatus('completed')
-                clearInterval(pollInterval)
-                toast({
-                  title: "Success!",
-                  description: `Account funded with ${result.balance} OG`,
-                })
-              }
-            }
-          } catch (pollError) {
-            console.error('Balance polling error:', pollError)
-          }
-        }, 3000)
-
-        // Stop polling after 2 minutes
-        setTimeout(() => {
-          clearInterval(pollInterval)
-          if (txStatus === 'submitted') {
-            setTxStatus('timeout')
-          }
-        }, 120000)
-
-      } else {
-        console.error('Account API error:', data)
-        const apiError = parseAPIError(response, data)
-        setLastApiError(apiError)
-        
-        let errorMessage = apiError.details || apiError.error || 'Unknown error occurred'
-        
-        // Enhanced error message mapping
-        if (apiError.error === 'ContractValidationFailed') {
-          errorMessage = 'The contract rejected the transaction. This might be due to provider configuration issues. Please try again later or contact support.'
-        } else if (apiError.error === 'ProviderNotRegistered') {
-          errorMessage = 'The fine-tuning provider is not properly registered. Please contact support.'
-        } else if (apiError.error === 'AccountExists') {
-          errorMessage = 'Account already exists. Try using the deposit action instead.'
-        } else if (apiError.error === 'InsufficientBalance') {
-          errorMessage = 'Insufficient wallet balance for this transaction.'
-        } else if (apiError.details && apiError.details.includes('Operations must be called through Ledger')) {
-          errorMessage = 'Операция должна выполняться через Ledger контракт, а не напрямую через FineTuningServing.'
-        }
-        
-        setBackendError(errorMessage)
-        
-        toast({
-          title: "Transaction failed",
-          description: errorMessage,
-          variant: "destructive",
-        })
-      }
-    } catch (error: any) {
-      console.error('Create account error:', error)
-      const errorMessage = 'Network error occurred. Please check your connection and try again.'
-      const apiError: APIError = {
-        error: 'NetworkError',
-        details: errorMessage
-      }
-      setLastApiError(apiError)
-      setBackendError(errorMessage)
-      
-      toast({
-        title: "Network error",
-        description: errorMessage,
-        variant: "destructive",
-      })
-    } finally {
-      setIsDepositing(false)
-    }
-  }
-
-  // Upload dataset to 0G Storage
-  const handleDatasetUpload = async () => {
-    if (!dataset) {
+  // Upload dataset
+  const uploadDataset = async () => {
+    if (!datasetFile) {
       toast({
         title: 'Error',
         description: 'Please select a dataset file',
@@ -341,29 +135,57 @@ function FineTunePageContent() {
       return
     }
 
-    if (datasetRoot) return
+    // Validate dataset for selected model
+    const model = getModelById(selectedModel)
+    if (model) {
+      const validation = validateDatasetForModel(
+        selectedModel, 
+        dataSize || 100, 
+        datasetFile.name.split('.').pop() || ''
+      )
+      
+      if (!validation.isValid) {
+        toast({
+          title: 'Dataset Validation Failed',
+          description: validation.errors.join(', '),
+          variant: 'destructive'
+        })
+        return
+      }
+
+      if (validation.warnings.length > 0) {
+        console.warn('Dataset warnings:', validation.warnings)
+      }
+    }
+
     setIsUploading(true)
     try {
-      const form = new FormData()
-      form.set('file', dataset)
-      const res = await fetch('/api/storage/upload', {
+      const formData = new FormData()
+      formData.append('file', datasetFile)
+      formData.append('agentId', tokenId)
+
+      const response = await fetch('/api/compute/fine-tune/upload', {
         method: 'POST',
-        body: form
+        body: formData
       })
-      if (!res.ok) throw new Error('Upload failed')
-      const result = await res.json()
-      setDatasetRoot(result.rootHash)
-      setDataSize(result.size)
-      localStorage.setItem(`ds-${tokenId}`, JSON.stringify({ root: result.rootHash, size: result.size }))
-      toast({
-        title: 'Success!',
-        description: 'Dataset uploaded to 0G Storage'
-      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setDatasetRoot(data.rootHash)
+        setDataSize(data.dataSize || 0)
+        toast({
+          title: 'Success',
+          description: 'Dataset uploaded successfully'
+        })
+      } else {
+        const error = await response.json()
+        throw new Error(error.error || 'Upload failed')
+      }
     } catch (error) {
       console.error('Upload error:', error)
       toast({
-        title: 'Error',
-        description: 'Failed to upload dataset',
+        title: 'Upload Failed',
+        description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive'
       })
     } finally {
@@ -371,39 +193,30 @@ function FineTunePageContent() {
     }
   }
 
-  // Get status display info
-  const getStatusInfo = (status: string) => {
-    switch (status) {
-      case 'Init':
-        return { text: 'Init', color: 'text-purple-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
-      case 'SettingUp':
-        return { text: 'Setting Up', color: 'text-purple-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
-      case 'Training':
-        return { text: 'Training', color: 'text-purple-400', icon: <Loader2 className="w-5 h-5 animate-spin" /> }
-      case 'Delivering':
-        return { text: 'Delivering', color: 'text-blue-400', icon: <Upload className="w-5 h-5" /> }
-      case 'Finished':
-        return { text: 'Finished', color: 'text-green-500', icon: <Check className="w-5 h-5" /> }
-      case 'Failed':
-        return { text: 'Failed', color: 'text-red-400', icon: <AlertCircle className="w-5 h-5" /> }
-      default:
-        return { text: status, color: 'text-gray-400', icon: <Activity className="w-5 h-5" /> }
-    }
-  }
-
-  const getAccountStatusLabel = () => {
-    if (!accountInfo) return ''
-    if (!accountInfo.exists) return 'NotCreated'
-    if (parseFloat(accountInfo.balance) === 0) return 'Created (0 OG)'
-    return 'Ready'
-  }
-
-  // Start fine-tuning
+  // Start fine-tuning with user wallet
   const startFineTuning = async () => {
     if (!datasetRoot) {
       toast({
         title: 'Error',
         description: 'Please upload a dataset first',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    if (!isConnected || !signer) {
+      toast({
+        title: 'Wallet Not Connected',
+        description: 'Please connect your wallet to start fine-tuning',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    if (walletValidation && !walletValidation.isValid) {
+      toast({
+        title: 'Wallet Issues',
+        description: walletValidation.errors.join(', '),
         variant: 'destructive'
       })
       return
@@ -420,75 +233,58 @@ function FineTunePageContent() {
 
     setIsStarting(true)
     try {
-      console.log('Starting fine-tuning with params:', {
+      console.log('Starting fine-tuning with user wallet:', {
         agentId: tokenId,
         datasetRootHash: datasetRoot,
         dataSize,
-        baseModel,
+        baseModel: selectedModel,
         steps,
-        learningRate
+        learningRate,
+        userAddress: address
       })
 
-      const response = await fetch('/api/compute/fine-tune', {
+      // Use new wallet endpoint
+      const response = await fetch('/api/compute/wallet/fine-tune', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           agentId: tokenId,
           datasetRootHash: datasetRoot,
-          dataSize,
-          baseModel,
+          baseModel: selectedModel,
           steps,
-          learningRate
+          learningRate,
+          dataSize,
+          // Wallet info will be extracted on server side
+          userAddress: address
         })
       })
 
-      console.log('Fine-tune API response status:', response.status)
-      
-      if (!response.ok) {
-        const error = await response.json()
-        console.error('Fine-tune API error:', error)
-        throw new Error(error.details || error.error || 'Failed to start fine-tuning')
-      }
-
-      const data = await response.json()
-      console.log('Fine-tune API response data:', data)
-      
-      const receivedTaskId = data.taskId || data.id
-      console.log('Received task ID:', receivedTaskId)
-
-      if (receivedTaskId) {
-        setTaskId(receivedTaskId)
-        setTaskStatus('Init')
-        
-        toast({
-          title: 'Fine-tuning started!',
-          description: `Task ID: ${receivedTaskId.slice(0, 8)}... (${data.estimatedTime || '30-60 minutes'})`
-        })
-
-        // Start polling for status
-        pollStatus(receivedTaskId)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.taskId) {
+          toast({
+            title: 'Fine-tuning Started!',
+            description: `Task created: ${data.taskId.slice(0, 8)}...`
+          })
+          // Reload tasks
+          loadTasks()
+        } else {
+          toast({
+            title: 'Task Created',
+            description: 'Fine-tuning task has been submitted successfully'
+          })
+        }
       } else {
-        // Задача создана, но ID не получен - показываем статус ожидания
-        setTaskId('pending')
-        setTaskStatus('Init')
-        
-        toast({
-          title: 'Fine-tuning task submitted!',
-          description: data.message || 'Task has been submitted to the provider. Checking status...'
-        })
-
-        // Попробуем получить статус через некоторое время
-        setTimeout(() => {
-          // Попытаемся найти задачу по времени создания
-          pollForNewTask()
-        }, 5000)
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to start fine-tuning')
       }
-
-    } catch (error: any) {
+    } catch (error) {
       console.error('Fine-tuning error:', error)
       toast({
-        title: 'Error',
-        description: error.message || 'Failed to start fine-tuning',
+        title: 'Failed to Start Fine-tuning',
+        description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive'
       })
     } finally {
@@ -496,240 +292,11 @@ function FineTunePageContent() {
     }
   }
 
-  // Poll for new task when taskId is not immediately available
-  const pollForNewTask = async () => {
-    console.log('Polling for new task...')
-    setIsPolling(true)
-    
-    const maxAttempts = 12 // 1 minute with 5-second intervals
-    let attempts = 0
-    
-    const pollInterval = setInterval(async () => {
-      attempts++
-      console.log(`Polling attempt ${attempts}/${maxAttempts}`)
-      
-      try {
-        // Try to get the latest task for this user
-        const response = await fetch('/api/compute/fine-tune/tasks')
-        if (response.ok) {
-          const tasks = await response.json()
-          console.log('Retrieved tasks:', tasks)
-          
-          // Find the most recent task (created in the last 2 minutes)
-          const recentTask = tasks.find((task: any) => {
-            const taskTime = new Date(task.createdAt).getTime()
-            const now = Date.now()
-            return (now - taskTime) < 2 * 60 * 1000 // 2 minutes
-          })
-          
-          if (recentTask) {
-            console.log('Found recent task:', recentTask)
-            setTaskId(recentTask.id)
-            setTaskStatus(recentTask.progress || 'Init')
-            clearInterval(pollInterval)
-            setIsPolling(false)
-            
-            // Start normal status polling
-            pollStatus(recentTask.id)
-            return
-          }
-        }
-      } catch (error) {
-        console.error('Error polling for new task:', error)
-      }
-      
-      if (attempts >= maxAttempts) {
-        console.log('Polling timeout reached')
-        clearInterval(pollInterval)
-        setIsPolling(false)
-        
-        toast({
-          title: 'Task Status Unknown',
-          description: 'Unable to retrieve task status. Please check back later or contact support.',
-          variant: 'destructive'
-        })
-      }
-    }, 5000)
-  }
-
-  // Poll task status
-  const pollStatus = (taskIdToCheck: string) => {
-    setIsPolling(true)
-
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/compute/fine-tune?taskId=${taskIdToCheck}`)
-        if (response.ok) {
-          const data = await response.json()
-          setTaskStatus(data.progress || 'Unknown')
-          setTaskProgress(data)
-
-          if (data.isCompleted) {
-            clearInterval(interval)
-            setIsPolling(false)
-            setModelRootHash(data.modelInfo?.rootHash)
-            toast({
-              title: 'Training Complete!',
-              description: 'Your agent has been successfully fine-tuned'
-            })
-          } else if (data.isFailed) {
-            clearInterval(interval)
-            setIsPolling(false)
-            toast({
-              title: 'Training Failed',
-              description: 'An error occurred during training',
-              variant: 'destructive'
-            })
-          }
-        }
-      } catch (error) {
-        console.error('Polling error:', error)
-      }
-    }, 10000)
-
-    setTimeout(() => {
-      clearInterval(interval)
-      setIsPolling(false)
-    }, 2 * 60 * 60 * 1000)
-  }
-
-  // Render diagnostic information
-  const renderDiagnosticInfo = () => {
-    if (!lastApiError) return null
-
-    return (
-      <Alert className="bg-orange-500/10 border-orange-500/30 mt-4">
-        <AlertCircle className="h-4 w-4 text-orange-400" />
-        <AlertDescription className="text-orange-200">
-          <div className="space-y-2">
-            <div><strong>Error:</strong> {lastApiError.error}</div>
-            {lastApiError.details && (
-              <div><strong>Details:</strong> {lastApiError.details}</div>
-            )}
-            {lastApiError.diagnostics && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-xs text-orange-300">
-                  Diagnostic Information
-                </summary>
-                <pre className="text-xs mt-1 bg-black/20 p-2 rounded overflow-auto">
-                  {JSON.stringify(lastApiError.diagnostics, null, 2)}
-                </pre>
-              </details>
-            )}
-          </div>
-        </AlertDescription>
-      </Alert>
-    )
-  }
-
-  // Render account setup section
-  const renderAccountSetup = () => (
-    <Card className="bg-white/10 backdrop-blur-xl border-white/20 mb-6">
-      <div className="p-6">
-        <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
-          <Wallet className="mr-2 h-5 w-5" />
-          Fine-tuning Account Setup
-        </h3>
-        
-        {isCheckingAccount ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-purple-400" />
-            <span className="ml-2 text-purple-200">Checking account status...</span>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {accountInfo ? (
-              <div className="bg-black/20 rounded-lg p-4">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-300">Platform Service Balance:</span>
-                  <span className="text-white font-semibold">{accountInfo.balance} {NATIVE_SYMBOL}</span>
-                </div>
-                <div className="text-xs text-gray-400 italic">
-                  Fine-tune operations are funded by the platform
-                </div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-300">Account Status:</span>
-                  <Badge
-                    className={
-                      !accountInfo.exists
-                        ? 'bg-red-500'
-                        : parseFloat(accountInfo.balance) === 0
-                        ? 'bg-yellow-500'
-                        : 'bg-green-500'
-                    }
-                  >
-                    {getAccountStatusLabel()}
-                  </Badge>
-                </div>
-                {accountInfo.needsTopUp && (
-                  <Alert className="bg-yellow-500/10 border-yellow-500/30 mt-3">
-                    <AlertCircle className="h-4 w-4 text-yellow-400" />
-                    <AlertDescription className="text-yellow-200">
-                      Insufficient balance for fine-tuning. Minimum required: 0.001 {NATIVE_SYMBOL}
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </div>
-            ) : null}
-            
-            {(!accountInfo?.exists || accountInfo?.needsTopUp) && (
-              <div className="space-y-3">
-                <div>
-                  <Label className="text-purple-200">Deposit Amount ({NATIVE_SYMBOL})</Label>
-                  <Input
-                    type="number"
-                    step="0.001"
-                    value={depositAmount}
-                    onChange={(e) => setDepositAmount(e.target.value)}
-                    className="bg-white/10 border-white/20 text-white mt-2"
-                    min="0.001"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">
-                    Recommended: 0.01 {NATIVE_SYMBOL} (covers multiple fine-tuning sessions)
-                  </p>
-                </div>
-                
-                <Button
-                  onClick={createAccountAndDeposit}
-                  disabled={isDepositing}
-                  className="w-full bg-purple-500 hover:bg-purple-600"
-                >
-                  {isDepositing ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {txStatus || 'Submitting transaction...'}
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="mr-2 h-4 w-4" />
-                      {accountInfo?.exists ? 'Deposit Funds' : 'Create Account & Deposit'}
-                    </>
-                  )}
-                </Button>
-                {txUrl && (
-                  <div className="text-center text-sm text-purple-200 mt-2">
-                    <a href={txUrl} target="_blank" rel="noreferrer" className="underline hover:text-purple-100">
-                      View on Explorer
-                    </a>
-                    {txStatus && txStatus === 'submitted' && (
-                      <span className="ml-2 text-purple-300">({txStatus})</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* Diagnostic information */}
-            {renderDiagnosticInfo()}
-          </div>
-        )}
-      </div>
-    </Card>
-  )
+  const selectedModelInfo = getModelById(selectedModel)
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900">
-      <div className="container mx-auto py-10 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
+      <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
           <Link href="/agents">
@@ -747,106 +314,53 @@ function FineTunePageContent() {
           </p>
           
           {/* Wallet Connection Warning */}
-          {!address && (
+          {!isConnected && (
             <Alert className="bg-yellow-500/10 border-yellow-500/30 mt-4">
-              <AlertCircle className="h-4 w-4 text-yellow-400" />
+              <Wallet className="h-4 w-4 text-yellow-400" />
               <AlertDescription className="text-yellow-200">
-                <div className="flex justify-between items-center">
-                  <span>Please connect your wallet to use Fine-tuning. Transactions require user signatures.</span>
-                  <Button size="sm" variant="outline" className="ml-4">
+                <div className="flex items-center justify-between">
+                  <span>Please connect your wallet to start fine-tuning. You'll need to sign transactions for deposits and task creation.</span>
+                  <Button variant="outline" size="sm" className="ml-4">
                     Connect Wallet
                   </Button>
                 </div>
               </AlertDescription>
             </Alert>
           )}
-          
-          {backendError && (
-            <Alert className="bg-red-500/10 border-red-500/30 mt-4 flex items-center gap-4">
+
+          {/* Wallet Validation Warnings */}
+          {walletValidation && !walletValidation.isValid && (
+            <Alert className="bg-red-500/10 border-red-500/30 mt-4">
               <AlertCircle className="h-4 w-4 text-red-400" />
-              <AlertDescription className="text-red-200 flex-1">
-                {backendError}
+              <AlertDescription className="text-red-200">
+                <div className="space-y-1">
+                  <div className="font-semibold">Wallet Issues:</div>
+                  {walletValidation.errors.map((error, index) => (
+                    <div key={index} className="text-sm">• {error}</div>
+                  ))}
+                </div>
               </AlertDescription>
-              <Button size="sm" variant="outline" onClick={() => checkAccountStatus()}>
-                Повторить
-              </Button>
+            </Alert>
+          )}
+
+          {/* Wallet Warnings */}
+          {walletValidation && walletValidation.warnings.length > 0 && (
+            <Alert className="bg-yellow-500/10 border-yellow-500/30 mt-4">
+              <Info className="h-4 w-4 text-yellow-400" />
+              <AlertDescription className="text-yellow-200">
+                <div className="space-y-1">
+                  {walletValidation.warnings.map((warning, index) => (
+                    <div key={index} className="text-sm">• {warning}</div>
+                  ))}
+                </div>
+              </AlertDescription>
             </Alert>
           )}
         </div>
 
-        {/* Main Content */}
-        {taskId && taskStatus ? (
-          // Training Progress View
-          <Card className="bg-white/10 backdrop-blur-xl border-white/20 max-w-2xl mx-auto">
-            <div className="p-8">
-              <div className="flex items-center justify-center mb-6">
-                <div className={`w-24 h-24 rounded-full bg-white/10 flex items-center justify-center ${
-                  taskStatus === 'Training' ? 'animate-pulse' : ''
-                }`}>
-                  {getStatusInfo(taskStatus).icon}
-                </div>
-              </div>
-              
-              <h2 className={`text-3xl font-bold text-center mb-4 ${getStatusInfo(taskStatus).color}`}>
-                {getStatusInfo(taskStatus).text}
-              </h2>
-              
-              {/* Status Details */}
-              {taskProgress && (
-                <div className="space-y-4">
-                  <Alert className="bg-purple-500/10 border-purple-500/30">
-                    <AlertCircle className="h-4 w-4 text-purple-400" />
-                    <AlertDescription className="text-purple-200">
-                      <div className="space-y-2">
-                        <div>Task ID: <code className="bg-white/10 px-2 py-1 rounded text-xs">{taskId}</code></div>
-                        <div>Status: <span className={getStatusInfo(taskStatus).color}>{taskStatus}</span></div>
-                        {taskProgress.modelInfo && (
-                          <div>Model Hash: <code className="bg-white/10 px-2 py-1 rounded text-xs">{taskProgress.modelInfo.rootHash?.slice(0, 16)}...</code></div>
-                        )}
-                      </div>
-                    </AlertDescription>
-                  </Alert>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              {taskStatus === 'Finished' ? (
-                <div className="mt-8 space-y-4">
-                  <Link href={`/agent/${tokenId}`}>
-                    <Button size="lg" className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600">
-                      <Bot className="mr-2 h-5 w-5" />
-                      Chat with Enhanced Agent
-                    </Button>
-                  </Link>
-                  <Link href="/agents">
-                    <Button size="lg" variant="outline" className="w-full border-purple-500/50 text-purple-300 hover:bg-purple-500/10">
-                      Back to My Agents
-                    </Button>
-                  </Link>
-                </div>
-              ) : taskStatus === 'Failed' ? (
-                <div className="mt-8">
-                  <Button 
-                    onClick={() => window.location.reload()}
-                    size="lg" 
-                    className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/50"
-                  >
-                    Try Again
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-purple-200 mt-6 text-center">
-                  This may take 30-60 minutes. You can safely leave this page and check back later.
-                </p>
-              )}
-            </div>
-          </Card>
-        ) : (
-          // Configuration Form
-          <div className="max-w-2xl mx-auto space-y-6">
-            {/* Account Setup */}
-            {renderAccountSetup()}
-
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Configuration */}
+          <div className="lg:col-span-2 space-y-6">
             {/* Dataset Upload */}
             <Card className="bg-white/10 backdrop-blur-xl border-white/20">
               <div className="p-6">
@@ -862,10 +376,12 @@ function FineTunePageContent() {
                       <div className="space-y-2">
                         <div className="font-semibold">Required Dataset Format:</div>
                         <div className="text-sm space-y-1">
-                          <div>• <strong>JSONL format</strong> - One JSON object per line</div>
-                          <div>• <strong>Conversational data</strong> with "messages" field</div>
-                          <div>• <strong>Minimum 10 examples</strong> recommended</div>
+                          <div>• <strong>JSONL format</strong> - Each line is a JSON object</div>
+                          <div>• <strong>Messages structure</strong> - Use "messages" array with "role" and "content"</div>
+                          <div>• <strong>Roles:</strong> "system", "user", "assistant"</div>
+                          <div>• <strong>Size:</strong> 100-10,000 examples (varies by model)</div>
                         </div>
+                        
                         <details className="mt-3">
                           <summary className="cursor-pointer text-sm font-medium text-blue-300 hover:text-blue-200">
                             Show Example Format
@@ -881,13 +397,14 @@ function FineTunePageContent() {
   {"role": "assistant", "content": "Neural networks are computing systems..."}
 ]}`}
                           </pre>
-                          <div className="mt-2 text-center">
+                          <div className="mt-2">
                             <a 
                               href="/example-dataset.jsonl" 
-                              download="example-dataset.jsonl"
-                              className="text-xs text-blue-300 hover:text-blue-200 underline"
+                              download
+                              className="text-sm text-blue-300 hover:text-blue-200 underline flex items-center gap-1"
                             >
-                              📥 Download Example Dataset (10 examples)
+                              <ExternalLink className="h-3 w-3" />
+                              Download Example Dataset
                             </a>
                           </div>
                         </details>
@@ -895,71 +412,45 @@ function FineTunePageContent() {
                     </AlertDescription>
                   </Alert>
 
-                  {!datasetRoot ? (
-                    <>
-                      <div className="border-2 border-dashed border-purple-500/30 rounded-xl p-8 text-center">
-                        <input
-                          type="file"
-                          id="dataset"
-                          className="hidden"
-                          accept=".json,.jsonl,.txt,.csv"
-                          onChange={(e) => setDataset(e.target.files?.[0] || null)}
-                        />
-                        <label htmlFor="dataset" className="cursor-pointer">
-                          <FileUp className="w-12 h-12 text-purple-400 mx-auto mb-3" />
-                          <p className="text-white font-medium mb-1">
-                            {dataset ? dataset.name : 'Choose training data'}
-                          </p>
-                          <p className="text-purple-300 text-sm">
-                            Supported: JSONL, JSON, TXT, CSV (max 5GB)
-                          </p>
-                        </label>
+                  <div className="space-y-2">
+                    <Label className="text-purple-200">Select Dataset File</Label>
+                    <Input
+                      type="file"
+                      accept=".jsonl,.json,.txt"
+                      onChange={(e) => setDatasetFile(e.target.files?.[0] || null)}
+                      className="bg-white/10 border-white/20 text-white file:bg-purple-600 file:text-white file:border-0"
+                    />
+                    {datasetFile && (
+                      <div className="text-sm text-purple-200">
+                        Selected: {datasetFile.name} ({(datasetFile.size / 1024).toFixed(1)} KB)
                       </div>
-                      
-                      {dataset && (
-                        <div className="bg-black/20 rounded-lg p-4">
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-gray-300">Selected File:</span>
-                            <span className="text-white font-semibold">{dataset.name}</span>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-gray-300">Size:</span>
-                            <span className="text-white">{(dataset.size / 1024).toFixed(1)} KB</span>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {dataset && (
-                        <Button 
-                          onClick={handleDatasetUpload}
-                          disabled={isUploading}
-                          className="w-full bg-purple-500 hover:bg-purple-600"
-                        >
-                          {isUploading ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Uploading to 0G Storage...
-                            </>
-                          ) : (
-                            <>
-                              <Upload className="mr-2 h-4 w-4" />
-                              Upload Dataset
-                            </>
-                          )}
-                        </Button>
-                      )}
-                    </>
-                  ) : (
+                    )}
+                  </div>
+
+                  <Button 
+                    onClick={uploadDataset} 
+                    disabled={!datasetFile || isUploading}
+                    className="w-full bg-purple-600 hover:bg-purple-700"
+                  >
+                    {isUploading ? (
+                      <>
+                        <Clock className="mr-2 h-4 w-4 animate-spin" />
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="mr-2 h-4 w-4" />
+                        Upload Dataset
+                      </>
+                    )}
+                  </Button>
+
+                  {datasetRoot && (
                     <Alert className="bg-green-500/10 border-green-500/30">
-                      <Check className="h-4 w-4 text-green-400" />
+                      <CheckCircle className="h-4 w-4 text-green-400" />
                       <AlertDescription className="text-green-200">
-                        <div className="space-y-2">
-                          <div>Dataset uploaded successfully!</div>
-                          <div className="text-sm space-y-1">
-                            <div>Root Hash: <code className="text-xs bg-black/20 px-1 rounded">{datasetRoot.slice(0, 16)}...</code></div>
-                            {dataSize && <div>Size: {dataSize} bytes</div>}
-                          </div>
-                        </div>
+                        Dataset uploaded successfully! Root hash: {datasetRoot.slice(0, 16)}...
+                        {dataSize > 0 && ` (${dataSize} examples)`}
                       </AlertDescription>
                     </Alert>
                   )}
@@ -967,61 +458,99 @@ function FineTunePageContent() {
               </div>
             </Card>
 
-            {/* Training Configuration */}
+            {/* Model Selection */}
             <Card className="bg-white/10 backdrop-blur-xl border-white/20">
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-white mb-4">
-                  Step 2: Configure Training
+                  Step 2: Select Base Model
                 </h3>
                 
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-purple-200">Base Model</Label>
-                    <Select value={baseModel} onValueChange={setBaseModel}>
-                      <SelectTrigger className="bg-white/10 border-white/20 text-white mt-2">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="llama-3.3-70b">
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
-                              <span>Llama 3.3 70B</span>
-                              <Badge variant="secondary" className="text-xs">Recommended</Badge>
-                            </div>
-                            <span className="text-xs text-gray-400">Language generation & conversation</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="deepseek-r1-70b">
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
-                              <span>DeepSeek R1 70B</span>
-                              <Badge variant="outline" className="text-xs">Reasoning</Badge>
-                            </div>
-                            <span className="text-xs text-gray-400">Complex problem solving</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="distilbert-base-uncased">
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
-                              <span>DistilBERT Base</span>
-                              <Badge variant="outline" className="text-xs">Official</Badge>
-                            </div>
-                            <span className="text-xs text-gray-400">Text classification</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="deepseek-r1-distill-qwen-1.5b">
-                          <div className="flex flex-col">
-                            <span>DeepSeek R1 Distill Qwen 1.5B</span>
-                            <span className="text-xs text-gray-400">Lightweight reasoning model</span>
-                          </div>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Different models are optimized for different tasks
-                    </p>
-                  </div>
+                <Tabs defaultValue="recommended" className="w-full">
+                  <TabsList className="grid w-full grid-cols-4 bg-white/10">
+                    <TabsTrigger value="recommended" className="text-white data-[state=active]:bg-purple-600">
+                      <Zap className="mr-1 h-3 w-3" />
+                      Recommended
+                    </TabsTrigger>
+                    <TabsTrigger value="language-generation" className="text-white data-[state=active]:bg-purple-600">
+                      <FileText className="mr-1 h-3 w-3" />
+                      Text Gen
+                    </TabsTrigger>
+                    <TabsTrigger value="reasoning" className="text-white data-[state=active]:bg-purple-600">
+                      <Brain className="mr-1 h-3 w-3" />
+                      Reasoning
+                    </TabsTrigger>
+                    <TabsTrigger value="text-classification" className="text-white data-[state=active]:bg-purple-600">
+                      <FileText className="mr-1 h-3 w-3" />
+                      Classification
+                    </TabsTrigger>
+                  </TabsList>
                   
+                  {Object.entries(MODEL_CATEGORIES).map(([categoryKey, category]) => (
+                    <TabsContent key={categoryKey} value={categoryKey} className="space-y-3 mt-4">
+                      <div className="text-sm text-purple-200 mb-3">{category.description}</div>
+                      
+                      <div className="space-y-2">
+                        {category.models.map((model) => (
+                          <div
+                            key={model.id}
+                            className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                              selectedModel === model.id 
+                                ? 'bg-purple-600/30 border-purple-400' 
+                                : 'bg-white/5 border-white/20 hover:bg-white/10'
+                            }`}
+                            onClick={() => setSelectedModel(model.id)}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-medium text-white">{model.name}</span>
+                                  {model.isRecommended && (
+                                    <Badge variant="secondary" className="text-xs bg-green-500/20 text-green-300">
+                                      Recommended
+                                    </Badge>
+                                  )}
+                                  {model.provider === 'predefined' && (
+                                    <Badge variant="outline" className="text-xs border-blue-400 text-blue-300">
+                                      Official
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-sm text-purple-200 mb-2">{model.description}</p>
+                                
+                                {model.requirements && (
+                                  <div className="text-xs text-purple-300 space-y-1">
+                                    <div>📊 Dataset: {model.requirements.minDatasetSize}-{model.requirements.maxDatasetSize} examples</div>
+                                    <div>⏱️ Training time: {model.requirements.estimatedTrainingTime}</div>
+                                    <div>📁 Formats: {model.requirements.supportedFormats?.join(', ')}</div>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <div className="ml-3">
+                                <div className={`w-4 h-4 rounded-full border-2 ${
+                                  selectedModel === model.id 
+                                    ? 'bg-purple-500 border-purple-500' 
+                                    : 'border-white/30'
+                                }`} />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </TabsContent>
+                  ))}
+                </Tabs>
+              </div>
+            </Card>
+
+            {/* Training Parameters */}
+            <Card className="bg-white/10 backdrop-blur-xl border-white/20">
+              <div className="p-6">
+                <h3 className="text-xl font-semibold text-white mb-4">
+                  Step 3: Training Parameters
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-purple-200">Training Steps</Label>
                     <Input
@@ -1030,9 +559,11 @@ function FineTunePageContent() {
                       onChange={(e) => setSteps(parseInt(e.target.value) || 500)}
                       className="bg-white/10 border-white/20 text-white mt-2"
                       min="100"
-                      max="2000"
-                      step="100"
+                      max="5000"
                     />
+                    <div className="text-xs text-purple-300 mt-1">
+                      Recommended: 500-1000 steps
+                    </div>
                   </div>
                   
                   <div>
@@ -1042,92 +573,157 @@ function FineTunePageContent() {
                       value={learningRate}
                       onChange={(e) => setLearningRate(parseFloat(e.target.value) || 0.00005)}
                       className="bg-white/10 border-white/20 text-white mt-2"
+                      step="0.00001"
                       min="0.00001"
                       max="0.001"
-                      step="0.00001"
                     />
+                    <div className="text-xs text-purple-300 mt-1">
+                      Recommended: 0.00005 for most models
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Card>
 
-            {/* Start Training */}
-            <Card className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 backdrop-blur-xl border-purple-500/30">
-              <div className="p-6">
-                <h3 className="text-xl font-semibold text-white mb-4">
-                  Step 3: Start Training
-                </h3>
-                
-                <div className="bg-black/30 rounded-lg p-4 space-y-3 mb-6">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-300 font-medium">Model:</span>
-                    <span className="text-white font-semibold">{baseModel}</span>
-                  </div>
-                  <div className="h-px bg-white/10"></div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-300 font-medium">Steps:</span>
-                    <span className="text-white font-semibold">{steps}</span>
-                  </div>
-                  <div className="h-px bg-white/10"></div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-300 font-medium">Learning Rate:</span>
-                    <span className="text-white font-semibold">{learningRate}</span>
-                  </div>
-                  {accountInfo && (
-                    <>
-                      <div className="h-px bg-white/10"></div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-gray-300 font-medium">Platform Balance:</span>
-                        <span className="text-white font-semibold">{accountInfo.balance} {NATIVE_SYMBOL}</span>
+                {selectedModelInfo && (
+                  <Alert className="bg-blue-500/10 border-blue-500/30 mt-4">
+                    <Info className="h-4 w-4 text-blue-400" />
+                    <AlertDescription className="text-blue-200">
+                      <div className="space-y-1">
+                        <div className="font-semibold">Selected Model: {selectedModelInfo.name}</div>
+                        <div className="text-sm">Type: {selectedModelInfo.type}</div>
+                        <div className="text-sm">Estimated training time: {getEstimatedTrainingTime(selectedModel)}</div>
                       </div>
-                      <div className="text-xs text-gray-400 italic text-center mt-1">
-                        Operations funded by platform
-                      </div>
-                    </>
-                  )}
-                </div>
-                
-                <Button
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                <Separator className="my-6 bg-white/20" />
+
+                <Button 
                   onClick={startFineTuning}
-                  disabled={!datasetRoot || isUploading || isStarting || accountInfo?.needsTopUp}
-                  size="lg"
-                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg"
+                  disabled={!datasetRoot || !isConnected || isStarting || (walletValidation && !walletValidation.isValid)}
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold py-3"
                 >
                   {isStarting ? (
                     <>
-                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                      Starting Training...
+                      <Clock className="mr-2 h-4 w-4 animate-spin" />
+                      Starting Fine-tuning...
                     </>
                   ) : (
                     <>
-                      <Brain className="mr-2 h-5 w-5" />
-                      Start Fine-Tuning
+                      <Play className="mr-2 h-4 w-4" />
+                      Start Fine-tuning
                     </>
                   )}
                 </Button>
-                
-                {accountInfo?.needsTopUp && (
-                  <p className="text-red-400 text-sm text-center mt-2">
-                    Please deposit funds to your account first
-                  </p>
-                )}
-                
-                <p className="text-gray-400 text-sm text-center mt-4">
-                  Training will be performed on 0G Compute Network
-                </p>
               </div>
             </Card>
           </div>
-        )}
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Account Info */}
+            <Card className="bg-white/10 backdrop-blur-xl border-white/20">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Account Status</h3>
+                
+                {isConnected ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-400" />
+                      <span className="text-green-200">Wallet Connected</span>
+                    </div>
+                    
+                    {walletValidation && (
+                      <div className="text-sm space-y-1">
+                        <div className="text-purple-200">Address: {walletValidation.userAddress?.slice(0, 6)}...{walletValidation.userAddress?.slice(-4)}</div>
+                        {walletValidation.balance && (
+                          <div className="text-purple-200">Balance: {parseFloat(walletValidation.balance).toFixed(4)} OG</div>
+                        )}
+                        {walletValidation.chainId && (
+                          <div className="text-purple-200">Network: {walletValidation.chainId === 16601 ? 'Galileo Testnet V3' : `Chain ${walletValidation.chainId}`}</div>
+                        )}
+                      </div>
+                    )}
+
+                    {accountInfo && (
+                      <div className="space-y-2">
+                        <div className="text-sm text-purple-200">
+                          Fine-tune Balance: {accountInfo.balance} {NATIVE_SYMBOL}
+                        </div>
+                        {accountInfo.needsTopUp && (
+                          <Alert className="bg-yellow-500/10 border-yellow-500/30">
+                            <AlertCircle className="h-4 w-4 text-yellow-400" />
+                            <AlertDescription className="text-yellow-200 text-xs">
+                              Low balance. Please deposit funds.
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <Wallet className="h-8 w-8 text-purple-400 mx-auto mb-2" />
+                    <p className="text-purple-200 text-sm">Connect your wallet to view account status</p>
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            {/* Active Tasks */}
+            <Card className="bg-white/10 backdrop-blur-xl border-white/20">
+              <div className="p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Fine-tuning Tasks</h3>
+                
+                {tasks.length > 0 ? (
+                  <div className="space-y-3">
+                    {tasks.slice(0, 3).map((task) => (
+                      <div key={task.id} className="p-3 bg-white/5 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-white">
+                            Task {task.id.slice(0, 8)}...
+                          </span>
+                          <Badge 
+                            variant={
+                              task.status === 'completed' ? 'default' :
+                              task.status === 'failed' ? 'destructive' :
+                              task.status === 'running' ? 'secondary' : 'outline'
+                            }
+                            className="text-xs"
+                          >
+                            {task.status}
+                          </Badge>
+                        </div>
+                        
+                        {task.progress !== undefined && (
+                          <Progress value={task.progress} className="h-2 mb-2" />
+                        )}
+                        
+                        <div className="text-xs text-purple-300">
+                          Created: {new Date(task.createdAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {tasks.length > 3 && (
+                      <div className="text-center">
+                        <Button variant="ghost" size="sm" className="text-purple-300 hover:text-white">
+                          View All Tasks ({tasks.length})
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <Clock className="h-8 w-8 text-purple-400 mx-auto mb-2" />
+                    <p className="text-purple-200 text-sm">No fine-tuning tasks yet</p>
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
+        </div>
       </div>
     </div>
-  )
-}
-
-export default function FineTunePage() {
-  return (
-    <ErrorBoundary>
-      <FineTunePageContent />
-    </ErrorBoundary>
   )
 }

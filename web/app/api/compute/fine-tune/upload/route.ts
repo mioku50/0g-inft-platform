@@ -8,6 +8,20 @@ export async function POST(request: NextRequest) {
   console.log('[fine-tune-upload] Starting dataset upload...')
   
   try {
+    // Check environment variables first
+    const storageKey = process.env.OG_STORAGE_PRIVATE_KEY
+    if (!storageKey) {
+      console.error('[fine-tune-upload] OG_STORAGE_PRIVATE_KEY not configured')
+      return NextResponse.json(
+        { 
+          error: 'Storage not configured', 
+          details: 'OG_STORAGE_PRIVATE_KEY environment variable is missing',
+          success: false
+        },
+        { status: 503 }
+      )
+    }
+
     const formData = await request.formData()
     const file = formData.get('file') as File
     const agentId = formData.get('agentId') as string

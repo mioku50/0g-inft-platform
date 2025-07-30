@@ -1,6 +1,6 @@
 // lib/compute/wallet-broker.ts
 import { ethers } from 'ethers'
-import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
+const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
 import { 
   getRpcUrl,
   getComputeLedgerContract, 
@@ -43,8 +43,8 @@ export async function createUserWalletBroker(userSigner: ethers.Signer) {
 
   // Проверка баланса
   const balance = await userSigner.provider?.getBalance(userAddress)
-  if (balance && balance.lt(ethers.utils.parseEther('0.001'))) {
-    console.warn('[wallet-broker] Low balance detected:', ethers.utils.formatEther(balance), 'OG')
+  if (balance && balance < ethers.parseEther('0.001')) {
+    console.warn('[wallet-broker] Low balance detected:', ethers.formatEther(balance), 'OG')
   }
 
   // Создание broker с кошельком пользователя
@@ -101,13 +101,13 @@ export async function validateUserWallet(userSigner: ethers.Signer): Promise<{
 
     // Проверка баланса
     const balanceWei = await userSigner.provider.getBalance(userAddress)
-    balance = ethers.utils.formatEther(balanceWei)
+    balance = ethers.formatEther(balanceWei)
     
-    if (balanceWei.lt(ethers.utils.parseEther('0.001'))) {
+    if (balanceWei < ethers.parseEther('0.001')) {
       warnings.push(`Low balance: ${balance} OG. You may need more funds for transactions.`)
     }
 
-    if (balanceWei.isZero()) {
+    if (balanceWei === 0n) {
       errors.push('Insufficient balance. Please add funds to your wallet.')
     }
 
@@ -160,7 +160,7 @@ export async function checkAllowance(
   userSigner: ethers.Signer,
   tokenAddress: string,
   spenderAddress: string
-): Promise<ethers.BigNumber> {
+): Promise<bigint> {
   try {
     const tokenContract = new ethers.Contract(
       tokenAddress,
@@ -171,7 +171,7 @@ export async function checkAllowance(
     const userAddress = await userSigner.getAddress()
     const allowance = await tokenContract.allowance(userAddress, spenderAddress)
     
-    console.log('[wallet-broker] Current allowance:', ethers.utils.formatEther(allowance))
+    console.log('[wallet-broker] Current allowance:', ethers.formatEther(allowance))
     return allowance
   } catch (error) {
     console.error('[wallet-broker] Failed to check allowance:', error)
@@ -186,7 +186,7 @@ export async function requestApproval(
   userSigner: ethers.Signer,
   tokenAddress: string,
   spenderAddress: string,
-  amount: ethers.BigNumber
+  amount: bigint
 ): Promise<ethers.ContractTransaction> {
   try {
     const tokenContract = new ethers.Contract(
@@ -195,7 +195,7 @@ export async function requestApproval(
       userSigner
     )
     
-    console.log('[wallet-broker] Requesting approval for amount:', ethers.utils.formatEther(amount))
+    console.log('[wallet-broker] Requesting approval for amount:', ethers.formatEther(amount))
     const tx = await tokenContract.approve(spenderAddress, amount)
     
     console.log('[wallet-broker] Approval transaction sent:', tx.hash)

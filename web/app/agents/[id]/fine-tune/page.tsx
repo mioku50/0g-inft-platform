@@ -151,7 +151,10 @@ export default function FineTunePage() {
 
   // Upload dataset
   const uploadDataset = async () => {
+    console.log('[uploadDataset] Starting upload process...')
+    
     if (!datasetFile) {
+      console.log('[uploadDataset] No dataset file selected')
       toast({
         title: 'Error',
         description: 'Please select a dataset file',
@@ -159,6 +162,13 @@ export default function FineTunePage() {
       })
       return
     }
+
+    console.log('[uploadDataset] Dataset file details:', {
+      name: datasetFile.name,
+      size: datasetFile.size,
+      type: datasetFile.type,
+      lastModified: datasetFile.lastModified
+    })
 
     // Validate dataset for selected model
     const model = getModelById(selectedModel)
@@ -184,18 +194,30 @@ export default function FineTunePage() {
     }
 
     setIsUploading(true)
+    console.log('[uploadDataset] Setting upload state to true')
+    
     try {
       const formData = new FormData()
       formData.append('file', datasetFile)
       formData.append('agentId', tokenId)
+      
+      console.log('[uploadDataset] FormData created, making API request...')
 
       const response = await fetch('/api/compute/fine-tune/upload', {
         method: 'POST',
         body: formData
       })
 
+      console.log('[uploadDataset] API response:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries())
+      })
+
       if (response.ok) {
         const data = await response.json()
+        console.log('[uploadDataset] Upload successful:', data)
         setDatasetRoot(data.rootHash)
         setDataSize(data.dataSize || 0)
         toast({
@@ -203,17 +225,27 @@ export default function FineTunePage() {
           description: 'Dataset uploaded successfully'
         })
       } else {
-        const error = await response.json()
-        throw new Error(error.error || 'Upload failed')
+        const errorText = await response.text()
+        console.error('[uploadDataset] Upload failed with response:', errorText)
+        
+        let errorData
+        try {
+          errorData = JSON.parse(errorText)
+        } catch (e) {
+          errorData = { error: errorText || 'Upload failed' }
+        }
+        
+        throw new Error(errorData.error || errorData.details || 'Upload failed')
       }
     } catch (error) {
-      console.error('Upload error:', error)
+      console.error('[uploadDataset] Upload error:', error)
       toast({
         title: 'Upload Failed',
         description: error instanceof Error ? error.message : 'Unknown error',
         variant: 'destructive'
       })
     } finally {
+      console.log('[uploadDataset] Setting upload state to false')
       setIsUploading(false)
     }
   }

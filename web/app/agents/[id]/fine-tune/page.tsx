@@ -420,6 +420,15 @@ function FineTunePageContent() {
 
     setIsStarting(true)
     try {
+      console.log('Starting fine-tuning with params:', {
+        agentId: tokenId,
+        datasetRootHash: datasetRoot,
+        dataSize,
+        baseModel,
+        steps,
+        learningRate
+      })
+
       const response = await fetch('/api/compute/fine-tune', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -433,22 +442,48 @@ function FineTunePageContent() {
         })
       })
 
+      console.log('Fine-tune API response status:', response.status)
+      
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.details || 'Failed to start fine-tuning')
+        console.error('Fine-tune API error:', error)
+        throw new Error(error.details || error.error || 'Failed to start fine-tuning')
       }
 
       const data = await response.json()
-      setTaskId(data.taskId)
-      setTaskStatus('Init')
+      console.log('Fine-tune API response data:', data)
       
-      toast({
-        title: 'Fine-tuning started!',
-        description: `Task ID: ${data.taskId.slice(0, 8)}... (${data.estimatedTime})`
-      })
+      const receivedTaskId = data.taskId || data.id
+      console.log('Received task ID:', receivedTaskId)
 
-      // Start polling for status
-      pollStatus(data.taskId)
+      if (receivedTaskId) {
+        setTaskId(receivedTaskId)
+        setTaskStatus('Init')
+        
+        toast({
+          title: 'Fine-tuning started!',
+          description: `Task ID: ${receivedTaskId.slice(0, 8)}... (${data.estimatedTime || '30-60 minutes'})`
+        })
+
+        // Start polling for status
+        pollStatus(receivedTaskId)
+      } else {
+        // Задача создана, но ID не получен - показываем статус ожидания
+        setTaskId('pending')
+        setTaskStatus('Init')
+        
+        toast({
+          title: 'Fine-tuning task submitted!',
+          description: data.message || 'Task has been submitted to the provider. Checking status...'
+        })
+
+        // Попробуем получить статус через некоторое время
+        setTimeout(() => {
+          // Попытаемся найти задачу по времени создания
+          pollForNewTask()
+        }, 5000)
+      }
+
     } catch (error: any) {
       console.error('Fine-tuning error:', error)
       toast({
@@ -459,6 +494,62 @@ function FineTunePageContent() {
     } finally {
       setIsStarting(false)
     }
+  }
+
+  // Poll for new task when taskId is not immediately available
+  const pollForNewTask = async () => {
+    console.log('Polling for new task...')
+    setIsPolling(true)
+    
+    const maxAttempts = 12 // 1 minute with 5-second intervals
+    let attempts = 0
+    
+    const pollInterval = setInterval(async () => {
+      attempts++
+      console.log(`Polling attempt ${attempts}/${maxAttempts}`)
+      
+      try {
+        // Try to get the latest task for this user
+        const response = await fetch('/api/compute/fine-tune/tasks')
+        if (response.ok) {
+          const tasks = await response.json()
+          console.log('Retrieved tasks:', tasks)
+          
+          // Find the most recent task (created in the last 2 minutes)
+          const recentTask = tasks.find((task: any) => {
+            const taskTime = new Date(task.createdAt).getTime()
+            const now = Date.now()
+            return (now - taskTime) < 2 * 60 * 1000 // 2 minutes
+          })
+          
+          if (recentTask) {
+            console.log('Found recent task:', recentTask)
+            setTaskId(recentTask.id)
+            setTaskStatus(recentTask.progress || 'Init')
+            clearInterval(pollInterval)
+            setIsPolling(false)
+            
+            // Start normal status polling
+            pollStatus(recentTask.id)
+            return
+          }
+        }
+      } catch (error) {
+        console.error('Error polling for new task:', error)
+      }
+      
+      if (attempts >= maxAttempts) {
+        console.log('Polling timeout reached')
+        clearInterval(pollInterval)
+        setIsPolling(false)
+        
+        toast({
+          title: 'Task Status Unknown',
+          description: 'Unable to retrieve task status. Please check back later or contact support.',
+          variant: 'destructive'
+        })
+      }
+    }, 5000)
   }
 
   // Poll task status
@@ -748,6 +839,46 @@ function FineTunePageContent() {
                 </h3>
                 
                 <div className="space-y-4">
+                  {/* Dataset Format Information */}
+                  <Alert className="bg-blue-500/10 border-blue-500/30">
+                    <AlertCircle className="h-4 w-4 text-blue-400" />
+                    <AlertDescription className="text-blue-200">
+                      <div className="space-y-2">
+                        <div className="font-semibold">Required Dataset Format:</div>
+                        <div className="text-sm space-y-1">
+                          <div>• <strong>JSONL format</strong> - One JSON object per line</div>
+                          <div>• <strong>Conversational data</strong> with "messages" field</div>
+                          <div>• <strong>Minimum 10 examples</strong> recommended</div>
+                        </div>
+                        <details className="mt-3">
+                          <summary className="cursor-pointer text-sm font-medium text-blue-300 hover:text-blue-200">
+                            Show Example Format
+                          </summary>
+                          <pre className="text-xs mt-2 bg-black/30 p-3 rounded overflow-auto text-green-300">
+{`{"messages": [
+  {"role": "system", "content": "You are a helpful AI assistant."},
+  {"role": "user", "content": "What is machine learning?"},
+  {"role": "assistant", "content": "Machine learning is a subset of AI..."}
+]}
+{"messages": [
+  {"role": "user", "content": "Explain neural networks"},
+  {"role": "assistant", "content": "Neural networks are computing systems..."}
+]}`}
+                          </pre>
+                          <div className="mt-2 text-center">
+                            <a 
+                              href="/example-dataset.jsonl" 
+                              download="example-dataset.jsonl"
+                              className="text-xs text-blue-300 hover:text-blue-200 underline"
+                            >
+                              📥 Download Example Dataset (10 examples)
+                            </a>
+                          </div>
+                        </details>
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+
                   {!datasetRoot ? (
                     <>
                       <div className="border-2 border-dashed border-purple-500/30 rounded-xl p-8 text-center">
@@ -764,10 +895,23 @@ function FineTunePageContent() {
                             {dataset ? dataset.name : 'Choose training data'}
                           </p>
                           <p className="text-purple-300 text-sm">
-                            Supported: JSON, JSONL, TXT, CSV
+                            Supported: JSONL, JSON, TXT, CSV (max 5GB)
                           </p>
                         </label>
                       </div>
+                      
+                      {dataset && (
+                        <div className="bg-black/20 rounded-lg p-4">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-gray-300">Selected File:</span>
+                            <span className="text-white font-semibold">{dataset.name}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-300">Size:</span>
+                            <span className="text-white">{(dataset.size / 1024).toFixed(1)} KB</span>
+                          </div>
+                        </div>
+                      )}
                       
                       {dataset && (
                         <Button 
@@ -793,9 +937,13 @@ function FineTunePageContent() {
                     <Alert className="bg-green-500/10 border-green-500/30">
                       <Check className="h-4 w-4 text-green-400" />
                       <AlertDescription className="text-green-200">
-                        Dataset uploaded successfully!
-                        <br />
-                        <code className="text-xs">{datasetRoot.slice(0, 16)}...</code>
+                        <div className="space-y-2">
+                          <div>Dataset uploaded successfully!</div>
+                          <div className="text-sm space-y-1">
+                            <div>Root Hash: <code className="text-xs bg-black/20 px-1 rounded">{datasetRoot.slice(0, 16)}...</code></div>
+                            {dataSize && <div>Size: {dataSize} bytes</div>}
+                          </div>
+                        </div>
                       </AlertDescription>
                     </Alert>
                   )}

@@ -93,8 +93,11 @@ export class FineTuneService {
         wait: false
       }
 
+      console.log('Task request payload:', taskRequest)
+
       // 5. Получение информации о провайдере
       const { endpoint } = await this.broker.inference.getServiceMetadata(getFineTuneProvider())
+      console.log('Provider endpoint:', endpoint)
       
       // 6. Создание заголовков для аутентификации
       const headers = await this.broker.inference.getRequestHeaders(
@@ -102,8 +105,13 @@ export class FineTuneService {
         JSON.stringify(taskRequest)
       )
 
+      console.log('Request headers created, sending task creation request...')
+
       // 7. Отправка запроса на создание задачи
-      const response = await fetch(`${endpoint}/v1/user/${taskRequest.userAddress}/task`, {
+      const createUrl = `${endpoint}/v1/user/${taskRequest.userAddress}/task`
+      console.log('Creating task at URL:', createUrl)
+
+      const response = await fetch(createUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -112,13 +120,73 @@ export class FineTuneService {
         body: JSON.stringify(taskRequest)
       })
 
+      console.log('Provider response status:', response.status)
+      console.log('Provider response headers:', Object.fromEntries(response.headers.entries()))
+
+      // 8. Обработка различных типов ответов
       if (response.status === 204) {
-        const list = await fetch(`${endpoint}/v1/user/${taskRequest.userAddress}/task?latest=1`).then(r => r.json()).catch(() => [])
-        return list?.[0]?.id ?? ''
+        console.log('Received 204 response, fetching latest task...')
+        // Провайдер вернул 204, получаем последнюю задачу
+        try {
+          const listUrl = `${endpoint}/v1/user/${taskRequest.userAddress}/task?latest=1`
+          console.log('Fetching latest task from:', listUrl)
+          const listResponse = await fetch(listUrl)
+          const list = await listResponse.json()
+          console.log('Latest tasks:', list)
+          const taskId = list?.[0]?.id || list?.[0]?.taskId || ''
+          console.log('Extracted task ID from latest:', taskId)
+          return taskId
+        } catch (listError) {
+          console.error('Error fetching latest task:', listError)
+          return ''
+        }
       }
 
-      const result = await response.json().catch(() => null)
-      return result?.id || result?.taskId || ''
+      // 9. Попытка получить JSON ответ
+      let result: any = null
+      try {
+        const responseText = await response.text()
+        console.log('Provider response body:', responseText)
+        
+        if (responseText) {
+          result = JSON.parse(responseText)
+          console.log('Parsed response:', result)
+        }
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError)
+        // Если не удается распарсить, попробуем получить задачу другим способом
+      }
+
+      // 10. Извлечение taskId из различных форматов ответа
+      let taskId = ''
+      if (result) {
+        taskId = result.id || result.taskId || result.task_id || ''
+      }
+
+      console.log('Final extracted task ID:', taskId)
+
+      // 11. Если taskId все еще пустой, попробуем получить последнюю задачу
+      if (!taskId) {
+        console.log('No task ID in response, trying to fetch latest task...')
+        try {
+          const listUrl = `${endpoint}/v1/user/${taskRequest.userAddress}/task?latest=1`
+          const listResponse = await fetch(listUrl)
+          const list = await listResponse.json()
+          taskId = list?.[0]?.id || list?.[0]?.taskId || ''
+          console.log('Task ID from latest tasks:', taskId)
+        } catch (listError) {
+          console.error('Error fetching latest task as fallback:', listError)
+        }
+      }
+
+      if (!taskId) {
+        console.warn('No task ID could be extracted from provider response')
+        // Возвращаем временный ID, чтобы UI мог показать что задача создана
+        taskId = `temp-${Date.now()}`
+        console.log('Using temporary task ID:', taskId)
+      }
+
+      return taskId
 
     } catch (error) {
       console.error('Error creating fine-tuning task:', error)

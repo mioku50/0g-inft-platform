@@ -155,12 +155,12 @@ export default function FineTunePage() {
     console.log('[uploadDataset] Starting upload process...')
     
     try {
-      // Проверка выбранного файла
+      // Check selected file
       if (!datasetFile) {
         console.log('[uploadDataset] No dataset file selected')
         toast({
-          title: 'Ошибка',
-          description: 'Пожалуйста, выберите файл датасета',
+          title: 'Error',
+          description: 'Please select a dataset file',
           variant: 'destructive'
         })
         return
@@ -173,29 +173,29 @@ export default function FineTunePage() {
         lastModified: datasetFile.lastModified
       })
 
-      // Проверка размера файла (максимум 10MB)
+      // Check file size (maximum 10MB)
       if (datasetFile.size > 10 * 1024 * 1024) {
         toast({
-          title: 'Файл слишком большой',
-          description: 'Размер файла не должен превышать 10MB',
+          title: 'File Too Large',
+          description: 'File size must not exceed 10MB',
           variant: 'destructive'
         })
         return
       }
 
-      // Проверка формата файла
+      // Check file format
       const allowedExtensions = ['.jsonl', '.json', '.txt']
       const fileExtension = '.' + datasetFile.name.split('.').pop()?.toLowerCase()
       if (!allowedExtensions.includes(fileExtension)) {
         toast({
-          title: 'Неподдерживаемый формат',
-          description: 'Поддерживаемые форматы: .jsonl, .json, .txt',
+          title: 'Unsupported Format',
+          description: 'Supported formats: .jsonl, .json, .txt',
           variant: 'destructive'
         })
         return
       }
 
-      // Валидация датасета для выбранной модели
+      // Validate dataset for selected model
       const model = getModelById(selectedModel)
       if (model) {
         const validation = validateDatasetForModel(
@@ -207,7 +207,7 @@ export default function FineTunePage() {
         if (!validation.isValid) {
           console.log('[uploadDataset] Dataset validation failed:', validation.errors)
           toast({
-            title: 'Ошибка валидации датасета',
+            title: 'Dataset Validation Failed',
             description: validation.errors.join(', '),
             variant: 'destructive'
           })
@@ -216,9 +216,9 @@ export default function FineTunePage() {
 
         if (validation.warnings.length > 0) {
           console.warn('[uploadDataset] Dataset warnings:', validation.warnings)
-          // Показываем предупреждения, но продолжаем
+          // Show warnings but continue
           toast({
-            title: 'Предупреждения',
+            title: 'Warnings',
             description: validation.warnings.join(', '),
             variant: 'default'
           })
@@ -259,19 +259,19 @@ export default function FineTunePage() {
         setDataSize(data.dataSize || 0)
         
         toast({
-          title: 'Успешно!',
-          description: `Датасет загружен успешно! Обработано ${data.dataSize} примеров.`,
+          title: 'Success!',
+          description: `Dataset uploaded successfully! Processed ${data.dataSize} examples.`,
           variant: 'default'
         })
       } else {
-        let errorMessage = 'Ошибка загрузки'
+        let errorMessage = 'Upload failed'
         
         try {
           const errorData = await response.json()
           errorMessage = errorData.error || errorData.details || errorMessage
         } catch (e) {
-          // Если не удается парсить JSON, используем статус
-          errorMessage = `Ошибка сервера: ${response.status} ${response.statusText}`
+          // If JSON parsing fails, use status
+          errorMessage = `Server error: ${response.status} ${response.statusText}`
         }
         
         console.error('[uploadDataset] Upload failed:', errorMessage)
@@ -280,20 +280,20 @@ export default function FineTunePage() {
     } catch (error) {
       console.error('[uploadDataset] Upload error:', error)
       
-      let errorMessage = 'Неизвестная ошибка'
+      let errorMessage = 'Unknown error'
       
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          errorMessage = 'Время ожидания истекло. Попробуйте еще раз.'
+          errorMessage = 'Request timeout. Please try again.'
         } else if (error.message.includes('Failed to fetch')) {
-          errorMessage = 'Ошибка сети. Проверьте подключение к интернету.'
+          errorMessage = 'Network error. Please check your internet connection.'
         } else {
           errorMessage = error.message
         }
       }
       
       toast({
-        title: 'Ошибка загрузки',
+        title: 'Upload Failed',
         description: errorMessage,
         variant: 'destructive'
       })
@@ -308,21 +308,21 @@ export default function FineTunePage() {
     console.log('[startFineTuning] Starting fine-tuning process...')
     
     try {
-      // Все проверки уже выполнены в onClick кнопки, но дублируем для безопасности
+      // All checks already performed in button onClick, but duplicate for safety
       if (!datasetRoot) {
-        throw new Error('Датасет не загружен')
+        throw new Error('Dataset not uploaded')
       }
 
       if (!isConnected || !walletClient) {
-        throw new Error('Кошелек не подключен')
+        throw new Error('Wallet not connected')
       }
 
       if (walletValidation && !walletValidation.isValid) {
-        throw new Error(`Проблемы с кошельком: ${walletValidation.errors.join(', ')}`)
+        throw new Error(`Wallet issues: ${walletValidation.errors.join(', ')}`)
       }
 
       if (accountInfo?.needsTopUp) {
-        throw new Error('Недостаточно средств на балансе')
+        throw new Error('Insufficient balance')
       }
 
       setIsStarting(true)
@@ -337,17 +337,17 @@ export default function FineTunePage() {
         userAddress: address
       })
 
-      // Проверяем размер датасета
+      // Check dataset size
       if (dataSize < 10) {
         toast({
-          title: 'Предупреждение',
-          description: `Датасет содержит только ${dataSize} примеров. Рекомендуется минимум 100 для качественного обучения.`,
+          title: 'Warning',
+          description: `Dataset contains only ${dataSize} examples. Minimum 100 recommended for quality training.`,
           variant: 'default'
         })
       }
 
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 секунд для запуска
+      const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 seconds for startup
 
       const response = await fetch('/api/compute/wallet/fine-tune', {
         method: 'POST',
@@ -380,27 +380,27 @@ export default function FineTunePage() {
         
         if (data.taskId) {
           toast({
-            title: 'Файн-тюнинг запущен!',
-            description: `Задача создана: ${data.taskId.slice(0, 8)}... Процесс может занять несколько часов.`,
+            title: 'Fine-tuning Started!',
+            description: `Task created: ${data.taskId.slice(0, 8)}... Process may take several hours.`,
             variant: 'default'
           })
-          // Перезагружаем список задач
+          // Reload tasks list
           await loadTasks()
         } else {
           toast({
-            title: 'Задача создана',
-            description: 'Файн-тюнинг успешно отправлен на выполнение',
+            title: 'Task Created',
+            description: 'Fine-tuning successfully submitted for execution',
             variant: 'default'
           })
         }
       } else {
-        let errorMessage = 'Не удалось запустить файн-тюнинг'
+        let errorMessage = 'Failed to start fine-tuning'
         
         try {
           const errorData = await response.json()
           errorMessage = errorData.error || errorData.details || errorMessage
         } catch (e) {
-          errorMessage = `Ошибка сервера: ${response.status} ${response.statusText}`
+          errorMessage = `Server error: ${response.status} ${response.statusText}`
         }
         
         console.error('[startFineTuning] API error:', errorMessage)
@@ -409,20 +409,20 @@ export default function FineTunePage() {
     } catch (error) {
       console.error('[startFineTuning] Error:', error)
       
-      let errorMessage = 'Неизвестная ошибка'
+      let errorMessage = 'Unknown error'
       
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          errorMessage = 'Время ожидания истекло. Попробуйте еще раз.'
+          errorMessage = 'Request timeout. Please try again.'
         } else if (error.message.includes('Failed to fetch')) {
-          errorMessage = 'Ошибка сети. Проверьте подключение к интернету.'
+          errorMessage = 'Network error. Please check your internet connection.'
         } else {
           errorMessage = error.message
         }
       }
       
       toast({
-        title: 'Ошибка запуска файн-тюнинга',
+        title: 'Fine-tuning Start Failed',
         description: errorMessage,
         variant: 'destructive'
       })
@@ -571,11 +571,11 @@ export default function FineTunePage() {
                     onClick={async (e) => {
                       console.log('[Button Click] Upload Dataset button clicked!')
                       
-                      // Проверяем состояние перед началом
+                      // Check state before starting
                       if (!datasetFile) {
                         toast({
-                          title: 'Ошибка',
-                          description: 'Сначала выберите файл датасета',
+                          title: 'Error',
+                          description: 'Please select a dataset file first',
                           variant: 'destructive'
                         })
                         return
@@ -586,7 +586,7 @@ export default function FineTunePage() {
                         return
                       }
                       
-                      // Предотвращаем множественные клики
+                      // Prevent multiple clicks
                       e.preventDefault()
                       
                       try {
@@ -594,8 +594,8 @@ export default function FineTunePage() {
                       } catch (error) {
                         console.error('[Button Click] Unhandled upload error:', error)
                         toast({
-                          title: 'Критическая ошибка',
-                          description: 'Произошла неожиданная ошибка. Попробуйте обновить страницу.',
+                          title: 'Critical Error',
+                          description: 'An unexpected error occurred. Please refresh the page.',
                           variant: 'destructive'
                         })
                       }
@@ -606,12 +606,12 @@ export default function FineTunePage() {
                     {isUploading ? (
                       <>
                         <Clock className="mr-2 h-4 w-4 animate-spin" />
-                        Загружается...
+                        Uploading...
                       </>
                     ) : (
                       <>
                         <Upload className="mr-2 h-4 w-4" />
-                        Загрузить датасет
+                        Upload Dataset
                       </>
                     )}
                   </Button>
@@ -773,11 +773,11 @@ export default function FineTunePage() {
                   onClick={async (e) => {
                     console.log('[Start Fine-tuning] Button clicked')
                     
-                    // Детальная проверка всех условий
+                    // Detailed check of all conditions
                     if (!datasetRoot) {
                       toast({
-                        title: 'Ошибка',
-                        description: 'Сначала загрузите датасет для обучения',
+                        title: 'Error',
+                        description: 'Please upload a dataset for training first',
                         variant: 'destructive'
                       })
                       return
@@ -785,8 +785,8 @@ export default function FineTunePage() {
                     
                     if (!isConnected) {
                       toast({
-                        title: 'Кошелек не подключен',
-                        description: 'Подключите кошелек для начала файн-тюнинга',
+                        title: 'Wallet Not Connected',
+                        description: 'Please connect your wallet to start fine-tuning',
                         variant: 'destructive'
                       })
                       return
@@ -794,7 +794,7 @@ export default function FineTunePage() {
                     
                     if (walletValidation && !walletValidation.isValid) {
                       toast({
-                        title: 'Проблемы с кошельком',
+                        title: 'Wallet Issues',
                         description: walletValidation.errors.join(', '),
                         variant: 'destructive'
                       })
@@ -803,8 +803,8 @@ export default function FineTunePage() {
                     
                     if (accountInfo?.needsTopUp) {
                       toast({
-                        title: 'Недостаточно средств',
-                        description: 'Пополните баланс вашего аккаунта для файн-тюнинга',
+                        title: 'Insufficient Balance',
+                        description: 'Please top up your account balance for fine-tuning',
                         variant: 'destructive'
                       })
                       return
@@ -822,8 +822,8 @@ export default function FineTunePage() {
                     } catch (error) {
                       console.error('[Start Fine-tuning] Unhandled error:', error)
                       toast({
-                        title: 'Критическая ошибка',
-                        description: 'Не удалось запустить файн-тюнинг. Попробуйте обновить страницу.',
+                        title: 'Critical Error',
+                        description: 'Failed to start fine-tuning. Please refresh the page.',
                         variant: 'destructive'
                       })
                     }
@@ -834,12 +834,12 @@ export default function FineTunePage() {
                   {isStarting ? (
                     <>
                       <Clock className="mr-2 h-4 w-4 animate-spin" />
-                      Запуск файн-тюнинга...
+                      Starting Fine-tuning...
                     </>
                   ) : (
                     <>
                       <Play className="mr-2 h-4 w-4" />
-                      Начать файн-тюнинг
+                      Start Fine-tuning
                     </>
                   )}
                 </Button>
@@ -919,9 +919,9 @@ export default function FineTunePage() {
                             }
                             className="text-xs"
                           >
-                            {task.status === 'completed' ? 'Завершено' :
-                             task.status === 'failed' ? 'Ошибка' :
-                             task.status === 'running' ? 'Выполняется' : 'Ожидает'}
+                            {task.status === 'completed' ? 'Completed' :
+                             task.status === 'failed' ? 'Failed' :
+                             task.status === 'running' ? 'Running' : 'Pending'}
                           </Badge>
                         </div>
                         
@@ -930,10 +930,10 @@ export default function FineTunePage() {
                         )}
                         
                         <div className="text-xs text-purple-300">
-                          Создано: {new Date(task.createdAt).toLocaleDateString()}
+                          Created: {new Date(task.createdAt).toLocaleDateString()}
                           {task.completedAt && (
                             <span className="ml-2">
-                              • Завершено: {new Date(task.completedAt).toLocaleDateString()}
+                              • Completed: {new Date(task.completedAt).toLocaleDateString()}
                             </span>
                           )}
                         </div>
@@ -941,7 +941,7 @@ export default function FineTunePage() {
                         {task.logs && task.logs.length > 0 && (
                           <details className="mt-2">
                             <summary className="text-xs text-blue-300 cursor-pointer hover:text-blue-200">
-                              Показать логи ({task.logs.length})
+                              Show logs ({task.logs.length})
                             </summary>
                             <div className="mt-1 p-2 bg-black/20 rounded text-xs font-mono text-gray-300 max-h-32 overflow-y-auto">
                               {task.logs.map((log, index) => (
@@ -962,18 +962,18 @@ export default function FineTunePage() {
                           onClick={() => {
                             setShowAllTasks(!showAllTasks)
                             toast({
-                              title: showAllTasks ? 'Скрыто' : 'Показано',
+                              title: showAllTasks ? 'Collapsed' : 'Expanded',
                               description: showAllTasks 
-                                ? 'Показаны только последние 3 задачи' 
-                                : `Показаны все ${tasks.length} задач`,
+                                ? 'Showing only last 3 tasks' 
+                                : `Showing all ${tasks.length} tasks`,
                               variant: 'default'
                             })
                           }}
                         >
                           {showAllTasks ? (
-                            <>Скрыть задачи</>
+                            <>Hide Tasks</>
                           ) : (
-                            <>Показать все задачи ({tasks.length})</>
+                            <>View All Tasks ({tasks.length})</>
                           )}
                         </Button>
                       </div>

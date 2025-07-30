@@ -152,12 +152,21 @@ export default function FineTunePage() {
 
   // Upload dataset
   const uploadDataset = async () => {
-    console.log('[uploadDataset] Starting upload process...')
+    console.log('[uploadDataset] 🚀 Starting upload process...')
+    console.log('[uploadDataset] Current state:', {
+      datasetFile: datasetFile ? {
+        name: datasetFile.name,
+        size: datasetFile.size,
+        type: datasetFile.type
+      } : null,
+      isUploading,
+      tokenId
+    })
     
     try {
       // Check selected file
       if (!datasetFile) {
-        console.log('[uploadDataset] No dataset file selected')
+        console.log('[uploadDataset] ❌ No dataset file selected')
         toast({
           title: 'Error',
           description: 'Please select a dataset file',
@@ -589,7 +598,16 @@ export default function FineTunePage() {
                     <Input
                       type="file"
                       accept=".jsonl,.json,.txt"
-                      onChange={(e) => setDatasetFile(e.target.files?.[0] || null)}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null
+                        console.log('[File Select] 📁 File selected:', file ? {
+                          name: file.name,
+                          size: file.size,
+                          type: file.type,
+                          lastModified: file.lastModified
+                        } : 'null')
+                        setDatasetFile(file)
+                      }}
                       className="bg-white/10 border-white/20 text-white file:bg-purple-600 file:text-white file:border-0"
                     />
                     {datasetFile && (
@@ -601,10 +619,17 @@ export default function FineTunePage() {
 
                   <Button 
                     onClick={async (e) => {
-                      console.log('[Button Click] Upload Dataset button clicked!')
+                      console.log('[Button Click] 🎯 Upload Dataset button clicked!')
+                      console.log('[Button Click] Event details:', e)
+                      console.log('[Button Click] Current state:', {
+                        datasetFile: datasetFile ? datasetFile.name : 'null',
+                        isUploading,
+                        tokenId
+                      })
                       
                       // Check state before starting
                       if (!datasetFile) {
+                        console.log('[Button Click] ❌ No dataset file selected')
                         toast({
                           title: 'Error',
                           description: 'Please select a dataset file first',
@@ -614,7 +639,7 @@ export default function FineTunePage() {
                       }
                       
                       if (isUploading) {
-                        console.log('[Button Click] Upload already in progress')
+                        console.log('[Button Click] ⏳ Upload already in progress')
                         return
                       }
                       

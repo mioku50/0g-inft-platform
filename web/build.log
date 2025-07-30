@@ -1,0 +1,50 @@
+
+> 0g-inft-platform@0.1.0 build
+> next build
+
+[dotenv@17.2.0] injecting env (0) from .env (tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit)
+   ▲ Next.js 14.0.0
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ⚠ Custom webpack configuration is detected. When using a custom webpack configuration, the Webpack build worker is disabled by default. To force enable it, set the "experimental.webpackBuildWorker" option to "true". Read more: https://nextjs.org/docs/messages/webpack-build-worker-opt-out
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+
+./app/agent/[id]/chat/page.tsx
+230:15  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./app/marketplace/[tokenId]/page.tsx
+34:6  Warning: React Hook useEffect has a missing dependency: 'loadAgentDetails'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+271:19  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./app/mint/page.tsx
+523:27  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/agents/AgentAvatar.tsx
+41:5  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/custom-connect-button.tsx
+87:27  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./components/fine-tune/FineTuneStatus.tsx
+134:6  Warning: React Hook React.useCallback has a missing dependency: 'stopMonitoring'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./lib/hooks/useAgentsOptimized.ts
+30:6  Warning: React Hook useCallback has a missing dependency: 'applyModelVersion'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+76:6  Warning: React Hook useCallback has a missing dependency: 'applyModelVersion'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules
+Failed to compile.
+
+./lib/compute/broker.server.ts:161:5
+Type error: Argument of type 'Signer' is not assignable to parameter of type 'Wallet | JsonRpcSigner'.
+  Type 'Signer' is missing the following properties from type 'JsonRpcSigner': address, sendUncheckedTransaction, unlock, _legacySignMessage
+
+[0m [90m 159 |[39m[0m
+[0m [90m 160 |[39m   [36mconst[39m broker [33m=[39m [36mawait[39m createZGComputeNetworkBroker([0m
+[0m[31m[1m>[22m[39m[90m 161 |[39m     userSigner[33m,[39m[0m
+[0m [90m     |[39m     [31m[1m^[22m[39m[0m
+[0m [90m 162 |[39m     getComputeLedgerContract()[33m,[39m[0m
+[0m [90m 163 |[39m     getComputeInferenceContract()[33m,[39m[0m
+[0m [90m 164 |[39m     undefined[33m,[39m[0m

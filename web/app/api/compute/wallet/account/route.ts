@@ -1,7 +1,7 @@
 // app/api/compute/wallet/account/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
-import { validateUserWallet } from '@/lib/compute/wallet-broker'
+import { validateUserWallet } from '@/lib/compute/broker.server'
 import { validateComputeEnvironment } from '@/lib/server/compute-env'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 

@@ -1,6 +1,6 @@
 // app/api/compute/fine-tune-v2/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
+import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker.server'
 import { FineTuneServiceV2 } from '@/lib/compute/fine-tune-service-v2'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 import { getFineTuneProvider, validateComputeEnvironment } from '@/lib/server/compute-env'
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Compute misconfigured' }, { status: 503 })
   }
 
-  const signerAddress = getSignerAddress(broker)
+  const signerAddress = await getSignerAddress()
   if (!signerAddress) {
     return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
   }

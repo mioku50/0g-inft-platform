@@ -1,9 +1,9 @@
 // app/api/compute/wallet/fine-tune/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
-import { createUserWalletBroker, validateUserWallet } from '@/lib/compute/wallet-broker'
+import { createUserWalletBroker, validateUserWallet } from '@/lib/compute/broker.server'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
-import { getBroker } from '@/lib/compute/broker'
+import { getBroker } from '@/lib/compute/broker.server'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 import { validateComputeEnvironment } from '@/lib/server/compute-env'
 import { getModelHash } from '@/lib/compute/fine-tune-models'

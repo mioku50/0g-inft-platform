@@ -1,6 +1,6 @@
 // web/app/api/compute/acknowledge-model/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getBroker } from '@/lib/compute/broker'
+import { getBroker } from '@/lib/compute/broker.server'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
 
 export async function POST(req: NextRequest) {

@@ -43,7 +43,7 @@ import {
   getEstimatedTrainingTime,
   type FineTuneModel 
 } from '@/lib/compute/fine-tune-models'
-import { validateUserWallet } from '@/lib/compute/wallet-broker'
+import { validateUserWalletClient } from '@/lib/compute/wallet-client'
 
 interface AccountInfo {
   balance: string
@@ -93,7 +93,17 @@ export default function FineTunePage() {
     if (walletClient && isConnected) {
       try {
         walletClientToSigner(walletClient).then(signer => {
-          validateUserWallet(signer).then(setWalletValidation)
+          validateUserWalletClient(signer).then(result => {
+            // Адаптируем результат к ожидаемому типу
+            setWalletValidation({
+              isValid: result.isValid,
+              errors: result.error ? [result.error] : [],
+              warnings: [],
+              userAddress: result.address,
+              balance: result.balance,
+              chainId: result.chainId ? parseInt(result.chainId) : undefined
+            })
+          })
         }).catch(error => {
           console.error('Failed to create signer:', error)
           setWalletValidation(null)

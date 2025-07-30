@@ -1,6 +1,6 @@
 // web/app/api/compute/balance/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getBroker } from '@/lib/compute/broker'
+import { getBroker } from '@/lib/compute/broker.server'
 import { ethers } from 'ethers'
 
 export async function GET() {

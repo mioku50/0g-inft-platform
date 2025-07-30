@@ -1,7 +1,7 @@
 // app/api/compute/fine-tune/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
-import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
+import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker.server'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 import { getFineTuneProvider, validateComputeEnvironment } from '@/lib/server/compute-env'
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const signerAddress = getSignerAddress(broker)
+    const signerAddress = await getSignerAddress()
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }
@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const signerAddress = getSignerAddress(broker)
+    const signerAddress = await getSignerAddress()
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }
@@ -265,7 +265,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const signerAddress = getSignerAddress(broker)
+    const signerAddress = await getSignerAddress()
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }

@@ -1,6 +1,6 @@
 // app/api/compute/fine-tune/tasks/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker'
+import { getBrokerOrThrow, getSignerAddress } from '@/lib/compute/broker.server'
 import { FineTuneService } from '@/lib/compute/fine-tune-service'
 import { validateComputeEnvironment, getFineTuneProvider } from '@/lib/server/compute-env'
 
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
   }
   
   try {
-    const signerAddress = getSignerAddress(broker)
+    const signerAddress = await getSignerAddress()
     if (!signerAddress) {
       return NextResponse.json({ error: 'Wallet not connected' }, { status: 401 })
     }

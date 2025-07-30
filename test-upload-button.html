@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Upload Dataset Button</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+        }
+        button {
+            background: linear-gradient(45deg, #6366f1, #8b5cf6);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .error {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .info {
+            color: #17a2b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Upload Dataset Button</h1>
+        <p>Тестирование функциональности загрузки датасета для Fine-tune</p>
+        
+        <div class="form-group">
+            <label for="datasetFile">Select Dataset File:</label>
+            <input type="file" id="datasetFile" accept=".jsonl,.json,.txt">
+            <small>Поддерживаемые форматы: .jsonl, .json, .txt</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="agentId">Agent ID:</label>
+            <input type="text" id="agentId" value="test123" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        
+        <button id="uploadBtn" onclick="uploadDataset()">
+            📤 Upload Dataset
+        </button>
+        
+        <div id="log" class="log">
+            <div class="info">🔍 Логи загрузки будут отображаться здесь...</div>
+        </div>
+    </div>
+
+    <script>
+        let isUploading = false;
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        async function uploadDataset() {
+            console.log('[uploadDataset] 🚀 Starting upload process...');
+            log('🚀 Starting upload process...', 'info');
+            
+            if (isUploading) {
+                log('⏳ Upload already in progress', 'info');
+                return;
+            }
+            
+            const fileInput = document.getElementById('datasetFile');
+            const agentIdInput = document.getElementById('agentId');
+            const uploadBtn = document.getElementById('uploadBtn');
+            
+            const file = fileInput.files[0];
+            const agentId = agentIdInput.value || 'test123';
+            
+            if (!file) {
+                log('❌ No file selected', 'error');
+                alert('Please select a file first');
+                return;
+            }
+            
+            log(`📁 Selected file: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`, 'info');
+            log(`🤖 Agent ID: ${agentId}`, 'info');
+            
+            isUploading = true;
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '⏳ Uploading...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('agentId', agentId);
+                
+                log('📤 Making API request to /api/compute/fine-tune/upload', 'info');
+                
+                const response = await fetch('/api/compute/fine-tune/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                log(`📡 Response status: ${response.status} ${response.statusText}`, 'info');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log('✅ Upload successful!', 'success');
+                    log(`🔗 Root hash: ${data.rootHash}`, 'success');
+                    log(`📊 Data size: ${data.dataSize} examples`, 'success');
+                    log(`💾 Upload size: ${data.uploadSize} bytes`, 'success');
+                    log(`📄 Filename: ${data.filename}`, 'success');
+                    
+                    alert(`✅ Success!\n\nDataset uploaded successfully!\nRoot hash: ${data.rootHash.substring(0, 16)}...\nExamples: ${data.dataSize}`);
+                } else {
+                    let errorMessage = 'Upload failed';
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.error || errorData.details || errorMessage;
+                    } catch (e) {
+                        errorMessage = `Server error: ${response.status} ${response.statusText}`;
+                    }
+                    
+                    log(`❌ Upload failed: ${errorMessage}`, 'error');
+                    alert(`❌ Upload failed: ${errorMessage}`);
+                }
+            } catch (error) {
+                console.error('[uploadDataset] Upload error:', error);
+                
+                let errorMessage = 'Unknown error';
+                if (error.message.includes('Failed to fetch')) {
+                    errorMessage = 'Network error. Is the server running?';
+                } else {
+                    errorMessage = error.message;
+                }
+                
+                log(`💥 Critical error: ${errorMessage}`, 'error');
+                alert(`💥 Critical error: ${errorMessage}`);
+            } finally {
+                isUploading = false;
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '📤 Upload Dataset';
+                log('🏁 Upload process finished', 'info');
+            }
+        }
+        
+        // Log initial state
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🌟 Test page loaded successfully', 'success');
+            log('🔗 API endpoint: /api/compute/fine-tune/upload', 'info');
+            log('🌐 Server: http://localhost:3000', 'info');
+        });
+    </script>
+</body>
+</html>

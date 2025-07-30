@@ -599,6 +599,13 @@ export default function FineTunePage() {
                       type="file"
                       accept=".jsonl,.json,.txt"
                       onChange={(e) => {
+                        console.log('='.repeat(50))
+                        console.log('[FILE DEBUG] 📁 FILE INPUT CHANGED')
+                        console.log('[FILE DEBUG] Event:', e)
+                        console.log('[FILE DEBUG] Target:', e.target)
+                        console.log('[FILE DEBUG] Files:', e.target.files)
+                        console.log('[FILE DEBUG] Files length:', e.target.files?.length)
+                        
                         const file = e.target.files?.[0] || null
                         console.log('[File Select] 📁 File selected:', file ? {
                           name: file.name,
@@ -606,7 +613,12 @@ export default function FineTunePage() {
                           type: file.type,
                           lastModified: file.lastModified
                         } : 'null')
+                        
+                        console.log('[FILE DEBUG] About to call setDatasetFile...')
                         setDatasetFile(file)
+                        console.log('[FILE DEBUG] setDatasetFile called')
+                        console.log('[FILE DEBUG] New file state will be:', file ? file.name : 'null')
+                        console.log('='.repeat(50))
                       }}
                       className="bg-white/10 border-white/20 text-white file:bg-purple-600 file:text-white file:border-0"
                     />
@@ -619,6 +631,17 @@ export default function FineTunePage() {
 
                   <Button 
                     onClick={async (e) => {
+                      // КРИТИЧЕСКИ ВАЖНЫЕ ОТЛАДОЧНЫЕ ЛОГИ
+                      console.log('='.repeat(50))
+                      console.log('[UPLOAD DEBUG] 🚨 BUTTON CLICKED - START')
+                      console.log('[UPLOAD DEBUG] Timestamp:', new Date().toISOString())
+                      console.log('[UPLOAD DEBUG] Event object:', e)
+                      console.log('[UPLOAD DEBUG] Event type:', e.type)
+                      console.log('[UPLOAD DEBUG] Event target:', e.target)
+                      
+                      // Добавим alert для гарантированной видимости
+                      alert('🎯 UPLOAD BUTTON CLICKED! Check console for details.')
+                      
                       console.log('[Button Click] 🎯 Upload Dataset button clicked!')
                       console.log('[Button Click] Event details:', e)
                       console.log('[Button Click] Current state:', {
@@ -628,8 +651,14 @@ export default function FineTunePage() {
                       })
                       
                       // Check state before starting
+                      console.log('[UPLOAD DEBUG] Checking datasetFile state...')
+                      console.log('[UPLOAD DEBUG] datasetFile:', datasetFile)
+                      console.log('[UPLOAD DEBUG] datasetFile type:', typeof datasetFile)
+                      console.log('[UPLOAD DEBUG] datasetFile truthy:', !!datasetFile)
+                      
                       if (!datasetFile) {
                         console.log('[Button Click] ❌ No dataset file selected')
+                        alert('❌ No dataset file selected!')
                         toast({
                           title: 'Error',
                           description: 'Please select a dataset file first',
@@ -640,25 +669,39 @@ export default function FineTunePage() {
                       
                       if (isUploading) {
                         console.log('[Button Click] ⏳ Upload already in progress')
+                        alert('⏳ Upload already in progress!')
                         return
                       }
                       
                       // Prevent multiple clicks
+                      console.log('[UPLOAD DEBUG] Preventing default and calling uploadDataset...')
                       e.preventDefault()
                       
                       try {
+                        console.log('[UPLOAD DEBUG] About to call uploadDataset()...')
+                        alert('🚀 About to call uploadDataset()!')
                         await uploadDataset()
+                        console.log('[UPLOAD DEBUG] uploadDataset() completed successfully')
+                        alert('✅ uploadDataset() completed!')
                       } catch (error) {
                         console.error('[Button Click] Unhandled upload error:', error)
+                        alert(`💥 Upload error: ${error.message}`)
                         toast({
                           title: 'Critical Error',
                           description: 'An unexpected error occurred. Please refresh the page.',
                           variant: 'destructive'
                         })
                       }
+                      
+                      console.log('[UPLOAD DEBUG] 🚨 BUTTON CLICKED - END')
+                      console.log('='.repeat(50))
                     }} 
                     disabled={!datasetFile || isUploading}
                     className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                    data-testid="upload-dataset-button"
+                    data-debug-disabled={!datasetFile || isUploading}
+                    data-debug-dataset-file={datasetFile ? datasetFile.name : 'null'}
+                    data-debug-is-uploading={isUploading}
                   >
                     {isUploading ? (
                       <>

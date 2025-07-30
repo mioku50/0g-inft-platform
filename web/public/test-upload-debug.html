@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Upload Dataset Functionality</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #0f0f23;
+            color: white;
+        }
+        .container {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        button {
+            background: #8b5cf6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+            width: 100%;
+        }
+        button:hover {
+            background: #7c3aed;
+        }
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            border-radius: 5px;
+        }
+        .status {
+            background: rgba(0,255,0,0.1);
+            border: 1px solid rgba(0,255,0,0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .error {
+            background: rgba(255,0,0,0.1);
+            border: 1px solid rgba(255,0,0,0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .logs {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Upload Dataset API</h1>
+    
+    <div class="container">
+        <h2>📁 File Upload Test</h2>
+        <p>This page tests the Upload Dataset functionality directly.</p>
+        
+        <input type="file" id="fileInput" accept=".jsonl,.json,.txt" />
+        <div id="fileInfo"></div>
+        
+        <button id="uploadBtn" onclick="testUpload()" disabled>
+            📤 Upload Dataset
+        </button>
+        
+        <div id="status"></div>
+        <div id="logs" class="logs"></div>
+    </div>
+
+    <div class="container">
+        <h2>🔗 API Tests</h2>
+        <button onclick="testApiHealth()">🩺 Test API Health</button>
+        <button onclick="testApiWithSampleData()">📝 Test with Sample Data</button>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const fileInfo = document.getElementById('fileInfo');
+        const status = document.getElementById('status');
+        const logs = document.getElementById('logs');
+        
+        let selectedFile = null;
+        
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            logs.textContent += `[${timestamp}] ${message}\n`;
+            logs.scrollTop = logs.scrollHeight;
+            console.log(message);
+        }
+        
+        fileInput.addEventListener('change', (e) => {
+            selectedFile = e.target.files[0];
+            if (selectedFile) {
+                fileInfo.innerHTML = `
+                    <div class="status">
+                        Selected: ${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)} KB)
+                    </div>
+                `;
+                uploadBtn.disabled = false;
+                log(`File selected: ${selectedFile.name}`);
+            } else {
+                fileInfo.innerHTML = '';
+                uploadBtn.disabled = true;
+            }
+        });
+        
+        async function testUpload() {
+            if (!selectedFile) {
+                status.innerHTML = '<div class="error">No file selected!</div>';
+                return;
+            }
+            
+            log('Starting upload test...');
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '⏳ Uploading...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                formData.append('agentId', 'test-123');
+                
+                log('Making API request to /api/compute/fine-tune/upload');
+                
+                const response = await fetch('/api/compute/fine-tune/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                log(`Response status: ${response.status} ${response.statusText}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`Upload successful: ${JSON.stringify(data, null, 2)}`);
+                    status.innerHTML = `
+                        <div class="status">
+                            ✅ Upload successful!<br>
+                            Root Hash: ${data.rootHash}<br>
+                            Data Size: ${data.dataSize} examples<br>
+                            File Size: ${data.uploadSize} bytes
+                        </div>
+                    `;
+                } else {
+                    const errorText = await response.text();
+                    log(`Upload failed: ${errorText}`);
+                    status.innerHTML = `<div class="error">❌ Upload failed: ${errorText}</div>`;
+                }
+            } catch (error) {
+                log(`Upload error: ${error.message}`);
+                status.innerHTML = `<div class="error">❌ Upload error: ${error.message}</div>`;
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '📤 Upload Dataset';
+            }
+        }
+        
+        async function testApiHealth() {
+            log('Testing API health...');
+            try {
+                const response = await fetch('/api/health');
+                if (response.ok) {
+                    log('API health check passed');
+                    status.innerHTML = '<div class="status">✅ API is healthy</div>';
+                } else {
+                    log(`API health check failed: ${response.status}`);
+                    status.innerHTML = `<div class="error">❌ API health check failed: ${response.status}</div>`;
+                }
+            } catch (error) {
+                log(`API health check error: ${error.message}`);
+                status.innerHTML = `<div class="error">❌ API health check error: ${error.message}</div>`;
+            }
+        }
+        
+        async function testApiWithSampleData() {
+            log('Testing API with sample data...');
+            
+            const sampleData = `{"messages": [{"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi there!"}]}
+{"messages": [{"role": "user", "content": "What is AI?"}, {"role": "assistant", "content": "AI is artificial intelligence."}]}`;
+            
+            const blob = new Blob([sampleData], { type: 'application/json' });
+            const file = new File([blob], 'sample-dataset.jsonl', { type: 'application/json' });
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('agentId', 'sample-test');
+                
+                log('Making API request with sample data...');
+                
+                const response = await fetch('/api/compute/fine-tune/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                log(`Sample data response: ${response.status} ${response.statusText}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`Sample upload successful: ${JSON.stringify(data, null, 2)}`);
+                    status.innerHTML = `
+                        <div class="status">
+                            ✅ Sample data upload successful!<br>
+                            Root Hash: ${data.rootHash}<br>
+                            Data Size: ${data.dataSize} examples
+                        </div>
+                    `;
+                } else {
+                    const errorText = await response.text();
+                    log(`Sample upload failed: ${errorText}`);
+                    status.innerHTML = `<div class="error">❌ Sample upload failed: ${errorText}</div>`;
+                }
+            } catch (error) {
+                log(`Sample upload error: ${error.message}`);
+                status.innerHTML = `<div class="error">❌ Sample upload error: ${error.message}</div>`;
+            }
+        }
+        
+        log('Test page loaded. Ready for testing!');
+    </script>
+</body>
+</html>

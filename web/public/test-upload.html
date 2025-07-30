@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Upload Dataset Button</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #0f0f23;
+            color: white;
+        }
+        .container {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        button {
+            background: #8b5cf6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        button:hover {
+            background: #7c3aed;
+        }
+        button:disabled {
+            background: #4b5563;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+            padding: 5px;
+        }
+        .log {
+            background: #1f2937;
+            border: 1px solid #374151;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .success { color: #10b981; }
+        .error { color: #ef4444; }
+        .info { color: #3b82f6; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Upload Dataset Functionality</h1>
+    
+    <div class="container">
+        <h2>📁 File Selection</h2>
+        <input type="file" id="fileInput" accept=".jsonl,.txt,.json" />
+        <div id="fileInfo"></div>
+    </div>
+
+    <div class="container">
+        <h2>🚀 Upload Test</h2>
+        <button id="uploadBtn" disabled>Upload Dataset</button>
+        <button id="createTestFile">Create Test File</button>
+        <button id="clearLog">Clear Log</button>
+    </div>
+
+    <div class="container">
+        <h2>📊 Console Log</h2>
+        <div id="consoleLog" class="log"></div>
+    </div>
+
+    <script>
+        // Mock toast function
+        function toast(options) {
+            const message = options.description || options.title;
+            const variant = options.variant || 'default';
+            log(`[TOAST ${variant.toUpperCase()}] ${message}`, variant === 'destructive' ? 'error' : 'success');
+        }
+
+        // Logging function
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('consoleLog');
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            logElement.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(`[${timestamp}] ${message}`);
+        }
+
+        // Global variables to simulate React state
+        let datasetFile = null;
+        let isUploading = false;
+        let dataSize = 0;
+        const tokenId = 'test-agent-123';
+        const selectedModel = 'llama-3.3-70b';
+
+        // Mock model validation functions
+        function getModelById(modelId) {
+            return { id: modelId, name: 'Test Model' };
+        }
+
+        function validateDatasetForModel(modelId, size, format) {
+            return {
+                isValid: true,
+                errors: [],
+                warnings: format !== 'jsonl' ? ['Recommended format is JSONL'] : []
+            };
+        }
+
+        // The actual uploadDataset function from the React component
+        const uploadDataset = async () => {
+            log('[uploadDataset] Starting upload process...');
+            
+            if (!datasetFile) {
+                log('[uploadDataset] No dataset file selected');
+                toast({
+                    title: 'Error',
+                    description: 'Please select a dataset file',
+                    variant: 'destructive'
+                });
+                return;
+            }
+
+            log(`[uploadDataset] Dataset file details: ${JSON.stringify({
+                name: datasetFile.name,
+                size: datasetFile.size,
+                type: datasetFile.type,
+                lastModified: datasetFile.lastModified
+            })}`);
+
+            // Validate dataset for selected model
+            const model = getModelById(selectedModel);
+            if (model) {
+                const validation = validateDatasetForModel(
+                    selectedModel, 
+                    dataSize || 100, 
+                    datasetFile.name.split('.').pop() || ''
+                );
+                
+                if (!validation.isValid) {
+                    toast({
+                        title: 'Dataset Validation Failed',
+                        description: validation.errors.join(', '),
+                        variant: 'destructive'
+                    });
+                    return;
+                }
+
+                if (validation.warnings.length > 0) {
+                    log('Dataset warnings: ' + validation.warnings.join(', '), 'error');
+                }
+            }
+
+            isUploading = true;
+            updateUploadButton();
+            log('[uploadDataset] Setting upload state to true');
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', datasetFile);
+                formData.append('agentId', tokenId);
+                
+                log('[uploadDataset] FormData created, making API request...');
+
+                const response = await fetch('/api/compute/fine-tune/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                log(`[uploadDataset] API response: ${JSON.stringify({
+                    status: response.status,
+                    statusText: response.statusText,
+                    ok: response.ok,
+                    headers: Object.fromEntries(response.headers.entries())
+                })}`);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log('[uploadDataset] Upload successful: ' + JSON.stringify(data));
+                    dataSize = data.dataSize || 0;
+                    toast({
+                        title: 'Success',
+                        description: 'Dataset uploaded successfully'
+                    });
+                } else {
+                    const errorText = await response.text();
+                    log('[uploadDataset] Upload failed with response: ' + errorText, 'error');
+                    
+                    let errorData;
+                    try {
+                        errorData = JSON.parse(errorText);
+                    } catch (e) {
+                        errorData = { error: errorText || 'Upload failed' };
+                    }
+                    
+                    throw new Error(errorData.error || errorData.details || 'Upload failed');
+                }
+            } catch (error) {
+                log('[uploadDataset] Upload error: ' + error.message, 'error');
+                toast({
+                    title: 'Upload Failed',
+                    description: error instanceof Error ? error.message : 'Unknown error',
+                    variant: 'destructive'
+                });
+            } finally {
+                log('[uploadDataset] Setting upload state to false');
+                isUploading = false;
+                updateUploadButton();
+            }
+        };
+
+        // UI Update functions
+        function updateUploadButton() {
+            const btn = document.getElementById('uploadBtn');
+            btn.disabled = !datasetFile || isUploading;
+            btn.textContent = isUploading ? 'Uploading...' : 'Upload Dataset';
+        }
+
+        function updateFileInfo() {
+            const info = document.getElementById('fileInfo');
+            if (datasetFile) {
+                info.innerHTML = `
+                    <div class="success">
+                        Selected: ${datasetFile.name} (${(datasetFile.size / 1024).toFixed(1)} KB)
+                    </div>
+                `;
+            } else {
+                info.innerHTML = '';
+            }
+        }
+
+        // Event listeners
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            datasetFile = e.target.files[0] || null;
+            updateFileInfo();
+            updateUploadButton();
+            if (datasetFile) {
+                log(`File selected: ${datasetFile.name} (${datasetFile.size} bytes)`);
+            }
+        });
+
+        document.getElementById('uploadBtn').addEventListener('click', uploadDataset);
+
+        document.getElementById('createTestFile').addEventListener('click', () => {
+            // Create a test JSONL file
+            const testData = [
+                {
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful AI assistant."},
+                        {"role": "user", "content": "What is machine learning?"},
+                        {"role": "assistant", "content": "Machine learning is a subset of AI."}
+                    ]
+                },
+                {
+                    "messages": [
+                        {"role": "user", "content": "Explain neural networks"},
+                        {"role": "assistant", "content": "Neural networks are computing systems."}
+                    ]
+                }
+            ];
+            
+            const content = testData.map(item => JSON.stringify(item)).join('\n');
+            const blob = new Blob([content], { type: 'application/jsonl' });
+            const file = new File([blob], 'test-dataset.jsonl', { type: 'application/jsonl' });
+            
+            // Simulate file selection
+            datasetFile = file;
+            updateFileInfo();
+            updateUploadButton();
+            log('Test file created and selected automatically');
+        });
+
+        document.getElementById('clearLog').addEventListener('click', () => {
+            document.getElementById('consoleLog').innerHTML = '';
+        });
+
+        // Initialize
+        log('Frontend upload test initialized');
+        log('Click "Create Test File" to generate a test dataset, then "Upload Dataset" to test');
+        updateUploadButton();
+    </script>
+</body>
+</html>

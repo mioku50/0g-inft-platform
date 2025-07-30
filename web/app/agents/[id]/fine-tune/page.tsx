@@ -152,6 +152,16 @@ export default function FineTunePage() {
   // Upload dataset
   const uploadDataset = async () => {
     console.log('[uploadDataset] Starting upload process...')
+    console.log('[uploadDataset] Current state:', {
+      datasetFile: datasetFile ? {
+        name: datasetFile.name,
+        size: datasetFile.size,
+        type: datasetFile.type
+      } : null,
+      isUploading,
+      selectedModel,
+      tokenId
+    })
     
     if (!datasetFile) {
       console.log('[uploadDataset] No dataset file selected')
@@ -180,6 +190,7 @@ export default function FineTunePage() {
       )
       
       if (!validation.isValid) {
+        console.log('[uploadDataset] Dataset validation failed:', validation.errors)
         toast({
           title: 'Dataset Validation Failed',
           description: validation.errors.join(', '),
@@ -189,26 +200,26 @@ export default function FineTunePage() {
       }
 
       if (validation.warnings.length > 0) {
-        console.warn('Dataset warnings:', validation.warnings)
+        console.warn('[uploadDataset] Dataset warnings:', validation.warnings)
       }
     }
 
+    console.log('[uploadDataset] Setting isUploading to true')
     setIsUploading(true)
-    console.log('[uploadDataset] Setting upload state to true')
     
     try {
       const formData = new FormData()
       formData.append('file', datasetFile)
       formData.append('agentId', tokenId)
       
-      console.log('[uploadDataset] FormData created, making API request...')
+      console.log('[uploadDataset] FormData created, making API request to /api/compute/fine-tune/upload')
 
       const response = await fetch('/api/compute/fine-tune/upload', {
         method: 'POST',
         body: formData
       })
 
-      console.log('[uploadDataset] API response:', {
+      console.log('[uploadDataset] API response received:', {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok,
@@ -245,7 +256,7 @@ export default function FineTunePage() {
         variant: 'destructive'
       })
     } finally {
-      console.log('[uploadDataset] Setting upload state to false')
+      console.log('[uploadDataset] Setting isUploading to false')
       setIsUploading(false)
     }
   }
@@ -485,7 +496,15 @@ export default function FineTunePage() {
                   </div>
 
                   <Button 
-                    onClick={uploadDataset} 
+                    onClick={(e) => {
+                      console.log('[Button Click] Upload Dataset button clicked!', {
+                        event: e,
+                        datasetFile: datasetFile ? datasetFile.name : 'null',
+                        isUploading,
+                        disabled: !datasetFile || isUploading
+                      })
+                      uploadDataset()
+                    }} 
                     disabled={!datasetFile || isUploading}
                     className="w-full bg-purple-600 hover:bg-purple-700"
                   >

@@ -80,6 +80,7 @@ export default function FineTunePage() {
   const [datasetFile, setDatasetFile] = useState<File | null>(null)
   const [datasetRoot, setDatasetRoot] = useState<string>('')
   const [dataSize, setDataSize] = useState<number>(0)
+  const [datasetFileName, setDatasetFileName] = useState<string>('')
   const [isUploading, setIsUploading] = useState(false)
   const [walletValidation, setWalletValidation] = useState<{
     isValid: boolean
@@ -90,6 +91,19 @@ export default function FineTunePage() {
     chainId?: number
   } | null>(null)
   const [showAllTasks, setShowAllTasks] = useState(false)
+
+  // Restore cached dataset info
+  useEffect(() => {
+    const cached = localStorage.getItem(`ds-${tokenId}`)
+    if (cached) {
+      try {
+        const { root, size, name } = JSON.parse(cached)
+        if (root) setDatasetRoot(root)
+        if (size) setDataSize(size)
+        if (name) setDatasetFileName(name)
+      } catch {}
+    }
+  }, [tokenId])
 
   // Validate wallet when wallet client changes
   useEffect(() => {
@@ -270,6 +284,15 @@ export default function FineTunePage() {
         
         setDatasetRoot(data.rootHash)
         setDataSize(data.dataSize || 0)
+        setDatasetFileName(datasetFile?.name || '')
+
+        // Cache dataset info locally for this agent
+        try {
+          localStorage.setItem(
+            `ds-${tokenId}`,
+            JSON.stringify({ root: data.rootHash, size: data.dataSize || 0, name: datasetFile?.name })
+          )
+        } catch {}
         
         toast({
           title: 'Success!',
@@ -614,9 +637,10 @@ export default function FineTunePage() {
                       }}
                       className="bg-white/10 border-white/20 text-white file:bg-purple-600 file:text-white file:border-0"
                     />
-                    {datasetFile && (
+                    {(datasetFile || datasetFileName) && (
                       <div className="text-sm text-purple-200">
-                        Selected: {datasetFile.name} ({(datasetFile.size / 1024).toFixed(1)} KB)
+                        Selected: {datasetFile ? datasetFile.name : datasetFileName}
+                        {datasetFile ? ` (${(datasetFile.size / 1024).toFixed(1)} KB)` : dataSize ? ` (${(dataSize).toFixed(1)} examples)` : ''}
                       </div>
                     )}
                   </div>

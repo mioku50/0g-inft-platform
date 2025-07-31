@@ -31,7 +31,8 @@ export async function GET() {
     let exists = false
     
     try {
-      const ledgerInfo = await broker.ledger.getLedger()
+      // Explicitly pass the signer address to support both SDK versions
+      const ledgerInfo = await broker.ledger.getLedger(broker.signer.address)
       exists = true
       
       // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]

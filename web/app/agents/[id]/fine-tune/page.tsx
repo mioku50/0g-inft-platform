@@ -646,6 +646,7 @@ export default function FineTunePage() {
                   <Button
                     type="button"
                     onClick={async (e) => {
+                      console.log('[FineTune UI] 📤 "Upload Dataset" button clicked')
                       if (DEBUG_UPLOAD) console.log('[Button Click] 🎯 Upload Dataset button clicked!')
                       if (DEBUG_UPLOAD) console.log('[Button Click] Event details:', e)
                       if (DEBUG_UPLOAD) console.log('[Button Click] Current state:', {

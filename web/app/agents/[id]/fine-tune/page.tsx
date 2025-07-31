@@ -200,164 +200,39 @@ export default function FineTunePage() {
 
   // Upload dataset
   const uploadDataset = async () => {
-    if (DEBUG_UPLOAD) console.log('[uploadDataset] 🚀 Starting upload process...')
-    if (DEBUG_UPLOAD) console.log('[uploadDataset] Current state:', {
-      datasetFile: datasetFile ? {
-        name: datasetFile.name,
-        size: datasetFile.size,
-        type: datasetFile.type
-      } : null,
-      isUploading,
-      tokenId
-    })
-    
-    try {
-      // Check selected file
-      if (!datasetFile) {
-        if (DEBUG_UPLOAD) console.log('[uploadDataset] ❌ No dataset file selected')
-        toast({
-          title: 'Error',
-          description: 'Please select a dataset file',
-          variant: 'destructive'
-        })
-        return
-      }
-
-      if (DEBUG_UPLOAD) console.log('[uploadDataset] Dataset file details:', {
-        name: datasetFile.name,
-        size: datasetFile.size,
-        type: datasetFile.type,
-        lastModified: datasetFile.lastModified
-      })
-
-      // Check file size (maximum 10MB)
-      if (datasetFile.size > 10 * 1024 * 1024) {
-        toast({
-          title: 'File Too Large',
-          description: 'File size must not exceed 10MB',
-          variant: 'destructive'
-        })
-        return
-      }
-
-      // Check file format
-      const allowedExtensions = ['.jsonl', '.json', '.txt']
-      const fileExtension = '.' + datasetFile.name.split('.').pop()?.toLowerCase()
-      if (!allowedExtensions.includes(fileExtension)) {
-        toast({
-          title: 'Unsupported Format',
-          description: 'Supported formats: .jsonl, .json, .txt',
-          variant: 'destructive'
-        })
-        return
-      }
-
-      // Validate dataset for selected model
-      const model = getModelById(selectedModel)
-      if (model) {
-        const validation = validateDatasetForModel(
-          selectedModel, 
-          dataSize || 100, 
-          fileExtension.replace('.', '')
-        )
-        
-        if (!validation.isValid) {
-          if (DEBUG_UPLOAD) console.log('[uploadDataset] Dataset validation failed:', validation.errors)
-          toast({
-            title: 'Dataset Validation Failed',
-            description: validation.errors.join(', '),
-            variant: 'destructive'
-          })
-          return
-        }
-
-        if (validation.warnings.length > 0) {
-        if (DEBUG_UPLOAD) console.warn('[uploadDataset] Dataset warnings:', validation.warnings)
-          // Show warnings but continue
-          toast({
-            title: 'Warnings',
-            description: validation.warnings.join(', '),
-            variant: 'default'
-          })
-        }
-      }
-
-      setIsUploading(true)
-      if (DEBUG_UPLOAD) console.log('[uploadDataset] Starting upload...')
-      
-      const formData = new FormData()
-      formData.append('file', datasetFile)
-      formData.append('agentId', tokenId)
-      
-      if (DEBUG_UPLOAD) {
-        console.log('[uploadDataset] Making API request to /api/storage/upload-dataset')
-      }
-
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 секунд таймаут
-
-      const response = await fetch('/api/storage/upload-dataset', {
-        method: 'POST',
-        body: formData,
-        signal: controller.signal
-      })
-
-      clearTimeout(timeoutId)
-
-      if (DEBUG_UPLOAD) console.log('[uploadDataset] API response:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (DEBUG_UPLOAD) console.log('[uploadDataset] Upload successful:', data)
-        
-        setDatasetRoot(data.rootHash)
-        setDataSize(data.dataSize || 0)
-        
-        toast({
-          title: 'Success!',
-          description: `Dataset uploaded successfully! Processed ${data.dataSize} examples.`,
-          variant: 'default'
-        })
-      } else {
-        let errorMessage = 'Upload failed'
-        
-        try {
-          const errorData = await response.json()
-          errorMessage = errorData.error || errorData.details || errorMessage
-        } catch (e) {
-          // If JSON parsing fails, use status
-          errorMessage = `Server error: ${response.status} ${response.statusText}`
-        }
-        
-        console.error('[uploadDataset] Upload failed:', errorMessage)
-        throw new Error(errorMessage)
-      }
-    } catch (error) {
-      console.error('[uploadDataset] Upload error:', error)
-      
-      let errorMessage = 'Unknown error'
-      
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          errorMessage = 'Request timeout. Please try again.'
-        } else if (error.message.includes('Failed to fetch')) {
-          errorMessage = 'Network error. Please check your internet connection.'
-        } else {
-          errorMessage = error.message
-        }
-      }
-      
+    console.log('[uploadDataset] CLICK')
+    if (!datasetFile) {
       toast({
-        title: 'Upload Failed',
-        description: errorMessage,
+        title: 'Error',
+        description: 'Please select a dataset file',
         variant: 'destructive'
       })
+      return
+    }
+
+    setIsUploading(true)
+    const body = new FormData()
+    body.append('file', datasetFile)
+
+    try {
+      const res = await fetch('/api/storage/upload-dataset', { method: 'POST', body })
+      if (res.ok) {
+        const data = await res.json()
+        setDatasetRoot(data.root)
+        setDataSize(data.size)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        console.error('[uploadDataset] Upload failed', err)
+        toast({
+          title: 'Upload failed',
+          description: err.error || 'Server error',
+          variant: 'destructive'
+        })
+      }
+    } catch (e: any) {
+      console.error('[uploadDataset] error', e)
+      toast({ title: 'Error', description: e?.message || 'upload failed', variant: 'destructive' })
     } finally {
-      if (DEBUG_UPLOAD) console.log('[uploadDataset] Finishing upload process')
       setIsUploading(false)
     }
   }
@@ -740,8 +615,8 @@ export default function FineTunePage() {
                     <Alert className="bg-green-500/10 border-green-500/30">
                       <CheckCircle className="h-4 w-4 text-green-400" />
                       <AlertDescription className="text-green-200">
-                        Dataset uploaded successfully! Root hash: {datasetRoot.slice(0, 16)}...
-                        {dataSize > 0 && ` (${dataSize} examples)`}
+                        Dataset uploaded successfully! Root: {datasetRoot.slice(0, 16)}...
+                        {dataSize ? ` (${dataSize} bytes)` : ''}
                       </AlertDescription>
                     </Alert>
                   )}

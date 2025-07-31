@@ -44,7 +44,8 @@ import {
   type FineTuneModel
 } from '@/lib/compute/fine-tune-models'
 
-const DEBUG_UPLOAD = process.env.NEXT_PUBLIC_DEBUG_UPLOAD === 'true'
+// Enable detailed upload logs by default; set NEXT_PUBLIC_DEBUG_UPLOAD="false" to silence.
+const DEBUG_UPLOAD = process.env.NEXT_PUBLIC_DEBUG_UPLOAD !== 'false'
 import { validateUserWalletClient } from '@/lib/compute/wallet-client'
 
 interface AccountInfo {

@@ -11,7 +11,7 @@ import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { useMetadataSync } from '@/hooks/useMetadataSync'
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ['latin'], display: 'swap' })
 
 // Metadata нужно вынести в отдельный layout для серверных компонентов
 // export const metadata: Metadata = {

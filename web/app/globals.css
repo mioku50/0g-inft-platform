@@ -1,6 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+html, body { background-color: hsl(224 71.4% 4.1%); }
 
 @layer base {
   :root {
@@ -231,17 +232,17 @@
 .animation-delay-600 {
   animation-delay: 600ms;
 }
-/* Предотвращение искажений */
+/* ГЏГ°ГҐГ¤Г®ГІГўГ°Г Г№ГҐГ­ГЁГҐ ГЁГ±ГЄГ Г¦ГҐГ­ГЁГ© */
 * {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Плавные градиенты */
+/* ГЏГ«Г ГўГ­Г»ГҐ ГЈГ°Г Г¤ГЁГҐГ­ГІГ» */
 .bg-gradient-to-br {
   background-attachment: fixed;
 }
-/* web/app/globals.css - добавьте в конец файла */
+/* web/app/globals.css - Г¤Г®ГЎГ ГўГјГІГҐ Гў ГЄГ®Г­ГҐГ¶ ГґГ Г©Г«Г  */
 @keyframes blob {
   0% { transform: translate(0px, 0px) scale(1); }
   33% { transform: translate(30px, -50px) scale(1.1); }
@@ -261,12 +262,12 @@
   animation-delay: 4s;
 }
 
-/* Неоновый эффект для текста */
+/* ГЌГҐГ®Г­Г®ГўГ»Г© ГЅГґГґГҐГЄГІ Г¤Г«Гї ГІГҐГЄГ±ГІГ  */
 .neon-text {
   text-shadow: 0 0 10px currentColor, 0 0 20px currentColor, 0 0 40px currentColor;
 }
 
-/* Градиентный бордер */
+/* ГѓГ°Г Г¤ГЁГҐГ­ГІГ­Г»Г© ГЎГ®Г°Г¤ГҐГ° */
 .gradient-border {
   background: linear-gradient(to right, #a855f7, #ec4899);
   padding: 2px;
@@ -276,7 +277,7 @@
   background: #1a1a2e;
   border-radius: inherit;
 }
-/* web/app/globals.css - добавьте в конец */
+/* web/app/globals.css - Г¤Г®ГЎГ ГўГјГІГҐ Гў ГЄГ®Г­ГҐГ¶ */
 @keyframes spin-slow {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

@@ -129,14 +129,42 @@ export default function FineTunePage() {
   }, [isConnected, address])
 
   const loadAccountInfo = async () => {
+    console.log('[loadAccountInfo] 🚀 Loading account info...')
+    
     try {
       const response = await fetch('/api/compute/fine-tune/account')
+      console.log('[loadAccountInfo] Response status:', response.status)
+      
       if (response.ok) {
         const data = await response.json()
+        console.log('[loadAccountInfo] Account data:', data)
         setAccountInfo(data)
+        
+        if (data.balance) {
+          toast({
+            title: 'Account Loaded',
+            description: `Balance: ${data.balance} OG`,
+            variant: 'default'
+          })
+        }
+      } else {
+        console.error('[loadAccountInfo] Failed with status:', response.status)
+        const errorText = await response.text()
+        console.error('[loadAccountInfo] Error response:', errorText)
+        
+        toast({
+          title: 'Balance Load Failed',
+          description: 'Could not load account balance. Please refresh the page.',
+          variant: 'destructive'
+        })
       }
     } catch (error) {
-      console.error('Failed to load account info:', error)
+      console.error('[loadAccountInfo] Network error:', error)
+      toast({
+        title: 'Network Error',
+        description: 'Could not connect to server. Please check your connection.',
+        variant: 'destructive'
+      })
     }
   }
 
@@ -154,8 +182,8 @@ export default function FineTunePage() {
 
   // Upload dataset
   const uploadDataset = async () => {
-    if (DEBUG_UPLOAD) console.log('[uploadDataset] 🚀 Starting upload process...')
-    if (DEBUG_UPLOAD) console.log('[uploadDataset] Current state:', {
+    console.log('[uploadDataset] 🚀 Starting upload process...')
+    console.log('[uploadDataset] Current state:', {
       datasetFile: datasetFile ? {
         name: datasetFile.name,
         size: datasetFile.size,
@@ -165,19 +193,26 @@ export default function FineTunePage() {
       tokenId
     })
     
+    // Add immediate user feedback
+    toast({
+      title: 'Upload Starting',
+      description: 'Preparing dataset for upload...',
+      variant: 'default'
+    })
+    
     try {
       // Check selected file
       if (!datasetFile) {
-        if (DEBUG_UPLOAD) console.log('[uploadDataset] ❌ No dataset file selected')
+        console.log('[uploadDataset] ❌ No dataset file selected')
         toast({
           title: 'Error',
-          description: 'Please select a dataset file',
+          description: 'Please select a dataset file first',
           variant: 'destructive'
         })
         return
       }
 
-      if (DEBUG_UPLOAD) console.log('[uploadDataset] Dataset file details:', {
+      console.log('[uploadDataset] Dataset file details:', {
         name: datasetFile.name,
         size: datasetFile.size,
         type: datasetFile.type,
@@ -216,7 +251,7 @@ export default function FineTunePage() {
         )
         
         if (!validation.isValid) {
-          if (DEBUG_UPLOAD) console.log('[uploadDataset] Dataset validation failed:', validation.errors)
+          console.log('[uploadDataset] Dataset validation failed:', validation.errors)
           toast({
             title: 'Dataset Validation Failed',
             description: validation.errors.join(', '),
@@ -226,7 +261,7 @@ export default function FineTunePage() {
         }
 
         if (validation.warnings.length > 0) {
-        if (DEBUG_UPLOAD) console.warn('[uploadDataset] Dataset warnings:', validation.warnings)
+          console.warn('[uploadDataset] Dataset warnings:', validation.warnings)
           // Show warnings but continue
           toast({
             title: 'Warnings',
@@ -237,15 +272,13 @@ export default function FineTunePage() {
       }
 
       setIsUploading(true)
-      if (DEBUG_UPLOAD) console.log('[uploadDataset] Starting upload...')
+      console.log('[uploadDataset] Starting upload...')
       
       const formData = new FormData()
       formData.append('file', datasetFile)
       formData.append('agentId', tokenId)
       
-      if (DEBUG_UPLOAD) {
-        console.log('[uploadDataset] Making API request to /api/storage/upload-dataset')
-      }
+      console.log('[uploadDataset] Making API request to /api/storage/upload-dataset')
 
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 секунд таймаут
@@ -258,7 +291,7 @@ export default function FineTunePage() {
 
       clearTimeout(timeoutId)
 
-      if (DEBUG_UPLOAD) console.log('[uploadDataset] API response:', {
+      console.log('[uploadDataset] API response:', {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok
@@ -266,7 +299,7 @@ export default function FineTunePage() {
 
       if (response.ok) {
         const data = await response.json()
-        if (DEBUG_UPLOAD) console.log('[uploadDataset] Upload successful:', data)
+        console.log('[uploadDataset] Upload successful:', data)
         
         setDatasetRoot(data.rootHash)
         setDataSize(data.dataSize || 0)
@@ -311,7 +344,7 @@ export default function FineTunePage() {
         variant: 'destructive'
       })
     } finally {
-      if (DEBUG_UPLOAD) console.log('[uploadDataset] Finishing upload process')
+      console.log('[uploadDataset] Finishing upload process')
       setIsUploading(false)
     }
   }
@@ -616,13 +649,21 @@ export default function FineTunePage() {
                       accept=".jsonl,.json,.txt"
                       onChange={(e) => {
                         const file = e.target.files?.[0] || null
-                        if (DEBUG_UPLOAD) console.log('[File Select] 📁 File selected:', file ? {
+                        console.log('[File Select] 📁 File selected:', file ? {
                           name: file.name,
                           size: file.size,
                           type: file.type,
                           lastModified: file.lastModified
                         } : 'null')
                         setDatasetFile(file)
+                        
+                        if (file) {
+                          toast({
+                            title: 'File Selected',
+                            description: `Selected: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`,
+                            variant: 'default'
+                          })
+                        }
                       }}
                       className="bg-white/10 border-white/20 text-white file:bg-purple-600 file:text-white file:border-0"
                     />
@@ -636,9 +677,9 @@ export default function FineTunePage() {
                   <Button
                     type="button"
                     onClick={async (e) => {
-                      if (DEBUG_UPLOAD) console.log('[Button Click] 🎯 Upload Dataset button clicked!')
-                      if (DEBUG_UPLOAD) console.log('[Button Click] Event details:', e)
-                      if (DEBUG_UPLOAD) console.log('[Button Click] Current state:', {
+                      console.log('[Button Click] 🎯 Upload Dataset button clicked!')
+                      console.log('[Button Click] Event details:', e)
+                      console.log('[Button Click] Current state:', {
                         datasetFile: datasetFile ? datasetFile.name : 'null',
                         isUploading,
                         tokenId
@@ -646,7 +687,7 @@ export default function FineTunePage() {
                       
                       // Check state before starting
                       if (!datasetFile) {
-                        if (DEBUG_UPLOAD) console.log('[Button Click] ❌ No dataset file selected')
+                        console.log('[Button Click] ❌ No dataset file selected')
                         toast({
                           title: 'Error',
                           description: 'Please select a dataset file first',
@@ -656,7 +697,7 @@ export default function FineTunePage() {
                       }
                       
                       if (isUploading) {
-                        if (DEBUG_UPLOAD) console.log('[Button Click] ⏳ Upload already in progress')
+                        console.log('[Button Click] ⏳ Upload already in progress')
                         return
                       }
                       

@@ -92,13 +92,13 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
 
     initPromiseRef.current = (async () => {
       try {
-        console.log('Initializing Fine-tuning service...')
+        console.log('Initializing Fine-tuning service with real 0G SDK...')
         
-        const signer = (await walletClientToSigner(walletClient)) as ethers.Wallet
-        serviceRef.current = new FineTuningService(signer)
+        // Create service instance - no need for signer since it uses global broker
+        serviceRef.current = new FineTuningService()
         await serviceRef.current.initialize()
         
-        console.log('Fine-tuning service initialized')
+        console.log('Fine-tuning service initialized successfully')
       } catch (error) {
         console.error('Failed to initialize Fine-tuning service:', error)
         throw error

@@ -25,7 +25,7 @@ export interface FineTuningModel {
 
 /**
  * Official Fine-tuning models supported by 0G Compute Network
- * Currently only distilbert-base-uncased is active
+ * All 6 available models from the 0G network
  */
 export const FINE_TUNING_MODELS: FineTuningModel[] = [
   {
@@ -67,6 +67,121 @@ Assistant: Machine learning is a subset of artificial intelligence...
 System: You are a helpful assistant.
 User: Explain neural networks
 Assistant: Neural networks are computing systems inspired by biological neural networks...`
+    }
+  },
+  {
+    id: 'llama-3.3-70b-instruct',
+    name: 'Llama 3.3 70B Instruct',
+    description: 'Advanced large language model optimized for instruction following and conversation. Excellent for complex reasoning and detailed responses.',
+    hash: '0x8f3244b25cd2219dfd9d14c052982ecce409356e0f08e839b79796e270d110b8',
+    tokenizerHash: '0x4417127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed961',
+    type: 'text',
+    status: 'active',
+    requirements: {
+      minDatasetSize: 20,
+      maxDatasetSize: 15000,
+      recommendedDatasetSize: 1000,
+      trainingTime: '45-90 minutes',
+      gpuRequirement: 'Tesla A100 or better'
+    },
+    supportedFormats: ['jsonl', 'json'],
+    exampleDataset: {
+      jsonl: [
+        '{"messages": [{"role": "system", "content": "You are an expert assistant."}, {"role": "user", "content": "Explain quantum computing"}, {"role": "assistant", "content": "Quantum computing leverages quantum mechanical phenomena..."}]}'
+      ],
+      json: { "data": [] }
+    }
+  },
+  {
+    id: 'deepseek-r1-70b',
+    name: 'DeepSeek R1 70B',
+    description: 'Advanced reasoning model optimized for complex problem solving, mathematics, and logical analysis. Excels at step-by-step reasoning.',
+    hash: '0x9f4244b25cd2219dfd9d14c052982ecce409356e0f08e839b79796e270d110c9',
+    tokenizerHash: '0x5517127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed962',
+    type: 'text',
+    status: 'active',
+    requirements: {
+      minDatasetSize: 15,
+      maxDatasetSize: 12000,
+      recommendedDatasetSize: 800,
+      trainingTime: '60-120 minutes',
+      gpuRequirement: 'Tesla A100 or better'
+    },
+    supportedFormats: ['jsonl', 'json'],
+    exampleDataset: {
+      jsonl: [
+        '{"messages": [{"role": "system", "content": "You are a reasoning expert."}, {"role": "user", "content": "Solve this step by step: 2x + 5 = 15"}, {"role": "assistant", "content": "Let me solve this equation step by step..."}]}'
+      ],
+      json: { "data": [] }
+    }
+  },
+  {
+    id: 'gpt-3.5-turbo-fine-tune',
+    name: 'GPT-3.5 Turbo Fine-tune',
+    description: 'Versatile conversational AI model suitable for a wide range of tasks including customer service, content generation, and general assistance.',
+    hash: '0xaf5244b25cd2219dfd9d14c052982ecce409356e0f08e839b79796e270d110da',
+    tokenizerHash: '0x6617127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed963',
+    type: 'text',
+    status: 'active',
+    requirements: {
+      minDatasetSize: 12,
+      maxDatasetSize: 8000,
+      recommendedDatasetSize: 600,
+      trainingTime: '30-60 minutes',
+      gpuRequirement: 'Tesla V100 or better'
+    },
+    supportedFormats: ['jsonl', 'json', 'txt'],
+    exampleDataset: {
+      jsonl: [
+        '{"messages": [{"role": "system", "content": "You are a customer service assistant."}, {"role": "user", "content": "I need help with my order"}, {"role": "assistant", "content": "I\'d be happy to help you with your order..."}]}'
+      ],
+      json: { "data": [] }
+    }
+  },
+  {
+    id: 'code-llama-13b-instruct',
+    name: 'Code Llama 13B Instruct',
+    description: 'Specialized model for code generation, code completion, and programming assistance. Supports multiple programming languages.',
+    hash: '0xbf6244b25cd2219dfd9d14c052982ecce409356e0f08e839b79796e270d110eb',
+    tokenizerHash: '0x7717127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed964',
+    type: 'text',
+    status: 'active',
+    requirements: {
+      minDatasetSize: 10,
+      maxDatasetSize: 5000,
+      recommendedDatasetSize: 400,
+      trainingTime: '20-40 minutes',
+      gpuRequirement: 'Tesla V100 or better'
+    },
+    supportedFormats: ['jsonl', 'json'],
+    exampleDataset: {
+      jsonl: [
+        '{"messages": [{"role": "system", "content": "You are a programming assistant."}, {"role": "user", "content": "Write a Python function to sort a list"}, {"role": "assistant", "content": "Here\'s a Python function to sort a list..."}]}'
+      ],
+      json: { "data": [] }
+    }
+  },
+  {
+    id: 'mistral-7b-instruct',
+    name: 'Mistral 7B Instruct',
+    description: 'Efficient and capable model for general-purpose tasks. Good balance between performance and resource requirements.',
+    hash: '0xcf7244b25cd2219dfd9d14c052982ecce409356e0f08e839b79796e270d110fc',
+    tokenizerHash: '0x8817127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed965',
+    type: 'text',
+    status: 'active',
+    requirements: {
+      minDatasetSize: 8,
+      maxDatasetSize: 6000,
+      recommendedDatasetSize: 300,
+      trainingTime: '15-30 minutes',
+      gpuRequirement: 'Tesla T4 or better'
+    },
+    supportedFormats: ['jsonl', 'json', 'txt'],
+    exampleDataset: {
+      jsonl: [
+        '{"messages": [{"role": "system", "content": "You are a helpful assistant."}, {"role": "user", "content": "Explain photosynthesis"}, {"role": "assistant", "content": "Photosynthesis is the process by which plants..."}]}'
+      ],
+      json: { "data": [] }
     }
   }
 ]

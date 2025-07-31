@@ -13,6 +13,8 @@ import {
 } from '@/lib/server/compute-env'
 import { create0GProvider } from '@/lib/server/provider'
 
+const DEBUG_FINE_TUNE = process.env.DEBUG_FINE_TUNE === 'true'
+
 export const SERVING_ABI = [
   'function accountExists(address user, address provider) view returns (bool)',
   'function getAccount(address user, address provider) view returns (tuple(address user,address provider,uint256 nonce,uint256 balance,uint256 pendingRefund,tuple(uint256 index,uint256 amount,uint256 createdAt,bool processed)[] refunds,string additionalInfo,address providerSigner,tuple(bytes modelRootHash,bytes encryptedSecret,bool acknowledged)[] deliverables))',
@@ -74,13 +76,13 @@ export async function getBroker() {
     if (brokerCache.has(cacheKey) && brokerCacheTime.has(cacheKey)) {
       const cacheTime = brokerCacheTime.get(cacheKey)!
       if (now - cacheTime < CACHE_DURATION) {
-        console.log('[broker.server] Using cached broker')
+        if (DEBUG_FINE_TUNE) console.log('[BROKER] 🔄 Using cached broker')
         return brokerCache.get(cacheKey)
       }
     }
 
-    console.log('[broker.server] Creating new broker...')
-    logEnvironmentStatus()
+    if (DEBUG_FINE_TUNE) console.log('[BROKER] 🚀 Creating new broker...')
+    if (DEBUG_FINE_TUNE) logEnvironmentStatus()
 
     const rpcUrl = getRpcUrl()
     const privateKey = getPrivateKey()
@@ -92,7 +94,7 @@ export async function getBroker() {
     const provider = new JsonRpcProvider(rpcUrl)
     const signer = new Wallet(privateKey, provider)
     
-    console.log('[broker.server] Signer address:', await signer.getAddress())
+    if (DEBUG_FINE_TUNE) console.log('[BROKER] 🔑 Signer address:', await signer.getAddress())
     
     const broker = await createZGComputeNetworkBroker(
       signer,

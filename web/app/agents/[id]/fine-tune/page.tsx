@@ -36,13 +36,15 @@ import {
 import { toast } from '@/hooks/use-toast'
 import { NATIVE_SYMBOL } from '@/lib/constants'
 import { 
-  ALL_MODELS, 
-  MODEL_CATEGORIES, 
+  ALL_MODELS,
+  MODEL_CATEGORIES,
   getModelById, 
   validateDatasetForModel,
   getEstimatedTrainingTime,
-  type FineTuneModel 
+  type FineTuneModel
 } from '@/lib/compute/fine-tune-models'
+
+const DEBUG_UPLOAD = process.env.NEXT_PUBLIC_DEBUG_UPLOAD === 'true'
 import { validateUserWalletClient } from '@/lib/compute/wallet-client'
 
 interface AccountInfo {
@@ -152,8 +154,8 @@ export default function FineTunePage() {
 
   // Upload dataset
   const uploadDataset = async () => {
-    console.log('[uploadDataset] 🚀 Starting upload process...')
-    console.log('[uploadDataset] Current state:', {
+    if (DEBUG_UPLOAD) console.log('[uploadDataset] 🚀 Starting upload process...')
+    if (DEBUG_UPLOAD) console.log('[uploadDataset] Current state:', {
       datasetFile: datasetFile ? {
         name: datasetFile.name,
         size: datasetFile.size,
@@ -166,7 +168,7 @@ export default function FineTunePage() {
     try {
       // Check selected file
       if (!datasetFile) {
-        console.log('[uploadDataset] ❌ No dataset file selected')
+        if (DEBUG_UPLOAD) console.log('[uploadDataset] ❌ No dataset file selected')
         toast({
           title: 'Error',
           description: 'Please select a dataset file',
@@ -175,7 +177,7 @@ export default function FineTunePage() {
         return
       }
 
-      console.log('[uploadDataset] Dataset file details:', {
+      if (DEBUG_UPLOAD) console.log('[uploadDataset] Dataset file details:', {
         name: datasetFile.name,
         size: datasetFile.size,
         type: datasetFile.type,
@@ -214,7 +216,7 @@ export default function FineTunePage() {
         )
         
         if (!validation.isValid) {
-          console.log('[uploadDataset] Dataset validation failed:', validation.errors)
+          if (DEBUG_UPLOAD) console.log('[uploadDataset] Dataset validation failed:', validation.errors)
           toast({
             title: 'Dataset Validation Failed',
             description: validation.errors.join(', '),
@@ -224,7 +226,7 @@ export default function FineTunePage() {
         }
 
         if (validation.warnings.length > 0) {
-          console.warn('[uploadDataset] Dataset warnings:', validation.warnings)
+        if (DEBUG_UPLOAD) console.warn('[uploadDataset] Dataset warnings:', validation.warnings)
           // Show warnings but continue
           toast({
             title: 'Warnings',
@@ -235,18 +237,20 @@ export default function FineTunePage() {
       }
 
       setIsUploading(true)
-      console.log('[uploadDataset] Starting upload...')
+      if (DEBUG_UPLOAD) console.log('[uploadDataset] Starting upload...')
       
       const formData = new FormData()
       formData.append('file', datasetFile)
       formData.append('agentId', tokenId)
       
-      console.log('[uploadDataset] Making API request to /api/compute/fine-tune/upload')
+      if (DEBUG_UPLOAD) {
+        console.log('[uploadDataset] Making API request to /api/storage/upload-dataset')
+      }
 
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 секунд таймаут
 
-      const response = await fetch('/api/compute/fine-tune/upload', {
+      const response = await fetch('/api/storage/upload-dataset', {
         method: 'POST',
         body: formData,
         signal: controller.signal
@@ -254,7 +258,7 @@ export default function FineTunePage() {
 
       clearTimeout(timeoutId)
 
-      console.log('[uploadDataset] API response:', {
+      if (DEBUG_UPLOAD) console.log('[uploadDataset] API response:', {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok
@@ -262,7 +266,7 @@ export default function FineTunePage() {
 
       if (response.ok) {
         const data = await response.json()
-        console.log('[uploadDataset] Upload successful:', data)
+        if (DEBUG_UPLOAD) console.log('[uploadDataset] Upload successful:', data)
         
         setDatasetRoot(data.rootHash)
         setDataSize(data.dataSize || 0)
@@ -307,7 +311,7 @@ export default function FineTunePage() {
         variant: 'destructive'
       })
     } finally {
-      console.log('[uploadDataset] Finishing upload process')
+      if (DEBUG_UPLOAD) console.log('[uploadDataset] Finishing upload process')
       setIsUploading(false)
     }
   }
@@ -600,7 +604,7 @@ export default function FineTunePage() {
                       accept=".jsonl,.json,.txt"
                       onChange={(e) => {
                         const file = e.target.files?.[0] || null
-                        console.log('[File Select] 📁 File selected:', file ? {
+                        if (DEBUG_UPLOAD) console.log('[File Select] 📁 File selected:', file ? {
                           name: file.name,
                           size: file.size,
                           type: file.type,
@@ -617,11 +621,12 @@ export default function FineTunePage() {
                     )}
                   </div>
 
-                  <Button 
+                  <Button
+                    type="button"
                     onClick={async (e) => {
-                      console.log('[Button Click] 🎯 Upload Dataset button clicked!')
-                      console.log('[Button Click] Event details:', e)
-                      console.log('[Button Click] Current state:', {
+                      if (DEBUG_UPLOAD) console.log('[Button Click] 🎯 Upload Dataset button clicked!')
+                      if (DEBUG_UPLOAD) console.log('[Button Click] Event details:', e)
+                      if (DEBUG_UPLOAD) console.log('[Button Click] Current state:', {
                         datasetFile: datasetFile ? datasetFile.name : 'null',
                         isUploading,
                         tokenId
@@ -629,7 +634,7 @@ export default function FineTunePage() {
                       
                       // Check state before starting
                       if (!datasetFile) {
-                        console.log('[Button Click] ❌ No dataset file selected')
+                        if (DEBUG_UPLOAD) console.log('[Button Click] ❌ No dataset file selected')
                         toast({
                           title: 'Error',
                           description: 'Please select a dataset file first',
@@ -639,7 +644,7 @@ export default function FineTunePage() {
                       }
                       
                       if (isUploading) {
-                        console.log('[Button Click] ⏳ Upload already in progress')
+                        if (DEBUG_UPLOAD) console.log('[Button Click] ⏳ Upload already in progress')
                         return
                       }
                       

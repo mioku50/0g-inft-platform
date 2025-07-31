@@ -2,4 +2,14 @@
 > 0g-inft-platform@0.1.0 dev
 > next dev
 
-sh: 1: next: not found
+[dotenv@17.2.0] injecting env (0) from .env (tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit)
+[dotenv@17.2.0] injecting env (0) from .env (tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild)
+   ▲ Next.js 14.0.0
+   - Local:        http://localhost:3000
+   - Environments: .env.local
+
+ ✓ Ready in 2.3s
+ ○ Compiling /agents/[id]/fine-tune/page ...
+ ✓ Compiled /agents/[id]/fine-tune/page in 14.5s (4767 modules)
+ ✓ Compiled in 1642ms (2311 modules)
+[?25h

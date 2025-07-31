@@ -1,4 +1,517 @@
 0g-inft-platform
+
+Command 'ree' not found, but can be installed with:
+apt install ree
+root@elite-mint:~/0g-inft-platform# tree -I 'node_modules|.next|dist|out|.git' -L 5
+.
+├── 0g-agent-nft
+├── 0G_SDK_ISOLATION_REPORT.md
+├── check-contracts.js
+├── check-official-contracts.js
+├── config.toml
+├── contracts
+│   ├── artifacts
+│   │   ├── build-info
+│   │   │   └── 2637d1ea8422e1ef0c476c5dcf65ea7d.json
+│   │   ├── contracts
+│   │   │   ├── AgentMarketplace.sol
+│   │   │   │   ├── AgentMarketplace.dbg.json
+│   │   │   │   ├── AgentMarketplace.json
+│   │   │   │   ├── IINFT.dbg.json
+│   │   │   │   └── IINFT.json
+│   │   │   ├── AIExecutor.sol
+│   │   │   │   ├── AIExecutor.dbg.json
+│   │   │   │   ├── AIExecutor.json
+│   │   │   │   ├── I0GCompute.dbg.json
+│   │   │   │   ├── I0GCompute.json
+│   │   │   │   ├── IINFT.dbg.json
+│   │   │   │   └── IINFT.json
+│   │   │   ├── ComputeOracle.sol
+│   │   │   │   ├── ComputeOracle.dbg.json
+│   │   │   │   └── ComputeOracle.json
+│   │   │   ├── INFT.sol
+│   │   │   │   ├── INFT.dbg.json
+│   │   │   │   ├── INFT.json
+│   │   │   │   ├── IOracle.dbg.json
+│   │   │   │   └── IOracle.json
+│   │   │   ├── MockComputeOracle.sol
+│   │   │   │   ├── MockComputeOracle.dbg.json
+│   │   │   │   └── MockComputeOracle.json
+│   │   │   └── MockOracle.sol
+│   │   │       ├── MockOracle.dbg.json
+│   │   │       └── MockOracle.json
+│   │   └── @openzeppelin
+│   │       └── contracts
+│   │           ├── access
+│   │           ├── interfaces
+│   │           ├── security
+│   │           ├── token
+│   │           └── utils
+│   ├── cache
+│   │   └── solidity-files-cache.json
+│   ├── contracts
+│   │   ├── AgentMarketplace.sol
+│   │   ├── AIExecutor.sol
+│   │   ├── ComputeOracle.sol
+│   │   ├── INFT.sol
+│   │   ├── MockComputeOracle.sol
+│   │   └── MockOracle.sol
+│   ├── deployments
+│   │   └── 0g-testnet.json
+│   ├── hardhat.config.js
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── scripts
+│   │   ├── check-contracts.js
+│   │   ├── deploy.js
+│   │   ├── deploy-marketplace.js
+│   │   ├── deploy-oracle-direct.js
+│   │   └── deploy-oracle.js
+│   └── test
+│       └── AgentMarketplace.test.js
+├── DEPOSIT_FIX_REPORT.md
+├── DEPOSIT_FUND_FIX_SUMMARY.md
+├── DEPOSIT_ISSUE_RESOLUTION_REPORT.md
+├── ENGLISH_LANGUAGE_FIXES_REPORT.md
+├── file-list.txt
+├── FINAL_BUTTON_FIXES_REPORT.md
+├── FINAL_DEPOSIT_FIX_SUMMARY.md
+├── FINAL_FINETUNE_FIX_REPORT.md
+├── FINAL_GALILEO_TESTNET_V3_INTEGRATION_REPORT.md
+├── FINAL_INTEGRATION_REPORT.md
+├── FINAL_SOLUTION_REPORT.md
+├── FINAL_UPLOAD_DATASET_SOLUTION.md
+├── FINAL_UPLOAD_DATASET_SOLUTION_REPORT.md
+├── find-contracts.sh
+├── FINE_TUNE_ANALYSIS_REPORT.md
+├── FINE_TUNE_BUTTONS_ANALYSIS_REPORT.md
+├── FINE_TUNE_FINAL_REPORT.md
+├── FINE_TUNE_FIXES_SUMMARY.md
+├── FINE_TUNE_FIX_REPORT.md
+├── FINE_TUNE_FLOW_FIX_REPORT.md
+├── FINE_TUNE_IMPLEMENTATION_REPORT.md
+├── FINE_TUNE_ISSUES_RESOLUTION_REPORT.md
+├── FINE_TUNE_UI_ANALYSIS_REPORT.md
+├── IMPLEMENTATION_REPORT.md
+├── package.json
+├── package-lock.json
+├── pnpm-lock.yaml
+├── PRE_FLIGHT.md
+├── README2.md
+├── README_Fine_Tune_CLI_and_Logs.md.txt
+├── README.md
+├── scripts
+│   └── test-fine-tune.sh
+├── temp
+│   ├── 0g-serving-broker
+│   │   └── api
+│   │       └── fine-tuning
+│   │           ├── cmd
+│   │           ├── config
+│   │           ├── const
+│   │           ├── contract
+│   │           ├── doc
+│   │           ├── execution
+│   │           ├── integration
+│   │           ├── internal
+│   │           └── schema
+│   ├── 0g-serving-contract
+│   ├── 0g-serving-token-counter
+│   └── 0g-serving-user-broker
+├── temp-config.json
+├── test-api-balance.js
+├── test-api-deposit-fixed.js
+├── test-api-deposit.js
+├── test-deposit-debug.js
+├── test-deposit-fixed.js
+├── test-deposit-simple.js
+├── test-e2e-api-finetune.js
+├── test-e2e-finetune-complete.js
+├── test-final-finetune.js
+├── test-fine-tune-api.js
+├── test-fine-tune-complete-flow.js
+├── test-fine-tune-create.js
+├── test-fine-tune-fixed.js
+├── test-fine-tune-flow.sh
+├── test-finetune-full-flow.js
+├── test-fine-tune-isolated.js
+├── test-frontend-upload.html
+├── test-project-integration.js
+├── test-sdk-debug.js
+├── test-upload-dataset-api.js
+├── test-upload-dataset-debug.js
+├── test-upload-dataset-fix.js
+├── test-upload-dataset-simple.js
+├── test-wallet-check.js
+├── tmp-fine-tune.patch
+├── UPLOAD_DATASET_BUTTON_DIAGNOSIS_REPORT.md
+├── UPLOAD_DATASET_DEBUG_REPORT.md
+├── UPLOAD_DATASET_FINAL_ANALYSIS_REPORT.md
+├── UPLOAD_DATASET_FIX_REPORT.md
+├── UPLOAD_DATASET_ISSUE_RESOLUTION_REPORT.md
+├── WALLET_ARCHITECTURE_REPORT.md
+├── WALLET_INTEGRATION_ANALYSIS.md
+├── web
+│   ├── app
+│   │   ├── agent
+│   │   │   └── [id]
+│   │   │       ├── chat
+│   │   │       ├── chat-old
+│   │   │       └── page.tsx
+│   │   ├── agents
+│   │   │   ├── components
+│   │   │   │   ├── CloneModal.tsx
+│   │   │   │   ├── SellModal.tsx
+│   │   │   │   └── TransferModal.tsx
+│   │   │   ├── [id]
+│   │   │   │   ├── fine-tune
+│   │   │   │   └── fine-tune-simple
+│   │   │   └── page.tsx
+│   │   ├── api
+│   │   │   ├── agents
+│   │   │   │   └── list
+│   │   │   ├── compute
+│   │   │   │   ├── account
+│   │   │   │   ├── acknowledge-model
+│   │   │   │   ├── analyze
+│   │   │   │   ├── analyze-prompt
+│   │   │   │   ├── balance
+│   │   │   │   ├── chat
+│   │   │   │   ├── execute
+│   │   │   │   ├── fine-tune
+│   │   │   │   ├── finetune
+│   │   │   │   ├── fine-tune-v2
+│   │   │   │   ├── generate
+│   │   │   │   ├── generate-prompt
+│   │   │   │   ├── prepare-training-data
+│   │   │   │   └── wallet
+│   │   │   ├── oracle
+│   │   │   │   └── transfer
+│   │   │   ├── outh
+│   │   │   │   ├── logout
+│   │   │   │   ├── me
+│   │   │   │   ├── nonce
+│   │   │   │   └── verify
+│   │   │   ├── storage
+│   │   │   │   ├── health
+│   │   │   │   ├── retrieve
+│   │   │   │   ├── upload
+│   │   │   │   ├── upload-dataset
+│   │   │   │   └── upload-image
+│   │   │   ├── sync
+│   │   │   │   └── metadata
+│   │   │   └── tee
+│   │   │       ├── generate-clone-proof
+│   │   │       ├── generate-transfer-proof
+│   │   │       └── re-encrypt
+│   │   ├── chat
+│   │   │   └── [tokenId]
+│   │   │       └── page.tsx
+│   │   ├── chat-test
+│   │   │   └── page.tsx
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   ├── marketplace
+│   │   │   ├── page.tsx
+│   │   │   └── [tokenId]
+│   │   │       ├── page.tsx
+│   │   │       └── page.tsx.backup
+│   │   ├── mint
+│   │   │   └── page.tsx
+│   │   ├── page.tsx
+│   │   ├── page.tsx.bak
+│   │   ├── providers-simple.tsx
+│   │   ├── providers.tsx
+│   │   ├── test-compute
+│   │   │   └── page.tsx
+│   │   ├── test-contract
+│   │   │   └── page.tsx
+│   │   ├── test-metadata
+│   │   │   └── page.tsx
+│   │   └── test-page
+│   │       └── page.tsx
+│   ├── build.log
+│   ├── check-broker-methods.js
+│   ├── check-official-contracts.js
+│   ├── components
+│   │   ├── agent
+│   │   │   └── TransferModal.tsx
+│   │   ├── agents
+│   │   │   ├── AgentAvatar.tsx
+│   │   │   ├── CloneModal.tsx
+│   │   │   ├── PromptManager.tsx
+│   │   │   └── TransferModal.tsx
+│   │   ├── ConnectButton.tsx
+│   │   ├── custom-connect-button.tsx
+│   │   ├── fine-tune
+│   │   │   └── FineTuneStatus.tsx
+│   │   ├── layout
+│   │   │   └── navbar.tsx
+│   │   ├── marketplace
+│   │   │   └── ListingModal.tsx
+│   │   ├── MintDebug.tsx
+│   │   ├── network-check.tsx
+│   │   ├── system-check.tsx
+│   │   ├── ui
+│   │   │   ├── alert.tsx
+│   │   │   ├── avatar.tsx
+│   │   │   ├── badge.tsx
+│   │   │   ├── badge.tsx.bak
+│   │   │   ├── button.tsx
+│   │   │   ├── button.tsx.bak
+│   │   │   ├── card.tsx
+│   │   │   ├── card.tsx.bak
+│   │   │   ├── dialog.tsx
+│   │   │   ├── error-boundary.tsx
+│   │   │   ├── index.ts
+│   │   │   ├── input.tsx
+│   │   │   ├── input.tsx.bak
+│   │   │   ├── label.tsx
+│   │   │   ├── label.tsx.bak
+│   │   │   ├── navbar.tsx
+│   │   │   ├── progress.tsx
+│   │   │   ├── scroll-area.tsx
+│   │   │   ├── select.tsx
+│   │   │   ├── separator.tsx
+│   │   │   ├── separator.tsx.bak
+│   │   │   ├── skeleton.tsx
+│   │   │   ├── slider.tsx
+│   │   │   ├── tabs.tsx
+│   │   │   ├── textarea.tsx
+│   │   │   ├── textarea.tsx.bak
+│   │   │   ├── toaster.tsx
+│   │   │   ├── toast.tsx
+│   │   │   ├── toast.tsx.bak
+│   │   │   ├── transaction-modal.tsx
+│   │   │   └── use-toast.tsx
+│   │   └── wallet-test.tsx
+│   ├── components.json
+│   ├── COMPREHENSIVE_ANALYSIS_REPORT.md
+│   ├── data
+│   │   └── metadata
+│   │       ├── 015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862.json
+│   │       ├── 0x0bad522fcbf494395de6b5d7af91482555658660f2198f9c489d16c2f3ed7e02.json
+│   │       ├── 0x1338ffb74a5a00f1e0ad14b61d277dbdf5ad9f6b5806623a903721c5f055dd48.json
+│   │       ├── 0x24c5ac4b706165c38ac8839ddda289d70a1a22ac87616112619868e3a6db4e7a.json
+│   │       ├── 0x284daf20ef8850a45cb3c80a9dac25d69a08d496a733ff3157d56107ad11a4e9.json
+│   │       ├── 0x31f202cb59fc5230ac0542b626309e3a38b0fbd3a2bdef6f6e51495f6d6c1801.json
+│   │       ├── 0x41d2566a6f167114e57159720b55c881731212dc55505cbdc9a4b5c878e95a04.json
+│   │       ├── 0x4809755ff6d30f91c0b70072a77db2fdbe34502a16188401b163eb55a90b7abd.json
+│   │       ├── 0x490658965c303d44a15bd5da996f0e584829e247aef2fb997a5b9db11cd23f90.json
+│   │       ├── 0x4a9407807a482960ccd8e57c591c3dca996eb462fdf232f1b435592355c9c51b.json
+│   │       ├── 0x4fa0d1ed8fad192ee9e7cf53c52733b95b9b8f2e7ea6e06319eda3b65fbd4689.json
+│   │       ├── 0x53d38d489c96ef5f14a4f60df642827e7b65f983dbd9490ee31b02c29931b09e.json
+│   │       ├── 0x5c0ce351f9c384de3634e4dbf08277f788c015b7ccda04f9aaebe4eba317d632.json
+│   │       ├── 0x5f51c78ed07a34101954b97c8c28f84466ca76ec29ff09aaabd1ffa850d386f3.json
+│   │       ├── 0x63d9d3da0b13759dd0dfa44fefac7912bb3d4d246f41122a123b7e94fb4c5a53.json
+│   │       ├── 0x76b7d9ce81a4e1d137b4ed204552094993e3e9ccc6daed690622e093b5cd90af.json
+│   │       ├── 0x94e54325988d1add792028c1f81097492ab3f8eb3726bf9300bcbe7052fa3cf7.json
+│   │       ├── 0x9965e8db2fe06d47b2975c4d56363867c79a8846dfba54ace58854e5bab9025f.json
+│   │       ├── 0xab683d340c6c76a72c69265ff83974aacd60a2f39df4919370775b143179beb9.json
+│   │       ├── 0xbf27067104be3b301c1a83bc59d766b5747ff46764d738a326700d09945cf49e.json
+│   │       ├── 0xebd2572c9a579c5e44c88176817ccc31a76d438a1a010e28a1d7088deff82c61.json
+│   │       ├── 0xee1493d1c6d885027315849492a351e107322a2715953b7b905d93a25f382bc6.json
+│   │       ├── 0xff0aea2869e3e74a0879cf0b9002157d4802eb5b8f8318c3931265a515f00824.json
+│   │       ├── testhash.json
+│   │       └── token-hash-mapping.json
+│   ├── dev.log
+│   ├── FINE_TUNE_COMPREHENSIVE_FIX_REPORT.md
+│   ├── FINE_TUNE_ISSUE_REPORT.md
+│   ├── FINE_TUNE_V2_RECOMMENDATIONS.md
+│   ├── fix_all_quotes.py
+│   ├── fix-all-quotes.sh
+│   ├── fix-fine-tune-flow.js
+│   ├── fix-quotes.sh
+│   ├── fix_ui_components.sh
+│   ├── hooks
+│   │   ├── useAccountSafe.ts
+│   │   ├── useFineTune.ts
+│   │   ├── useForceAccountSync.ts
+│   │   ├── useMetadataSync.ts
+│   │   └── use-toast.ts
+│   ├── lib
+│   │   ├── 0g-serving-broker
+│   │   │   ├── api
+│   │   │   │   ├── common
+│   │   │   │   ├── config-example-all.yaml
+│   │   │   │   ├── Dockerfile
+│   │   │   │   ├── fine-tuning
+│   │   │   │   ├── go.mod
+│   │   │   │   ├── go.sum
+│   │   │   │   ├── inference
+│   │   │   │   ├── inference-router
+│   │   │   │   ├── libs
+│   │   │   │   ├── main.go
+│   │   │   │   ├── Makefile
+│   │   │   │   └── token-counter
+│   │   │   ├── doc
+│   │   │   │   ├── design-doc.md
+│   │   │   │   └── image
+│   │   │   └── README.md
+│   │   ├── 0g-serving-contract
+│   │   │   └── contracts
+│   │   │       ├── fine-tuning
+│   │   │       ├── inference
+│   │   │       ├── ledger
+│   │   │       ├── proxy
+│   │   │       └── utils
+│   │   ├── 0g-serving-user-broker
+│   │   │   ├── account.ts
+│   │   │   ├── base.ts
+│   │   │   ├── broker.ts
+│   │   │   ├── common.ts
+│   │   │   ├── createFineTuningBroker.html
+│   │   │   ├── createInferenceBroker.html
+│   │   │   ├── createLedgerBroker.html
+│   │   │   ├── createZGComputeNetworkBroker.html
+│   │   │   ├── fine-tuning.ts
+│   │   │   ├── index.ts
+│   │   │   ├── inference-server.ts
+│   │   │   ├── inference.ts
+│   │   │   ├── ledger.ts
+│   │   │   ├── model.ts
+│   │   │   ├── provider.ts
+│   │   │   ├── README.md
+│   │   │   ├── request.ts
+│   │   │   ├── response.ts
+│   │   │   ├── service.ts
+│   │   │   ├── util.ts
+│   │   │   ├── verifier.test.ts
+│   │   │   ├── verifier.ts
+│   │   │   └── zg-storage.ts
+│   │   ├── agents
+│   │   │   └── personalization.ts
+│   │   ├── cache
+│   │   │   ├── agent-cache.ts
+│   │   │   └── local-metadata.ts
+│   │   ├── claude
+│   │   │   ├── adaptive-client.ts
+│   │   │   ├── client.ts
+│   │   │   └── models.ts
+│   │   ├── compute
+│   │   │   ├── base-api.ts
+│   │   │   ├── broker-plugins
+│   │   │   │   ├── inference.ts
+│   │   │   │   └── tasks.ts
+│   │   │   ├── broker.server.ts
+│   │   │   ├── broker.ts
+│   │   │   ├── chat-service.ts
+│   │   │   ├── client.ts
+│   │   │   ├── client.ts.backup
+│   │   │   ├── fine-tune-models.ts
+│   │   │   ├── fine-tune-service.ts
+│   │   │   ├── fine-tune-service-v2.ts
+│   │   │   ├── local-tasks.ts
+│   │   │   ├── utils.ts
+│   │   │   ├── wallet-broker.ts
+│   │   │   └── wallet-client.ts
+│   │   ├── constants.ts
+│   │   ├── contracts
+│   │   │   ├── abis.ts
+│   │   │   ├── BatchVerifier.sol
+│   │   │   ├── deploy_compute_network.ts
+│   │   │   ├── deploy_finetune_serving.ts
+│   │   │   ├── deploy_inference_serving.ts
+│   │   │   ├── deploy_inference_verifier (1).ts
+│   │   │   ├── deploy_inference_verifier.ts
+│   │   │   ├── deploy_ledger_maneger (1).ts
+│   │   │   ├── deploy_ledger_maneger.ts
+│   │   │   ├── deploy.sh
+│   │   │   ├── erc7857-abi.ts
+│   │   │   ├── erc7857.json
+│   │   │   ├── FineTuningAccount.sol
+│   │   │   ├── FineTuningService.sol
+│   │   │   ├── FineTuningServing.sol
+│   │   │   ├── FineTuningVerifier.sol
+│   │   │   ├── InferenceService (1).sol
+│   │   │   ├── InferenceService.sol
+│   │   │   ├── InferenceServing.sol
+│   │   │   ├── inft-abi.json
+│   │   │   ├── LedgerManager.sol
+│   │   │   └── upgrade_verifier.ts
+│   │   ├── hooks
+│   │   │   ├── useAgentsOptimized.ts
+│   │   │   └── useAgent.ts
+│   │   ├── load-env.ts
+│   │   ├── middleware
+│   │   │   └── broker-init.ts
+│   │   ├── server
+│   │   │   ├── compute-env.ts
+│   │   │   └── provider.ts
+│   │   ├── services
+│   │   │   ├── fine-tune.ts
+│   │   │   └── metadata-sync.ts
+│   │   ├── storage
+│   │   │   ├── client-browser.ts
+│   │   │   ├── client-server.ts
+│   │   │   ├── optimized-client.ts
+│   │   │   └── temp-metadata-store.ts
+│   │   ├── utils
+│   │   │   ├── fine-tune-monitor.ts
+│   │   │   ├── hash-validator.ts
+│   │   │   ├── metadata-sanitizer.ts
+│   │   │   └── wagmi-utils.ts
+│   │   └── utils.ts
+│   ├── next.config.js
+│   ├── next-env.d.ts
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── patches.diff
+│   ├── playwright.config.ts
+│   ├── pnpm-lock.yaml
+│   ├── postcss.config.js
+│   ├── public
+│   │   ├── example-dataset.json
+│   │   ├── example-dataset.jsonl
+│   │   ├── test-upload-debug.html
+│   │   └── test-upload.html
+│   ├── scripts
+│   │   ├── check-ledger-serving-link.js
+│   │   ├── check-links.js
+│   │   ├── check-metadata.ts
+│   │   ├── check-storage-balance.ts
+│   │   ├── claude-debug.ts
+│   │   ├── debug-ledger-call.js
+│   │   ├── debug-token-metadata.ts
+│   │   ├── direct-mint-test.js
+│   │   ├── fix-all-missing-metadata.ts
+│   │   ├── fix-metadata-locally.ts
+│   │   ├── fix-metadata-urls.ts
+│   │   ├── fix-specific-token.ts
+│   │   ├── health-check.ts
+│   │   ├── metadata-sync.ts
+│   │   ├── optimize-server.sh
+│   │   ├── start-optimized.sh
+│   │   ├── test-compute-flow.sh
+│   │   ├── test-contract.js
+│   │   ├── test-fine-tune-flow.js
+│   │   ├── update-problematic-tokens.ts
+│   │   └── validate-fix.js
+│   ├── SDK_REQUIREMENTS_SUMMARY.md
+│   ├── tailwind.config.js
+│   ├── test-dataset.jsonl
+│   ├── test-fine-tune-fixes.js
+│   ├── tests
+│   │   ├── compute-account.route.test.ts
+│   │   ├── e2e
+│   │   │   └── fine-tune.spec.ts
+│   │   ├── storage.test.ts
+│   │   ├── upload-dataset.route.test.ts
+│   │   └── useFineTune.test.ts
+│   ├── test-upload-debug.js
+│   ├── tsconfig.json
+│   ├── tsconfig.scripts.json
+│   ├── tsconfig.tsbuildinfo
+│   ├── types
+│   │   ├── global.d.ts
+│   │   └── index.ts
+│   ├── vitest.config.ts
+│   └── yarn.lock
+└── WORK_SUMMARY.md
+
+144 directories, 360 files
+root@elite-mint:~/0g-inft-platform#
+
 ✅ работает стабильно
 
 🟡 реализовано, но частично / с багами / требует доработки

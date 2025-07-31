@@ -1,0 +1,2 @@
+{"messages": [{"role": "system", "content": "You are a helpful AI assistant."}, {"role": "user", "content": "What is 0G Network?"}, {"role": "assistant", "content": "0G Network is a decentralized AI infrastructure."}]}
+{"messages": [{"role": "system", "content": "You are a helpful AI assistant."}, {"role": "user", "content": "How does fine-tuning work?"}, {"role": "assistant", "content": "Fine-tuning adapts a pre-trained model to specific tasks."}]}

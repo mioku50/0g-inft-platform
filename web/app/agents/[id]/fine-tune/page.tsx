@@ -1,14 +1,13 @@
-// app/agents/[id]/fine-tune/page.tsx
 'use client'
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAccount } from 'wagmi'
-import { useWalletClient } from 'wagmi'
-import { walletClientToSigner } from '@/lib/utils/wagmi-utils'
+
+// UI Components
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,6 +17,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
+// Icons
 import { 
   ArrowLeft, 
   Upload, 
@@ -30,977 +31,691 @@ import {
   Info,
   Zap,
   Brain,
-  Image,
-  FileText
+  FileText,
+  Download,
+  Eye
 } from 'lucide-react'
+
+// Hooks and utilities
+import { useFineTuning } from '@/hooks/useFineTuning'
 import { toast } from '@/hooks/use-toast'
-import { NATIVE_SYMBOL } from '@/lib/constants'
 import { 
-  ALL_MODELS,
-  MODEL_CATEGORIES,
-  getModelById, 
-  validateDatasetForModel,
-  getEstimatedTrainingTime,
-  type FineTuneModel
-} from '@/lib/compute/fine-tune-models'
-
-const DEBUG_UPLOAD = process.env.NEXT_PUBLIC_DEBUG_UPLOAD === 'true'
-import { validateUserWalletClient } from '@/lib/compute/wallet-client'
-
-interface AccountInfo {
-  balance: string
-  needsTopUp: boolean
-  exists?: boolean
-}
-
-interface TaskInfo {
-  id: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
-  progress?: number
-  logs?: string[]
-  createdAt: string
-  completedAt?: string
-}
+  FINE_TUNING_MODELS, 
+  FINE_TUNING_PROVIDERS,
+  getActiveModels,
+  getAvailableProviders,
+  DEFAULT_TRAINING_PARAMS,
+  TASK_STATUS,
+  type TaskStatus
+} from '@/lib/fine-tuning/models'
 
 export default function FineTunePage() {
   const params = useParams()
   const router = useRouter()
+  const agentId = params.id as string
   const { address, isConnected } = useAccount()
-  const { data: walletClient } = useWalletClient()
   
-  const tokenId = params.id as string
+  // Fine-tuning hook
+  const {
+    account,
+    currentTask,
+    providers,
+    loading,
+    error,
+    initializeAccount,
+    refreshAccount,
+    deposit,
+    uploadDataset,
+    validateDataset,
+    createTask,
+    getTask,
+    getTaskLogs,
+    acknowledgeModel,
+    acknowledgeProvider,
+    setCurrentTask,
+    clearError
+  } = useFineTuning()
 
-  // State
-  const [isLoading, setIsLoading] = useState(false)
-  const [isStarting, setIsStarting] = useState(false)
-  const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null)
-  const [tasks, setTasks] = useState<TaskInfo[]>([])
-  const [selectedModel, setSelectedModel] = useState<string>('llama-3.3-70b')
-  const [steps, setSteps] = useState(500)
-  const [learningRate, setLearningRate] = useState(0.00005)
+  // Local state
+  const [selectedModel, setSelectedModel] = useState('')
+  const [selectedProvider, setSelectedProvider] = useState('')
   const [datasetFile, setDatasetFile] = useState<File | null>(null)
-  const [datasetRoot, setDatasetRoot] = useState<string>('')
-  const [dataSize, setDataSize] = useState<number>(0)
-  const [isUploading, setIsUploading] = useState(false)
-  const [walletValidation, setWalletValidation] = useState<{
-    isValid: boolean
-    errors: string[]
-    warnings: string[]
-    userAddress?: string
-    balance?: string
-    chainId?: number
-  } | null>(null)
-  const [showAllTasks, setShowAllTasks] = useState(false)
+  const [datasetInfo, setDatasetInfo] = useState<any>(null)
+  const [uploadedDataset, setUploadedDataset] = useState<{ rootHash: string; size: number } | null>(null)
+  const [trainingParams, setTrainingParams] = useState(DEFAULT_TRAINING_PARAMS)
+  const [depositAmount, setDepositAmount] = useState('0.01')
+  const [currentStep, setCurrentStep] = useState<'account' | 'dataset' | 'model' | 'params' | 'train' | 'monitor'>('account')
+  const [taskId, setTaskId] = useState('')
+  const [taskLogs, setTaskLogs] = useState<string[]>([])
 
-  // Validate wallet when wallet client changes
+  // Initialize defaults
   useEffect(() => {
-    if (walletClient && isConnected) {
-      try {
-        walletClientToSigner(walletClient).then(signer => {
-          validateUserWalletClient(signer).then(result => {
-            // Адаптируем результат к ожидаемому типу
-            setWalletValidation({
-              isValid: result.isValid,
-              errors: result.error ? [result.error] : [],
-              warnings: [],
-              userAddress: result.address,
-              balance: result.balance,
-              chainId: result.chainId ? parseInt(result.chainId) : undefined
-            })
-          })
-        }).catch(error => {
-          console.error('Failed to create signer:', error)
-          setWalletValidation(null)
-        })
-      } catch (error) {
-        console.error('Failed to create signer:', error)
-        setWalletValidation(null)
-      }
-    } else {
-      setWalletValidation(null)
+    const activeModels = getActiveModels()
+    const availableProviders = getAvailableProviders()
+    
+    if (activeModels.length > 0 && !selectedModel) {
+      setSelectedModel(activeModels[0].id)
     }
-  }, [walletClient, isConnected])
+    
+    if (availableProviders.length > 0 && !selectedProvider) {
+      setSelectedProvider(availableProviders[0].address)
+    }
+  }, [selectedModel, selectedProvider])
 
-  // Load account info and tasks
+  // Auto-advance steps based on state
   useEffect(() => {
-    if (isConnected && address) {
-      loadAccountInfo()
-      loadTasks()
+    if (!account?.exists) {
+      setCurrentStep('account')
+    } else if (!uploadedDataset) {
+      setCurrentStep('dataset')
+    } else if (!selectedModel) {
+      setCurrentStep('model')
+    } else if (currentTask) {
+      setCurrentStep('monitor')
     }
-  }, [isConnected, address])
+  }, [account, uploadedDataset, selectedModel, currentTask])
 
-  const loadAccountInfo = async () => {
-    try {
-      const response = await fetch('/api/compute/account')
-      if (response.ok) {
-        const data = await response.json()
-        const result = data.result || data
-        setAccountInfo({
-          balance: result.balance,
-          needsTopUp: result.needsTopUp,
-          exists: result.exists
-        })
+  // Handle dataset file selection
+  const handleDatasetUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setDatasetFile(file)
+    
+    // Validate dataset
+    const validation = await validateDataset(file)
+    setDatasetInfo(validation)
+    
+    if (validation && validation.isValid) {
+      // Upload to 0G Storage
+      const result = await uploadDataset(file)
+      if (result) {
+        setUploadedDataset(result)
+        setCurrentStep('model')
       }
-    } catch (error) {
-      console.error('Failed to load account info:', error)
     }
   }
 
-  const loadTasks = async () => {
-    try {
-      const response = await fetch('/api/compute/fine-tune/tasks')
-      if (response.ok) {
-        const data = await response.json()
-        setTasks(data.tasks || [])
-      }
-    } catch (error) {
-      console.error('Failed to load tasks:', error)
-    }
-  }
-
-  const createAccount = async () => {
-    try {
-      const res = await fetch('/api/compute/account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', amount: 0.05 })
-      })
-      const data = await res.json()
-      if (res.ok) {
-        toast({ title: 'Account created', description: `Balance: ${data.newBalance ?? ''} OG` })
-        await loadAccountInfo()
-      } else {
-        toast({ title: 'Error', description: data.error || 'Failed to create account', variant: 'destructive' })
-      }
-    } catch (err) {
-      console.error('createAccount error', err)
-      toast({ title: 'Error', description: 'Failed to create account', variant: 'destructive' })
-    }
-  }
-
-  const depositFunds = async () => {
-    try {
-      const res = await fetch('/api/compute/account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'deposit', amount: 0.05 })
-      })
-      const data = await res.json()
-      if (res.ok) {
-        toast({ title: 'Deposit successful', description: `New balance: ${data.newBalance ?? ''} OG` })
-        await loadAccountInfo()
-      } else {
-        toast({ title: 'Deposit failed', description: data.error || 'Transaction failed', variant: 'destructive' })
-      }
-    } catch (err) {
-      console.error('depositFunds error', err)
-      toast({ title: 'Deposit failed', description: 'Transaction failed', variant: 'destructive' })
-    }
-  }
-
-  // Upload dataset
-  const uploadDataset = async () => {
-    console.log('[uploadDataset] CLICK')
-    if (!datasetFile) {
+  // Handle training start
+  const handleStartTraining = async () => {
+    if (!uploadedDataset || !selectedModel || !selectedProvider) {
       toast({
-        title: 'Error',
-        description: 'Please select a dataset file',
+        title: 'Missing Requirements',
+        description: 'Please upload dataset and select model and provider',
         variant: 'destructive'
       })
       return
     }
 
-    setIsUploading(true)
-    const body = new FormData()
-    body.append('file', datasetFile)
-
-    try {
-      const res = await fetch('/api/storage/upload-dataset', { method: 'POST', body })
-      if (res.ok) {
-        const data = await res.json()
-        setDatasetRoot(data.root)
-        setDataSize(data.size)
-      } else {
-        const err = await res.json().catch(() => ({}))
-        console.error('[uploadDataset] Upload failed', err)
-        toast({
-          title: 'Upload failed',
-          description: err.error || 'Server error',
-          variant: 'destructive'
-        })
-      }
-    } catch (e: any) {
-      console.error('[uploadDataset] error', e)
-      toast({ title: 'Error', description: e?.message || 'upload failed', variant: 'destructive' })
-    } finally {
-      setIsUploading(false)
-    }
-  }
-
-  // Start fine-tuning with user wallet
-  const startFineTuning = async () => {
-    console.log('[startFineTuning] Starting fine-tuning process...')
+    // Acknowledge provider if needed
+    await acknowledgeProvider(selectedProvider)
     
-    try {
-      // All checks already performed in button onClick, but duplicate for safety
-      if (!datasetRoot) {
-        throw new Error('Dataset not uploaded')
-      }
-
-      if (!isConnected || !walletClient) {
-        throw new Error('Wallet not connected')
-      }
-
-      if (walletValidation && !walletValidation.isValid) {
-        throw new Error(`Wallet issues: ${walletValidation.errors.join(', ')}`)
-      }
-
-      if (accountInfo?.needsTopUp) {
-        throw new Error('Insufficient balance')
-      }
-
-      setIsStarting(true)
+    // Create training task
+    const newTaskId = await createTask({
+      agentId,
+      modelId: selectedModel,
+      datasetHash: uploadedDataset.rootHash,
+      datasetSize: uploadedDataset.size,
+      trainingParams,
+      providerAddress: selectedProvider
+    })
+    
+    if (newTaskId) {
+      setTaskId(newTaskId)
+      setCurrentStep('monitor')
       
-      console.log('[startFineTuning] Configuration:', {
-        agentId: tokenId,
-        datasetRootHash: datasetRoot,
-        dataSize,
-        baseModel: selectedModel,
-        steps,
-        learningRate,
-        userAddress: address
-      })
-
-      // Check dataset size
-      if (dataSize < 10) {
-        toast({
-          title: 'Warning',
-          description: `Dataset contains only ${dataSize} examples. Minimum 100 recommended for quality training.`,
-          variant: 'default'
-        })
+      // Get initial task info
+      const task = await getTask(newTaskId, selectedProvider)
+      if (task) {
+        setCurrentTask(task)
       }
-
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 60000) // 60 seconds for startup
-
-      const response = await fetch('/api/compute/wallet/fine-tune', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          agentId: tokenId,
-          datasetRootHash: datasetRoot,
-          baseModel: selectedModel,
-          steps,
-          learningRate,
-          dataSize,
-          userAddress: address
-        }),
-        signal: controller.signal
-      })
-
-      clearTimeout(timeoutId)
-
-      console.log('[startFineTuning] API response:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        console.log('[startFineTuning] Success:', data)
-        
-        if (data.taskId) {
-          toast({
-            title: 'Fine-tuning Started!',
-            description: `Task created: ${data.taskId.slice(0, 8)}... Process may take several hours.`,
-            variant: 'default'
-          })
-          // Reload tasks list
-          await loadTasks()
-        } else {
-          toast({
-            title: 'Task Created',
-            description: 'Fine-tuning successfully submitted for execution',
-            variant: 'default'
-          })
-        }
-      } else {
-        let errorMessage = 'Failed to start fine-tuning'
-        
-        try {
-          const errorData = await response.json()
-          errorMessage = errorData.error || errorData.details || errorMessage
-        } catch (e) {
-          errorMessage = `Server error: ${response.status} ${response.statusText}`
-        }
-        
-        console.error('[startFineTuning] API error:', errorMessage)
-        throw new Error(errorMessage)
-      }
-    } catch (error) {
-      console.error('[startFineTuning] Error:', error)
-      
-      let errorMessage = 'Unknown error'
-      
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          errorMessage = 'Request timeout. Please try again.'
-        } else if (error.message.includes('Failed to fetch')) {
-          errorMessage = 'Network error. Please check your internet connection.'
-        } else {
-          errorMessage = error.message
-        }
-      }
-      
-      toast({
-        title: 'Fine-tuning Start Failed',
-        description: errorMessage,
-        variant: 'destructive'
-      })
-    } finally {
-      console.log('[startFineTuning] Finishing process')
-      setIsStarting(false)
     }
   }
 
-  const selectedModelInfo = getModelById(selectedModel)
+  // Monitor task progress
+  const refreshTaskStatus = async () => {
+    if (!taskId || !selectedProvider) return
+    
+    const task = await getTask(taskId, selectedProvider)
+    if (task) {
+      setCurrentTask(task)
+      
+      // Get logs
+      const logs = await getTaskLogs(taskId, selectedProvider)
+      if (logs) {
+        setTaskLogs(logs)
+      }
+    }
+  }
 
-  // Show loading state to prevent white flash
-  if (!tokenId) {
+  // Handle model acknowledgment
+  const handleAcknowledgeModel = async () => {
+    if (!taskId || !selectedProvider) return
+    
+    await acknowledgeModel(taskId, selectedProvider)
+    await refreshTaskStatus()
+  }
+
+  if (!isConnected) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
-        <div className="text-white text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-4"></div>
-          <p>Loading Fine-tune page...</p>
-        </div>
+      <div className="container mx-auto py-8">
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Wallet className="h-12 w-12 text-muted-foreground mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Connect Your Wallet</h2>
+            <p className="text-muted-foreground text-center mb-6">
+              Please connect your wallet to access Fine-tuning features
+            </p>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <Link href="/agents">
-            <Button variant="ghost" className="text-white hover:bg-white/10 mb-4">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Agents
-            </Button>
-          </Link>
-          
-          <h1 className="text-4xl font-bold text-white mb-2">
-            Fine-tune Agent #{tokenId}
-          </h1>
-          <p className="text-purple-200">
-            Train your agent with custom data using 0G Compute Network
-          </p>
-          
-          {/* Wallet Connection Warning */}
-          {!isConnected && (
-            <Alert className="bg-yellow-500/10 border-yellow-500/30 mt-4">
-              <Wallet className="h-4 w-4 text-yellow-400" />
-              <AlertDescription className="text-yellow-200">
-                <div className="flex items-center justify-between">
-                  <span>Please connect your wallet to start fine-tuning. You'll need to sign transactions for deposits and task creation.</span>
-                  <Button variant="outline" size="sm" className="ml-4">
-                    Connect Wallet
-                  </Button>
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* Wallet Validation Warnings */}
-          {walletValidation && !walletValidation.isValid && (
-            <Alert className="bg-red-500/10 border-red-500/30 mt-4">
-              <AlertCircle className="h-4 w-4 text-red-400" />
-              <AlertDescription className="text-red-200">
-                <div className="space-y-1">
-                  <div className="font-semibold">Wallet Issues:</div>
-                  {walletValidation.errors.map((error, index) => (
-                    <div key={index} className="text-sm">• {error}</div>
-                  ))}
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {/* Wallet Warnings */}
-          {walletValidation && walletValidation.warnings.length > 0 && (
-            <Alert className="bg-yellow-500/10 border-yellow-500/30 mt-4">
-              <Info className="h-4 w-4 text-yellow-400" />
-              <AlertDescription className="text-yellow-200">
-                <div className="space-y-1">
-                  {walletValidation.warnings.map((warning, index) => (
-                    <div key={index} className="text-sm">• {warning}</div>
-                  ))}
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
+    <div className="container mx-auto py-8 space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Link href={`/agents/${agentId}`}>
+          <Button variant="outline" size="sm">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Agent
+          </Button>
+        </Link>
+        <div>
+          <h1 className="text-2xl font-bold">Fine-tune Agent</h1>
+          <p className="text-muted-foreground">Train your AI agent with custom data on 0G Compute Network</p>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Configuration */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Dataset Upload */}
-            <Card className="bg-white/10 backdrop-blur-xl border-white/20">
-              <div className="p-6">
-                <h3 className="text-xl font-semibold text-white mb-4">
-                  Step 1: Upload Training Dataset
-                </h3>
-                
-                <div className="space-y-4">
-                  {/* Dataset Format Information */}
-                  <Alert className="bg-blue-500/10 border-blue-500/30">
-                    <AlertCircle className="h-4 w-4 text-blue-400" />
-                    <AlertDescription className="text-blue-200">
-                      <div className="space-y-2">
-                        <div className="font-semibold">Supported Dataset Formats:</div>
-                        <div className="text-sm space-y-1">
-                          <div>• <strong>JSONL format</strong> (recommended) - Each line is a JSON object</div>
-                          <div>• <strong>JSON format</strong> - Single JSON array or object</div>
-                          <div>• <strong>TXT format</strong> - Plain text with conversation structure</div>
-                          <div>• <strong>Messages structure</strong> - Use "messages" array with "role" and "content"</div>
-                          <div>• <strong>Roles:</strong> "system", "user", "assistant"</div>
-                          <div>• <strong>Size:</strong> 100-10,000 examples (varies by model)</div>
-                        </div>
-                        
-                        <details className="mt-3">
-                          <summary className="cursor-pointer text-sm font-medium text-blue-300 hover:text-blue-200">
-                            Show Example Formats
-                          </summary>
-                          <div className="mt-2 space-y-3">
-                            <div>
-                              <div className="text-xs font-semibold text-blue-300 mb-1">JSONL Format (Recommended):</div>
-                              <pre className="text-xs bg-black/30 p-3 rounded overflow-auto text-green-300">
-{`{"messages": [
-  {"role": "system", "content": "You are a helpful AI assistant."},
-  {"role": "user", "content": "What is machine learning?"},
-  {"role": "assistant", "content": "Machine learning is a subset of AI..."}
-]}
-{"messages": [
-  {"role": "user", "content": "Explain neural networks"},
-  {"role": "assistant", "content": "Neural networks are computing systems..."}
-]}`}
-                              </pre>
-                            </div>
-                            
-                            <div>
-                              <div className="text-xs font-semibold text-blue-300 mb-1">JSON Format:</div>
-                              <pre className="text-xs bg-black/30 p-3 rounded overflow-auto text-green-300">
-{`[
-  {"messages": [
-    {"role": "system", "content": "You are a helpful AI assistant."},
-    {"role": "user", "content": "What is machine learning?"},
-    {"role": "assistant", "content": "Machine learning is a subset of AI..."}
-  ]},
-  {"messages": [
-    {"role": "user", "content": "Explain neural networks"},
-    {"role": "assistant", "content": "Neural networks are computing systems..."}
-  ]}
-]`}
-                              </pre>
-                            </div>
-                          </div>
-                          <div className="mt-2 space-y-1">
-                            <a 
-                              href="/example-dataset.jsonl" 
-                              download
-                              className="text-sm text-blue-300 hover:text-blue-200 underline flex items-center gap-1"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              Download Example Dataset (JSONL)
-                            </a>
-                            <a 
-                              href="/example-dataset.json" 
-                              download
-                              className="text-sm text-blue-300 hover:text-blue-200 underline flex items-center gap-1"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              Download Example Dataset (JSON)
-                            </a>
-                          </div>
-                        </details>
-                      </div>
-                    </AlertDescription>
-                  </Alert>
+      {/* Error Alert */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            {error}
+            <Button variant="outline" size="sm" className="ml-2" onClick={clearError}>
+              Dismiss
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
-                  <div className="space-y-2">
-                    <Label className="text-purple-200">Select Dataset File</Label>
-                    <Input
-                      type="file"
-                      accept=".jsonl,.json,.txt"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null
-                        if (DEBUG_UPLOAD) console.log('[File Select] 📁 File selected:', file ? {
-                          name: file.name,
-                          size: file.size,
-                          type: file.type,
-                          lastModified: file.lastModified
-                        } : 'null')
-                        setDatasetFile(file)
-                      }}
-                      className="bg-white/10 border-white/20 text-white file:bg-purple-600 file:text-white file:border-0"
-                    />
-                    {datasetFile && (
-                      <div className="text-sm text-purple-200">
-                        Selected: {datasetFile.name} ({(datasetFile.size / 1024).toFixed(1)} KB)
-                      </div>
-                    )}
-                  </div>
-
-                  <Button
-                    type="button"
-                    onClick={async (e) => {
-                      if (DEBUG_UPLOAD) console.log('[Button Click] 🎯 Upload Dataset button clicked!')
-                      if (DEBUG_UPLOAD) console.log('[Button Click] Event details:', e)
-                      if (DEBUG_UPLOAD) console.log('[Button Click] Current state:', {
-                        datasetFile: datasetFile ? datasetFile.name : 'null',
-                        isUploading,
-                        tokenId
-                      })
-                      
-                      // Check state before starting
-                      if (!datasetFile) {
-                        if (DEBUG_UPLOAD) console.log('[Button Click] ❌ No dataset file selected')
-                        toast({
-                          title: 'Error',
-                          description: 'Please select a dataset file first',
-                          variant: 'destructive'
-                        })
-                        return
-                      }
-                      
-                      if (isUploading) {
-                        if (DEBUG_UPLOAD) console.log('[Button Click] ⏳ Upload already in progress')
-                        return
-                      }
-                      
-                      // Prevent multiple clicks
-                      e.preventDefault()
-                      
-                      try {
-                        await uploadDataset()
-                      } catch (error) {
-                        console.error('[Button Click] Unhandled upload error:', error)
-                        toast({
-                          title: 'Critical Error',
-                          description: 'An unexpected error occurred. Please refresh the page.',
-                          variant: 'destructive'
-                        })
-                      }
-                    }} 
-                    disabled={!datasetFile || isUploading}
-                    className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
-                  >
-                    {isUploading ? (
-                      <>
-                        <Clock className="mr-2 h-4 w-4 animate-spin" />
-                        Uploading...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="mr-2 h-4 w-4" />
-                        Upload Dataset
-                      </>
-                    )}
-                  </Button>
-
-                  {datasetRoot && (
-                    <Alert className="bg-green-500/10 border-green-500/30">
-                      <CheckCircle className="h-4 w-4 text-green-400" />
-                      <AlertDescription className="text-green-200">
-                        Dataset uploaded successfully! Root: {datasetRoot.slice(0, 16)}...
-                        {dataSize ? ` (${dataSize} bytes)` : ''}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </div>
-              </div>
-            </Card>
-
-            {/* Model Selection */}
-            <Card className="bg-white/10 backdrop-blur-xl border-white/20">
-              <div className="p-6">
-                <h3 className="text-xl font-semibold text-white mb-4">
-                  Step 2: Select Base Model
-                </h3>
-                
-                <Tabs defaultValue="recommended" className="w-full">
-                  <TabsList className="grid w-full grid-cols-4 bg-white/10">
-                    <TabsTrigger value="recommended" className="text-white data-[state=active]:bg-purple-600">
-                      <Zap className="mr-1 h-3 w-3" />
-                      Recommended
-                    </TabsTrigger>
-                    <TabsTrigger value="language-generation" className="text-white data-[state=active]:bg-purple-600">
-                      <FileText className="mr-1 h-3 w-3" />
-                      Text Gen
-                    </TabsTrigger>
-                    <TabsTrigger value="reasoning" className="text-white data-[state=active]:bg-purple-600">
-                      <Brain className="mr-1 h-3 w-3" />
-                      Reasoning
-                    </TabsTrigger>
-                    <TabsTrigger value="text-classification" className="text-white data-[state=active]:bg-purple-600">
-                      <FileText className="mr-1 h-3 w-3" />
-                      Classification
-                    </TabsTrigger>
-                  </TabsList>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Content */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Step Indicator */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="h-5 w-5" />
+                Fine-tuning Workflow
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                {[
+                  { id: 'account', label: 'Account', icon: Wallet },
+                  { id: 'dataset', label: 'Dataset', icon: Upload },
+                  { id: 'model', label: 'Model', icon: Brain },
+                  { id: 'params', label: 'Parameters', icon: Zap },
+                  { id: 'train', label: 'Training', icon: Play },
+                  { id: 'monitor', label: 'Monitor', icon: Eye }
+                ].map((step, index) => {
+                  const Icon = step.icon
+                  const isActive = currentStep === step.id
+                  const isCompleted = ['account', 'dataset', 'model'].includes(step.id) && 
+                                   (step.id === 'account' ? account?.exists : 
+                                    step.id === 'dataset' ? uploadedDataset :
+                                    step.id === 'model' ? selectedModel : false)
                   
-                  {Object.entries(MODEL_CATEGORIES).map(([categoryKey, category]) => (
-                    <TabsContent key={categoryKey} value={categoryKey} className="space-y-3 mt-4">
-                      <div className="text-sm text-purple-200 mb-3">{category.description}</div>
-                      
-                      <div className="space-y-2">
-                        {category.models.map((model) => (
-                          <div
-                            key={model.id}
-                            className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                              selectedModel === model.id 
-                                ? 'bg-purple-600/30 border-purple-400' 
-                                : 'bg-white/5 border-white/20 hover:bg-white/10'
-                            }`}
-                            onClick={() => setSelectedModel(model.id)}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="font-medium text-white">{model.name}</span>
-                                  {model.isRecommended && (
-                                    <Badge variant="secondary" className="text-xs bg-green-500/20 text-green-300">
-                                      Recommended
-                                    </Badge>
-                                  )}
-                                  {model.provider === 'predefined' && (
-                                    <Badge variant="outline" className="text-xs border-blue-400 text-blue-300">
-                                      Official
-                                    </Badge>
-                                  )}
-                                </div>
-                                <p className="text-sm text-purple-200 mb-2">{model.description}</p>
-                                
-                                {model.requirements && (
-                                  <div className="text-xs text-purple-300 space-y-1">
-                                    <div>📊 Dataset: {model.requirements.minDatasetSize}-{model.requirements.maxDatasetSize} examples</div>
-                                    <div>⏱️ Training time: {model.requirements.estimatedTrainingTime}</div>
-                                    <div>📁 Formats: {model.requirements.supportedFormats?.join(', ')}</div>
-                                  </div>
-                                )}
-                              </div>
-                              
-                              <div className="ml-3">
-                                <div className={`w-4 h-4 rounded-full border-2 ${
-                                  selectedModel === model.id 
-                                    ? 'bg-purple-500 border-purple-500' 
-                                    : 'border-white/30'
-                                }`} />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
+                  return (
+                    <div key={step.id} className="flex flex-col items-center">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${
+                        isCompleted ? 'bg-green-500 border-green-500 text-white' :
+                        isActive ? 'bg-blue-500 border-blue-500 text-white' :
+                        'border-gray-300 text-gray-400'
+                      }`}>
+                        <Icon className="h-4 w-4" />
                       </div>
-                    </TabsContent>
-                  ))}
-                </Tabs>
+                      <span className="text-xs mt-1">{step.label}</span>
+                    </div>
+                  )
+                })}
               </div>
-            </Card>
+            </CardContent>
+          </Card>
 
-            {/* Training Parameters */}
-            <Card className="bg-white/10 backdrop-blur-xl border-white/20">
-              <div className="p-6">
-                <h3 className="text-xl font-semibold text-white mb-4">
-                  Step 3: Training Parameters
-                </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label className="text-purple-200">Training Steps</Label>
-                    <Input
-                      type="number"
-                      value={steps}
-                      onChange={(e) => setSteps(parseInt(e.target.value) || 500)}
-                      className="bg-white/10 border-white/20 text-white mt-2"
-                      min="100"
-                      max="5000"
-                    />
-                    <div className="text-xs text-purple-300 mt-1">
-                      Recommended: 500-1000 steps
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <Label className="text-purple-200">Learning Rate</Label>
-                    <Input
-                      type="number"
-                      value={learningRate}
-                      onChange={(e) => setLearningRate(parseFloat(e.target.value) || 0.00005)}
-                      className="bg-white/10 border-white/20 text-white mt-2"
-                      step="0.00001"
-                      min="0.00001"
-                      max="0.001"
-                    />
-                    <div className="text-xs text-purple-300 mt-1">
-                      Recommended: 0.00005 for most models
-                    </div>
-                  </div>
-                </div>
-
-                {selectedModelInfo && (
-                  <Alert className="bg-blue-500/10 border-blue-500/30 mt-4">
-                    <Info className="h-4 w-4 text-blue-400" />
-                    <AlertDescription className="text-blue-200">
-                      <div className="space-y-1">
-                        <div className="font-semibold">Selected Model: {selectedModelInfo.name}</div>
-                        <div className="text-sm">Type: {selectedModelInfo.type}</div>
-                        <div className="text-sm">Estimated training time: {getEstimatedTrainingTime(selectedModel)}</div>
+          {/* Step Content */}
+          <Tabs value={currentStep} onValueChange={(value) => setCurrentStep(value as any)}>
+            {/* Account Setup */}
+            <TabsContent value="account">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Fine-tuning Account</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {!account?.exists ? (
+                    <div className="text-center py-8">
+                      <Wallet className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                      <h3 className="text-lg font-semibold mb-2">Create Fine-tuning Account</h3>
+                      <p className="text-muted-foreground mb-4">
+                        You need a Fine-tuning account to pay for training services
+                      </p>
+                      <div className="flex items-center gap-2 justify-center mb-4">
+                        <Label htmlFor="deposit">Initial deposit:</Label>
+                        <Input
+                          id="deposit"
+                          type="number"
+                          step="0.001"
+                          value={depositAmount}
+                          onChange={(e) => setDepositAmount(e.target.value)}
+                          className="w-24"
+                        />
+                        <span className="text-sm text-muted-foreground">OG</span>
                       </div>
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                <Separator className="my-6 bg-white/20" />
-
-                <Button 
-                  onClick={async (e) => {
-                    console.log('[Start Fine-tuning] Button clicked')
-                    
-                    // Detailed check of all conditions
-                    if (!datasetRoot) {
-                      toast({
-                        title: 'Error',
-                        description: 'Please upload a dataset for training first',
-                        variant: 'destructive'
-                      })
-                      return
-                    }
-                    
-                    if (!isConnected) {
-                      toast({
-                        title: 'Wallet Not Connected',
-                        description: 'Please connect your wallet to start fine-tuning',
-                        variant: 'destructive'
-                      })
-                      return
-                    }
-                    
-                    if (walletValidation && !walletValidation.isValid) {
-                      toast({
-                        title: 'Wallet Issues',
-                        description: walletValidation.errors.join(', '),
-                        variant: 'destructive'
-                      })
-                      return
-                    }
-                    
-                    if (accountInfo?.needsTopUp) {
-                      toast({
-                        title: 'Insufficient Balance',
-                        description: 'Please top up your account balance for fine-tuning',
-                        variant: 'destructive'
-                      })
-                      return
-                    }
-                    
-                    if (isStarting) {
-                      console.log('[Start Fine-tuning] Already starting')
-                      return
-                    }
-                    
-                    e.preventDefault()
-                    
-                    try {
-                      await startFineTuning()
-                    } catch (error) {
-                      console.error('[Start Fine-tuning] Unhandled error:', error)
-                      toast({
-                        title: 'Critical Error',
-                        description: 'Failed to start fine-tuning. Please refresh the page.',
-                        variant: 'destructive'
-                      })
-                    }
-                  }}
-                  disabled={!datasetRoot || !isConnected || isStarting || (walletValidation !== null && !walletValidation.isValid)}
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3"
-                >
-                  {isStarting ? (
-                    <>
-                      <Clock className="mr-2 h-4 w-4 animate-spin" />
-                      Starting Fine-tuning...
-                    </>
+                      <Button 
+                        onClick={() => initializeAccount(parseFloat(depositAmount))}
+                        disabled={loading}
+                      >
+                        {loading ? 'Creating...' : 'Create Account'}
+                      </Button>
+                    </div>
                   ) : (
-                    <>
-                      <Play className="mr-2 h-4 w-4" />
-                      Start Fine-tuning
-                    </>
-                  )}
-                </Button>
-              </div>
-            </Card>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Account Info */}
-            <Card className="bg-white/10 backdrop-blur-xl border-white/20">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Account Status</h3>
-                
-                {isConnected ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-4 w-4 text-green-400" />
-                      <span className="text-green-200">Wallet Connected</span>
-                    </div>
-                    
-                    {walletValidation && (
-                      <div className="text-sm space-y-1">
-                        <div className="text-purple-200">Address: {walletValidation.userAddress?.slice(0, 6)}...{walletValidation.userAddress?.slice(-4)}</div>
-                        {walletValidation.balance && (
-                          <div className="text-purple-200">Balance: {parseFloat(walletValidation.balance).toFixed(4)} OG</div>
-                        )}
-                        {walletValidation.chainId && (
-                          <div className="text-purple-200">Network: {walletValidation.chainId === 16601 ? 'Galileo Testnet V3' : `Chain ${walletValidation.chainId}`}</div>
-                        )}
-                      </div>
-                    )}
-
-                    {accountInfo && (
-                      <div className="space-y-2">
-                        <div className="text-sm text-purple-200">
-                          Fine-tune Balance: {accountInfo.balance} {NATIVE_SYMBOL}
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                          <span className="font-medium">Account Active</span>
                         </div>
-                        {!accountInfo.exists && (
-                          <Button
-                            size="sm"
-                            onClick={createAccount}
-                            className="w-full bg-purple-600 hover:bg-purple-700"
-                          >
-                            Create fine-tune account
-                          </Button>
-                        )}
-                        {accountInfo.exists && accountInfo.needsTopUp && (
-                          <div className="space-y-2">
-                            <Alert className="bg-yellow-500/10 border-yellow-500/30">
-                              <AlertCircle className="h-4 w-4 text-yellow-400" />
-                              <AlertDescription className="text-yellow-200 text-xs">
-                                Low balance. Please deposit funds.
-                              </AlertDescription>
-                            </Alert>
-                            <Button
-                              size="sm"
-                              onClick={depositFunds}
-                              className="w-full bg-purple-600 hover:bg-purple-700"
-                            >
-                              Deposit
-                            </Button>
-                          </div>
-                        )}
+                        <Badge variant="secondary">Ready</Badge>
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-4">
-                    <Wallet className="h-8 w-8 text-purple-400 mx-auto mb-2" />
-                    <p className="text-purple-200 text-sm">Connect your wallet to view account status</p>
-                  </div>
-                )}
-              </div>
-            </Card>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>Available Balance</Label>
+                          <p className="text-2xl font-bold">{account.balance} OG</p>
+                        </div>
+                        <div>
+                          <Label>Locked Balance</Label>
+                          <p className="text-2xl font-bold text-orange-600">{account.locked} OG</p>
+                        </div>
+                      </div>
 
-            {/* Active Tasks */}
-            <Card className="bg-white/10 backdrop-blur-xl border-white/20">
-              <div className="p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">Fine-tuning Tasks</h3>
-                
-                {tasks.length > 0 ? (
-                  <div className="space-y-3">
-                    {(showAllTasks ? tasks : tasks.slice(0, 3)).map((task) => (
-                      <div key={task.id} className="p-3 bg-white/5 rounded-lg border border-white/10">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-white">
-                            Task {task.id.slice(0, 8)}...
-                          </span>
-                          <Badge 
-                            variant={
-                              task.status === 'completed' ? 'default' :
-                              task.status === 'failed' ? 'destructive' :
-                              task.status === 'running' ? 'secondary' : 'outline'
-                            }
-                            className="text-xs"
-                          >
-                            {task.status === 'completed' ? 'Completed' :
-                             task.status === 'failed' ? 'Failed' :
-                             task.status === 'running' ? 'Running' : 'Pending'}
-                          </Badge>
-                        </div>
-                        
-                        {task.progress !== undefined && (
-                          <Progress value={task.progress} className="h-2 mb-2" />
-                        )}
-                        
-                        <div className="text-xs text-purple-300">
-                          Created: {new Date(task.createdAt).toLocaleDateString()}
-                          {task.completedAt && (
-                            <span className="ml-2">
-                              • Completed: {new Date(task.completedAt).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                        
-                        {task.logs && task.logs.length > 0 && (
-                          <details className="mt-2">
-                            <summary className="text-xs text-blue-300 cursor-pointer hover:text-blue-200">
-                              Show logs ({task.logs.length})
-                            </summary>
-                            <div className="mt-1 p-2 bg-black/20 rounded text-xs font-mono text-gray-300 max-h-32 overflow-y-auto">
-                              {task.logs.map((log, index) => (
-                                <div key={index}>{log}</div>
-                              ))}
-                            </div>
-                          </details>
-                        )}
-                      </div>
-                    ))}
-                    
-                    {tasks.length > 3 && (
-                      <div className="text-center">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="text-purple-300 hover:text-white hover:bg-white/10"
-                          onClick={() => {
-                            setShowAllTasks(!showAllTasks)
-                            toast({
-                              title: showAllTasks ? 'Collapsed' : 'Expanded',
-                              description: showAllTasks 
-                                ? 'Showing only last 3 tasks' 
-                                : `Showing all ${tasks.length} tasks`,
-                              variant: 'default'
-                            })
-                          }}
-                        >
-                          {showAllTasks ? (
-                            <>Hide Tasks</>
-                          ) : (
-                            <>View All Tasks ({tasks.length})</>
-                          )}
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          step="0.001"
+                          value={depositAmount}
+                          onChange={(e) => setDepositAmount(e.target.value)}
+                          placeholder="Amount to deposit"
+                        />
+                        <Button onClick={() => deposit(parseFloat(depositAmount))} disabled={loading}>
+                          Deposit
                         </Button>
                       </div>
-                    )}
+                      
+                      <Button 
+                        onClick={() => setCurrentStep('dataset')} 
+                        className="w-full"
+                      >
+                        Continue to Dataset Upload
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Dataset Upload */}
+            <TabsContent value="dataset">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Upload Training Dataset</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {!uploadedDataset ? (
+                    <div>
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                        <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                        <h3 className="text-lg font-semibold mb-2">Upload Training Data</h3>
+                        <p className="text-muted-foreground mb-4">
+                          Supported formats: .jsonl, .json, .txt
+                        </p>
+                        <Input
+                          type="file"
+                          accept=".jsonl,.json,.txt"
+                          onChange={handleDatasetUpload}
+                          className="w-full"
+                        />
+                      </div>
+                      
+                      {/* Dataset Info */}
+                      {datasetInfo && (
+                        <div className="mt-4 space-y-2">
+                          <h4 className="font-medium">Dataset Validation</h4>
+                          {datasetInfo.isValid ? (
+                            <Alert>
+                              <CheckCircle className="h-4 w-4" />
+                              <AlertDescription>
+                                Dataset is valid! {datasetInfo.stats.totalExamples} examples found.
+                              </AlertDescription>
+                            </Alert>
+                          ) : (
+                            <Alert variant="destructive">
+                              <AlertCircle className="h-4 w-4" />
+                              <AlertDescription>
+                                {datasetInfo.errors.join(', ')}
+                              </AlertDescription>
+                            </Alert>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <Alert>
+                        <CheckCircle className="h-4 w-4" />
+                        <AlertDescription>
+                          Dataset uploaded successfully! Root hash: {uploadedDataset.rootHash.slice(0, 20)}...
+                        </AlertDescription>
+                      </Alert>
+                      
+                      <Button onClick={() => setCurrentStep('model')} className="w-full">
+                        Continue to Model Selection
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Model Selection */}
+            <TabsContent value="model">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Select Base Model</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4">
+                    {getActiveModels().map((model) => (
+                      <div
+                        key={model.id}
+                        className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                          selectedModel === model.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                        }`}
+                        onClick={() => setSelectedModel(model.id)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="font-semibold">{model.name}</h3>
+                            <p className="text-sm text-muted-foreground mb-2">{model.description}</p>
+                            <div className="flex gap-2">
+                              <Badge variant="secondary">{model.type}</Badge>
+                              <Badge variant="outline">{model.requirements.trainingTime}</Badge>
+                            </div>
+                          </div>
+                          {selectedModel === model.id && (
+                            <CheckCircle className="h-5 w-5 text-blue-600" />
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  <div className="text-center py-4">
-                    <Clock className="h-8 w-8 text-purple-400 mx-auto mb-2" />
-                    <p className="text-purple-200 text-sm">No fine-tuning tasks yet</p>
+                  
+                  <Button 
+                    onClick={() => setCurrentStep('params')} 
+                    disabled={!selectedModel}
+                    className="w-full"
+                  >
+                    Continue to Training Parameters
+                  </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Training Parameters */}
+            <TabsContent value="params">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Training Parameters</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="epochs">Training Epochs</Label>
+                      <Input
+                        id="epochs"
+                        type="number"
+                        value={trainingParams.num_train_epochs}
+                        onChange={(e) => setTrainingParams(prev => ({
+                          ...prev,
+                          num_train_epochs: parseInt(e.target.value)
+                        }))}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="batch_size">Batch Size</Label>
+                      <Input
+                        id="batch_size"
+                        type="number"
+                        value={trainingParams.per_device_train_batch_size}
+                        onChange={(e) => setTrainingParams(prev => ({
+                          ...prev,
+                          per_device_train_batch_size: parseInt(e.target.value)
+                        }))}
+                      />
+                    </div>
                   </div>
-                )}
+                  
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline"
+                      onClick={() => setTrainingParams(DEFAULT_TRAINING_PARAMS)}
+                    >
+                      Use Recommended
+                    </Button>
+                    <Button 
+                      onClick={() => setCurrentStep('train')}
+                      className="flex-1"
+                    >
+                      Continue to Training
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Start Training */}
+            <TabsContent value="train">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Start Fine-tuning</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span>Model:</span>
+                      <Badge>{selectedModel}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Dataset:</span>
+                      <span className="text-sm font-mono">{uploadedDataset?.rootHash.slice(0, 20)}...</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Training Epochs:</span>
+                      <span>{trainingParams.num_train_epochs}</span>
+                    </div>
+                  </div>
+                  
+                  <Separator />
+                  
+                  <Button 
+                    onClick={handleStartTraining}
+                    disabled={loading || !account?.exists || !uploadedDataset || !selectedModel}
+                    className="w-full"
+                    size="lg"
+                  >
+                    <Play className="h-4 w-4 mr-2" />
+                    {loading ? 'Starting Training...' : 'Start Fine-tuning'}
+                  </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Monitor Training */}
+            <TabsContent value="monitor">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Training Progress</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {currentTask ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span>Task ID:</span>
+                        <span className="font-mono text-sm">{currentTask.id}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <span>Status:</span>
+                        <Badge variant={
+                          currentTask.status === 'Finished' ? 'default' :
+                          currentTask.status === 'Failed' ? 'destructive' :
+                          'secondary'
+                        }>
+                          {TASK_STATUS[currentTask.status] || currentTask.status}
+                        </Badge>
+                      </div>
+                      
+                      {currentTask.status === 'Delivered' && (
+                        <div className="space-y-2">
+                          <Alert>
+                            <CheckCircle className="h-4 w-4" />
+                            <AlertDescription>
+                              Model training completed and delivered!
+                            </AlertDescription>
+                          </Alert>
+                          <Button onClick={handleAcknowledgeModel} className="w-full">
+                            <Download className="h-4 w-4 mr-2" />
+                            Acknowledge & Download Model
+                          </Button>
+                        </div>
+                      )}
+                      
+                      {taskLogs.length > 0 && (
+                        <div>
+                          <Label>Training Logs</Label>
+                          <div className="bg-gray-100 p-3 rounded text-sm font-mono max-h-40 overflow-y-auto">
+                            {taskLogs.map((log, index) => (
+                              <div key={index}>{log}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <Button onClick={refreshTaskStatus} variant="outline" className="w-full">
+                        Refresh Status
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <Clock className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                      <p>No active training task</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-6">
+          {/* Account Status */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Account Status</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${account?.exists ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-sm">{account?.exists ? 'Active' : 'Not Created'}</span>
               </div>
-            </Card>
-          </div>
+              
+              {account?.exists && (
+                <>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Balance</div>
+                    <div className="font-semibold">{account.balance} OG</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Locked</div>
+                    <div className="font-semibold text-orange-600">{account.locked} OG</div>
+                  </div>
+                </>
+              )}
+              
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={refreshAccount}
+                disabled={loading}
+                className="w-full"
+              >
+                Refresh
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Quick Guide */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Quick Guide</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="flex items-start gap-2">
+                <div className="w-1 h-1 rounded-full bg-blue-500 mt-2" />
+                <span>Create Fine-tuning account</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="w-1 h-1 rounded-full bg-blue-500 mt-2" />
+                <span>Upload training dataset</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="w-1 h-1 rounded-full bg-blue-500 mt-2" />
+                <span>Select base model</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="w-1 h-1 rounded-full bg-blue-500 mt-2" />
+                <span>Configure training</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="w-1 h-1 rounded-full bg-blue-500 mt-2" />
+                <span>Monitor progress</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <div className="w-1 h-1 rounded-full bg-blue-500 mt-2" />
+                <span>Download trained model</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Help */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Need Help?</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm">
+              <p className="text-muted-foreground mb-3">
+                Learn more about Fine-tuning with 0G Compute Network
+              </p>
+              <Button variant="outline" size="sm" className="w-full">
+                <ExternalLink className="h-3 w-3 mr-2" />
+                Documentation
+              </Button>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

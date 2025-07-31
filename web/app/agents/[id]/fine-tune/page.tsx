@@ -44,7 +44,8 @@ import {
   type FineTuneModel
 } from '@/lib/compute/fine-tune-models'
 
-const DEBUG_UPLOAD = process.env.NEXT_PUBLIC_DEBUG_UPLOAD === 'true'
+// Enable detailed upload logs by default; set NEXT_PUBLIC_DEBUG_UPLOAD="false" to silence.
+const DEBUG_UPLOAD = process.env.NEXT_PUBLIC_DEBUG_UPLOAD !== 'false'
 import { validateUserWalletClient } from '@/lib/compute/wallet-client'
 
 interface AccountInfo {
@@ -154,8 +155,17 @@ export default function FineTunePage() {
 
   // Upload dataset
   const uploadDataset = async () => {
-    if (DEBUG_UPLOAD) console.log('[uploadDataset] 🚀 Starting upload process...')
-    if (DEBUG_UPLOAD) console.log('[uploadDataset] Current state:', {
+    // Always log basic invocation info for easier debugging.
+    console.log('[uploadDataset] 🚀 Function invoked', {
+      hasFile: !!datasetFile,
+      isUploading,
+      tokenId,
+      fileName: datasetFile?.name,
+      fileSize: datasetFile?.size,
+      fileType: datasetFile?.type
+    })
+
+    if (DEBUG_UPLOAD) console.log('[uploadDataset] Detailed state:', {
       datasetFile: datasetFile ? {
         name: datasetFile.name,
         size: datasetFile.size,
@@ -636,6 +646,7 @@ export default function FineTunePage() {
                   <Button
                     type="button"
                     onClick={async (e) => {
+                      console.log('[FineTune UI] 📤 "Upload Dataset" button clicked')
                       if (DEBUG_UPLOAD) console.log('[Button Click] 🎯 Upload Dataset button clicked!')
                       if (DEBUG_UPLOAD) console.log('[Button Click] Event details:', e)
                       if (DEBUG_UPLOAD) console.log('[Button Click] Current state:', {

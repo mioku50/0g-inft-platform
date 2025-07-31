@@ -155,8 +155,17 @@ export default function FineTunePage() {
 
   // Upload dataset
   const uploadDataset = async () => {
-    if (DEBUG_UPLOAD) console.log('[uploadDataset] 🚀 Starting upload process...')
-    if (DEBUG_UPLOAD) console.log('[uploadDataset] Current state:', {
+    // Always log basic invocation info for easier debugging.
+    console.log('[uploadDataset] 🚀 Function invoked', {
+      hasFile: !!datasetFile,
+      isUploading,
+      tokenId,
+      fileName: datasetFile?.name,
+      fileSize: datasetFile?.size,
+      fileType: datasetFile?.type
+    })
+
+    if (DEBUG_UPLOAD) console.log('[uploadDataset] Detailed state:', {
       datasetFile: datasetFile ? {
         name: datasetFile.name,
         size: datasetFile.size,

@@ -308,6 +308,72 @@ UI/UX: ✅ Beautiful gradient design with smooth animations
 ✅ 6 models catalog displayed
 ✅ Comprehensive error handling
 ✅ Complete documentation
+The fine-tuning system was failing to compile with the following error:
+
+Module build failed: UnhandledSchemeError: Reading from "node:crypto" is not handled by plugins (Unhandled scheme).
+Webpack supports "data:" and "file:" URIs by default.
+You may need an additional plugin to handle "node:" URIs.
+
+Import trace for requested module:
+node:crypto
+./node_modules/@0glabs/0g-ts-sdk/lib.esm/kv/constants.js
+./node_modules/@0glabs/0g-ts-sdk/lib.esm/kv/index.js
+./node_modules/@0glabs/0g-ts-sdk/lib.esm/index.js
+./lib/fine-tuning/service-simple.ts
+./hooks/useFineTuning.ts
+./app/agents/[id]/fine-tune/page.tsx
+This occurred because the 0G SDK (@0glabs/0g-ts-sdk) uses Node.js-specific modules with the node: protocol (like node:crypto and node:fs/promises) that are not available in the browser environment.
+
+Solution
+1. Fixed Webpack Configuration
+Updated next.config.js to properly handle Node.js module polyfills:
+
+// Added proper browser polyfills for Node.js modules
+config.resolve.fallback = {
+  crypto: !isServer ? require.resolve('crypto-browserify') : false,
+  stream: !isServer ? require.resolve('stream-browserify') : false,
+  path: !isServer ? require.resolve('path-browserify') : false,
+  os: !isServer ? require.resolve('os-browserify/browser') : false,
+  // ... other polyfills
+}
+
+// Handle node: protocol imports for browser
+config.resolve.alias = {
+  'node:crypto': 'crypto-browserify',
+  'node:stream': 'stream-browserify',
+  'node:fs': false,
+  'node:fs/promises': false,
+  // ... other aliases
+}
+2. Architectural Improvements
+Moved server-side 0G SDK operations to API routes to avoid browser compilation issues:
+
+Created /api/compute/fine-tune - Handles task creation and status retrieval
+Created /api/compute/fine-tune-account - Manages account creation and deposits
+Refactored FineTuningService - Now uses fetch API to call server endpoints instead of direct SDK imports
+3. Dependencies
+Added missing browser polyfills:
+
+{
+  "crypto-browserify": "^3.12.1",
+  "path-browserify": "^1.0.1", 
+  "os-browserify": "^0.3.0"
+}
+Result
+✅ Build Success: Project now compiles without Node.js crypto errors
+✅ Architecture: Clean separation between client and server-side operations
+✅ Functionality: Fine-tuning system maintains full 0G SDK integration on server-side
+✅ Performance: Browser-friendly client code with API-based communication
+The fine-tuning page (/agents/[id]/fine-tune) now loads successfully and the complete workflow is ready for production deployment.
+
+Testing
+npm run build  # ✅ Builds successfully
+npm run dev    # ✅ Starts without errors
+curl http://localhost:3000/agents/1/fine-tune  # ✅ Page loads correctly
+This fix enables the fine-tuning system to work properly while maintaining the real 0G SDK integration as specified in the requirements.
+
+
+
 The Fine-tuning system is now production-ready with real 0G SDK integration, beautiful UI, and comprehensive documentation. Users can now train AI models on the 0G Compute Network with a seamless, professional experience! 🚀 
 root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.git' -L 5
 .

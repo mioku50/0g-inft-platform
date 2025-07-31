@@ -50,6 +50,7 @@ import { validateUserWalletClient } from '@/lib/compute/wallet-client'
 interface AccountInfo {
   balance: string
   needsTopUp: boolean
+  exists?: boolean
 }
 
 interface TaskInfo {
@@ -130,10 +131,15 @@ export default function FineTunePage() {
 
   const loadAccountInfo = async () => {
     try {
-      const response = await fetch('/api/compute/fine-tune/account')
+      const response = await fetch('/api/compute/account')
       if (response.ok) {
         const data = await response.json()
-        setAccountInfo(data)
+        const result = data.result || data
+        setAccountInfo({
+          balance: result.balance,
+          needsTopUp: result.needsTopUp,
+          exists: result.exists
+        })
       }
     } catch (error) {
       console.error('Failed to load account info:', error)
@@ -149,6 +155,46 @@ export default function FineTunePage() {
       }
     } catch (error) {
       console.error('Failed to load tasks:', error)
+    }
+  }
+
+  const createAccount = async () => {
+    try {
+      const res = await fetch('/api/compute/account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', amount: 0.05 })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast({ title: 'Account created', description: `Balance: ${data.newBalance ?? ''} OG` })
+        await loadAccountInfo()
+      } else {
+        toast({ title: 'Error', description: data.error || 'Failed to create account', variant: 'destructive' })
+      }
+    } catch (err) {
+      console.error('createAccount error', err)
+      toast({ title: 'Error', description: 'Failed to create account', variant: 'destructive' })
+    }
+  }
+
+  const depositFunds = async () => {
+    try {
+      const res = await fetch('/api/compute/account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deposit', amount: 0.05 })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast({ title: 'Deposit successful', description: `New balance: ${data.newBalance ?? ''} OG` })
+        await loadAccountInfo()
+      } else {
+        toast({ title: 'Deposit failed', description: data.error || 'Transaction failed', variant: 'destructive' })
+      }
+    } catch (err) {
+      console.error('depositFunds error', err)
+      toast({ title: 'Deposit failed', description: 'Transaction failed', variant: 'destructive' })
     }
   }
 
@@ -952,13 +998,31 @@ export default function FineTunePage() {
                         <div className="text-sm text-purple-200">
                           Fine-tune Balance: {accountInfo.balance} {NATIVE_SYMBOL}
                         </div>
-                        {accountInfo.needsTopUp && (
-                          <Alert className="bg-yellow-500/10 border-yellow-500/30">
-                            <AlertCircle className="h-4 w-4 text-yellow-400" />
-                            <AlertDescription className="text-yellow-200 text-xs">
-                              Low balance. Please deposit funds.
-                            </AlertDescription>
-                          </Alert>
+                        {!accountInfo.exists && (
+                          <Button
+                            size="sm"
+                            onClick={createAccount}
+                            className="w-full bg-purple-600 hover:bg-purple-700"
+                          >
+                            Create fine-tune account
+                          </Button>
+                        )}
+                        {accountInfo.exists && accountInfo.needsTopUp && (
+                          <div className="space-y-2">
+                            <Alert className="bg-yellow-500/10 border-yellow-500/30">
+                              <AlertCircle className="h-4 w-4 text-yellow-400" />
+                              <AlertDescription className="text-yellow-200 text-xs">
+                                Low balance. Please deposit funds.
+                              </AlertDescription>
+                            </Alert>
+                            <Button
+                              size="sm"
+                              onClick={depositFunds}
+                              className="w-full bg-purple-600 hover:bg-purple-700"
+                            >
+                              Deposit
+                            </Button>
+                          </div>
                         )}
                       </div>
                     )}

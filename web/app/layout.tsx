@@ -109,7 +109,7 @@ export default function RootLayout({
         <meta name="description" content="Create and manage AI agents as NFTs" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.className} bg-gray-950`}>
         <Providers>
           <Navigation />
           <main className="min-h-screen">

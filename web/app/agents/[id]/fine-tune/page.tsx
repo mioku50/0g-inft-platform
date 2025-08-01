@@ -220,7 +220,7 @@ export default function FineTunePage() {
                   <span className="text-sm text-white">{account?.exists ? 'Active' : 'Not Created'}</span>
                 </div>
                 
-                {account?.exists && (
+                {account?.exists ? (
                   <>
                     <div className="p-3 bg-white/10 rounded-lg">
                       <div className="text-xs text-purple-200">Balance</div>
@@ -231,6 +231,13 @@ export default function FineTunePage() {
                       <div className="font-semibold text-orange-300">{account.locked} OG</div>
                     </div>
                   </>
+                ) : (
+                  <div className="p-3 bg-orange-900/20 border border-orange-500/30 rounded-lg">
+                    <div className="text-xs text-orange-200 mb-2">Account Required</div>
+                    <div className="text-sm text-orange-100">
+                      Create a Fine-tuning account to get started
+                    </div>
+                  </div>
                 )}
                 
                 <Button 
@@ -242,6 +249,51 @@ export default function FineTunePage() {
                 >
                   Refresh
                 </Button>
+
+                {/* Create/Fund Account Section */}
+                {(!account?.exists || (account?.exists && parseFloat(account.balance) < 0.01)) && (
+                  <div className="pt-2 border-t border-white/10">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          placeholder="0.01"
+                          value={depositAmount}
+                          onChange={(e) => setDepositAmount(e.target.value)}
+                          className="flex-1 bg-white/5 border-white/20 text-white placeholder:text-white/40"
+                          min="0.001"
+                          step="0.001"
+                        />
+                        <span className="text-xs text-white/60">OG</span>
+                      </div>
+                      
+                      <Button
+                        onClick={() => {
+                          const amount = parseFloat(depositAmount) || 0.01
+                          if (!account?.exists) {
+                            initializeAccount(amount)
+                          } else {
+                            deposit(amount)
+                          }
+                        }}
+                        disabled={loading || !isConnected}
+                        className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white border-0"
+                        size="sm"
+                      >
+                        {loading ? (
+                          <Clock className="h-3 w-3 mr-2 animate-spin" />
+                        ) : (
+                          <Wallet className="h-3 w-3 mr-2" />
+                        )}
+                        {!account?.exists ? 'Create Account' : 'Add Funds'}
+                      </Button>
+                      
+                      <div className="text-xs text-purple-200 text-center">
+                        Minimum: 0.01 OG required
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

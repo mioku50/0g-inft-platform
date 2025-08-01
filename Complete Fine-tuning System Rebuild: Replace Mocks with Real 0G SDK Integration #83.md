@@ -372,9 +372,100 @@ npm run dev    # ✅ Starts without errors
 curl http://localhost:3000/agents/1/fine-tune  # ✅ Page loads correctly
 This fix enables the fine-tuning system to work properly while maintaining the real 0G SDK integration as specified in the requirements.
 
-
-
 The Fine-tuning system is now production-ready with real 0G SDK integration, beautiful UI, and comprehensive documentation. Users can now train AI models on the 0G Compute Network with a seamless, professional experience! 🚀 
+
+Problem
+The fine-tuning system was displaying a balance of 0 OG even when users had previously funded their accounts with more than 0.1 tokens. The issue prevented users from accessing fine-tuning functionality and created confusion about account status.
+
+From the CLI logs, we could see that accounts actually had funds:
+
+Total balance: 0.009999999999998354 A0GI  
+Locked: 0.000000000040038354 A0GI
+But the web interface consistently showed:
+
+{
+  "result": {
+    "exists": false,
+    "balance": "0",
+    "needsTopUp": true
+  }
+}
+Root Cause
+The issue stemmed from inconsistent balance retrieval methods across different API routes:
+
+API Route Inconsistency: The /api/compute/fine-tune-account route was using broker.ledgerSafe.get() while /api/compute/account used broker.ledger.getLedger()
+Method Compatibility: The ledgerSafe.get() method was not available in the server-side broker instance
+Missing Error Handling: Network failures were not gracefully handled, causing silent failures
+Environment Validation: Missing validation led to broker initialization failures
+Solution
+1. Standardized Balance Retrieval
+Updated the fine-tune-account route to use the same reliable method as the account route:
+
+// Before: Using incompatible method
+const { balance, error } = await broker.ledgerSafe.get()
+
+// After: Using standard SDK method
+const ledgerInfo = await broker.ledger.getLedger()
+const balance = formatEther(ledgerInfo.ledgerInfo[0])
+2. Enhanced Response Format Handling
+Added support for multiple SDK response formats to ensure compatibility:
+
+// Handle both array and object formats from 0G SDK
+if (ledgerInfo.ledgerInfo) {
+  balance = formatEther(ledgerInfo.ledgerInfo[0])
+  locked = formatEther(ledgerInfo.ledgerInfo[1] || 0)
+} else if (Array.isArray(ledgerInfo)) {
+  balance = formatEther(ledgerInfo[0])
+  locked = formatEther(ledgerInfo[1] || 0)
+}
+3. Added Create/Fund Account UI
+Implemented the missing Create/Fund Account functionality mentioned in the requirements:
+
+{/* Shows when balance = 0 or account doesn't exist */}
+{(!account?.exists || parseFloat(account.balance) < 0.01) && (
+  <div className="pt-2 border-t border-white/10">
+    <Input
+      type="number"
+      placeholder="0.01"
+      value={depositAmount}
+      onChange={(e) => setDepositAmount(e.target.value)}
+      min="0.001"
+      step="0.001"
+    />
+    <Button onClick={() => !account?.exists ? initializeAccount(amount) : deposit(amount)}>
+      {!account?.exists ? 'Create Account' : 'Add Funds'}
+    </Button>
+  </div>
+)}
+4. Improved Environment Validation
+Added comprehensive environment validation to prevent initialization failures:
+
+const envValidation = validateComputeEnvironment()
+if (!envValidation.isValid) {
+  return NextResponse.json({
+    error: 'Compute environment misconfigured',
+    details: envValidation.errors
+  }, { status: 503 })
+}
+Testing
+✅ TypeScript compilation passes without errors
+✅ Build successful with all routes properly configured
+✅ API endpoints return proper JSON responses
+✅ UI components integrate correctly with existing hooks
+✅ Environment validation prevents misconfiguration
+Result
+Users can now:
+
+See their actual account balance from the 0G SDK
+Use the Refresh button to update balance information
+Create new accounts when balance = 0 using the "Create Account" button
+Add funds to existing accounts with the "Add Funds" option
+Get clear visual feedback about account status (red/green status indicators)
+The fine-tuning system now properly connects to the real 0G SDK and displays accurate balance information, resolving the core issue where accounts with funds were incorrectly showing as having 0 balance.
+
+
+
+
 root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.git' -L 5
 .
 ├── app

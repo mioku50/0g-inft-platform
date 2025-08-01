@@ -58,6 +58,26 @@ export default function FineTunePage() {
   const router = useRouter()
   const agentId = params.id as string
   const { address, isConnected } = useAccount()
+
+  // Load cached dataset from localStorage
+  useEffect(() => {
+    const cacheKey = `fine-tune-dataset-${agentId}`
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
+      try {
+        const data = JSON.parse(cached)
+        // Only use cache if it's recent (within 24 hours)
+        if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+          setUploadedDataset({
+            rootHash: data.rootHash,
+            size: data.size
+          })
+        }
+      } catch (error) {
+        console.warn('Failed to load cached dataset:', error)
+      }
+    }
+  }, [agentId])
   
   // Fine-tuning hook
   const {
@@ -183,6 +203,16 @@ export default function FineTunePage() {
         if (result) {
           setUploadedDataset(result)
           setDatasetInfo(validation)
+          
+          // Cache dataset info in localStorage for current agent
+          const cacheKey = `fine-tune-dataset-${agentId}`
+          localStorage.setItem(cacheKey, JSON.stringify({
+            rootHash: result.rootHash,
+            size: result.size,
+            fileName: datasetFile.name,
+            timestamp: Date.now()
+          }))
+          
           nextStep()
         }
       }
@@ -456,7 +486,12 @@ export default function FineTunePage() {
                               <div className="flex-1">
                                 <div className="text-white font-medium">{datasetFile.name}</div>
                                 <div className="text-sm text-purple-200">
-                                  {(datasetFile.size / 1024 / 1024).toFixed(2)} MB • {datasetFile.type || 'Unknown type'}
+                                  {datasetFile.size >= 1024 * 1024 
+                                    ? `${(datasetFile.size / 1024 / 1024).toFixed(2)} MB` 
+                                    : datasetFile.size >= 1024 
+                                      ? `${(datasetFile.size / 1024).toFixed(1)} KB`
+                                      : `${datasetFile.size} bytes`
+                                  } • {datasetFile.type || 'Unknown type'}
                                 </div>
                               </div>
                               <Button

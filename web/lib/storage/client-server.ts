@@ -12,7 +12,7 @@ export interface UploadResult {
   segments?: number
 }
 
-const METADATA_DIR = path.join(process.cwd(), 'data', 'metadata')
+const METADATA_DIR = path.join(__dirname, '..', '..', 'data', 'metadata')
 
 // Minimal wrapper mimicking the Storage SDK client
 const client = {
@@ -85,11 +85,13 @@ async function saveLocal(content: string): Promise<string> {
 export async function uploadToStorage(file: File | Buffer | string, fileName = 'metadata.json'): Promise<UploadResult> {
   const data = typeof file === 'string' ? Buffer.from(file) : Buffer.isBuffer(file) ? file : Buffer.from(await file.arrayBuffer())
   try {
+    console.log('Attempting real 0G Storage upload...')
     return await client.upload(data, fileName)
   } catch (err) {
+    console.log('Real 0G Storage upload failed, falling back to local storage:', err?.message || err)
     const content = typeof file === 'string' ? file : data.toString()
     const localHash = await saveLocal(content)
-    return { rootHash: localHash }
+    return { rootHash: localHash, size: data.length }
   }
 }
 

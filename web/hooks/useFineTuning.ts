@@ -184,6 +184,37 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
   // Dataset operations
   const uploadDataset = useCallback(async (file: File) => {
     return await withLoading(async () => {
+      // For test mode without wallet, use direct API call
+      if (process.env.NODE_ENV === 'development' && !walletClient) {
+        const formData = new FormData()
+        formData.append('file', file)
+        
+        const response = await fetch('/api/storage/upload-dataset', {
+          method: 'POST',
+          body: formData
+        })
+        
+        if (!response.ok) {
+          throw new Error(`Upload failed: ${response.statusText}`)
+        }
+        
+        const data = await response.json()
+        if (!data.success) {
+          throw new Error(data.error || 'Upload failed')
+        }
+        
+        toast({
+          title: 'Dataset Uploaded (Test Mode)',
+          description: `Dataset uploaded successfully. Root hash: ${data.rootHash.slice(0, 20)}...`
+        })
+        
+        return {
+          rootHash: data.rootHash,
+          size: data.size || file.size
+        }
+      }
+      
+      // Normal production mode
       const service = await getService()
       const result = await service.uploadDataset(file)
       
@@ -194,7 +225,7 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
       
       return result
     }, 'Failed to upload dataset')
-  }, [getService, withLoading])
+  }, [getService, withLoading, walletClient])
 
   const validateDataset = useCallback(async (file: File) => {
     return await withLoading(async () => {

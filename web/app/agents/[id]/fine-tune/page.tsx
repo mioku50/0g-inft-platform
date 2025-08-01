@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAccount } from 'wagmi'
+import { useDropzone } from 'react-dropzone'
 
 // UI Components
 import { Button } from '@/components/ui/button'
@@ -12,6 +13,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Progress } from '@/components/ui/progress'
+import { Textarea } from '@/components/ui/textarea'
+import { Slider } from '@/components/ui/slider'
 
 // Icons
 import { 
@@ -25,7 +29,15 @@ import {
   Brain,
   Zap,
   Play,
-  Eye
+  Eye,
+  ChevronRight,
+  ChevronLeft,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Settings,
+  Monitor,
+  Download
 } from 'lucide-react'
 
 // Hooks and utilities
@@ -68,7 +80,8 @@ export default function FineTunePage() {
     clearError
   } = useFineTuning()
 
-  // Local state
+  // Local state for workflow
+  const [currentStep, setCurrentStep] = useState(1)
   const [selectedModel, setSelectedModel] = useState('')
   const [selectedProvider, setSelectedProvider] = useState('')
   const [datasetFile, setDatasetFile] = useState<File | null>(null)
@@ -76,6 +89,8 @@ export default function FineTunePage() {
   const [uploadedDataset, setUploadedDataset] = useState<{ rootHash: string; size: number } | null>(null)
   const [trainingParams, setTrainingParams] = useState(DEFAULT_TRAINING_PARAMS)
   const [depositAmount, setDepositAmount] = useState('0.01')
+  const [taskPolling, setTaskPolling] = useState<NodeJS.Timeout | null>(null)
+  const [showHelp, setShowHelp] = useState(false)
 
   // Initialize defaults
   useEffect(() => {
@@ -90,6 +105,125 @@ export default function FineTunePage() {
       setSelectedProvider(availableProviders[0].address)
     }
   }, [selectedModel, selectedProvider])
+
+  // Dropzone for dataset upload
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept: {
+      'application/json': ['.json'],
+      'application/jsonl': ['.jsonl'],
+      'text/plain': ['.txt']
+    },
+    maxFiles: 1,
+    onDrop: (acceptedFiles) => {
+      if (acceptedFiles.length > 0) {
+        setDatasetFile(acceptedFiles[0])
+        toast({
+          title: 'File Selected',
+          description: `Selected ${acceptedFiles[0].name} for upload`
+        })
+      }
+    }
+  })
+
+  // Steps configuration
+  const steps = [
+    { id: 1, label: 'Account', icon: Wallet, description: 'Setup Fine-tuning account' },
+    { id: 2, label: 'Dataset', icon: Upload, description: 'Upload training data' },
+    { id: 3, label: 'Model', icon: Brain, description: 'Select base model' },
+    { id: 4, label: 'Parameters', icon: Settings, description: 'Configure training' },
+    { id: 5, label: 'Training', icon: Play, description: 'Start fine-tuning' },
+    { id: 6, label: 'Monitor', icon: Monitor, description: 'Track progress' }
+  ]
+
+  // Step validation logic
+  const isStepComplete = (stepId: number): boolean => {
+    switch (stepId) {
+      case 1: return account?.exists && parseFloat(account.balance) >= 0.01
+      case 2: return uploadedDataset !== null
+      case 3: return selectedModel !== ''
+      case 4: return true // Parameters always valid with defaults
+      case 5: return currentTask !== null
+      case 6: return currentTask?.status === 'Delivered' || currentTask?.status === 'Finished'
+      default: return false
+    }
+  }
+
+  const canProceedToStep = (stepId: number): boolean => {
+    if (stepId === 1) return true
+    return isStepComplete(stepId - 1)
+  }
+
+  // Navigation handlers
+  const nextStep = () => {
+    if (currentStep < 6 && canProceedToStep(currentStep + 1)) {
+      setCurrentStep(currentStep + 1)
+    }
+  }
+
+  const prevStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1)
+    }
+  }
+
+  const goToStep = (stepId: number) => {
+    if (canProceedToStep(stepId)) {
+      setCurrentStep(stepId)
+    }
+  }
+
+  // Action handlers
+  const handleDatasetUpload = async () => {
+    if (!datasetFile) return
+    
+    try {
+      const validation = await validateDataset(datasetFile)
+      if (validation?.isValid) {
+        const result = await uploadDataset(datasetFile)
+        if (result) {
+          setUploadedDataset(result)
+          setDatasetInfo(validation)
+          nextStep()
+        }
+      }
+    } catch (error) {
+      console.error('Dataset upload error:', error)
+    }
+  }
+
+  const handleStartTraining = async () => {
+    if (!uploadedDataset || !selectedModel) return
+
+    try {
+      const taskId = await createTask({
+        agentId,
+        modelId: selectedModel,
+        datasetHash: uploadedDataset.rootHash,
+        datasetSize: uploadedDataset.size,
+        trainingParams,
+        providerAddress: selectedProvider
+      })
+
+      if (taskId) {
+        // Start polling for status
+        const polling = setInterval(async () => {
+          const task = await getTask(taskId, selectedProvider)
+          if (task) {
+            setCurrentTask(task)
+            if (task.status === 'Delivered' || task.status === 'Finished' || task.status === 'Failed') {
+              if (taskPolling) clearInterval(taskPolling)
+              setTaskPolling(null)
+            }
+          }
+        }, 15000)
+        
+        setTaskPolling(polling)
+        nextStep()
+      }
+    } catch (error) {
+      console.error('Training start error:', error)
+    }
+  }
 
   if (!isConnected) {
     return (
@@ -139,204 +273,572 @@ export default function FineTunePage() {
           </Alert>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Step Indicator */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Sidebar - Step Navigation */}
+          <div className="lg:col-span-1">
             <Card className="bg-white/10 border-white/20 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-white">
-                  <Brain className="h-5 w-5" />
-                  Fine-tuning Workflow
-                </CardTitle>
+                <CardTitle className="text-sm text-white">Progress</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  {[
-                    { id: 'account', label: 'Account', icon: Wallet },
-                    { id: 'dataset', label: 'Dataset', icon: Upload },
-                    { id: 'model', label: 'Model', icon: Brain },
-                    { id: 'params', label: 'Parameters', icon: Zap },
-                    { id: 'train', label: 'Training', icon: Play },
-                    { id: 'monitor', label: 'Monitor', icon: Eye }
-                  ].map((step, index) => {
-                    const Icon = step.icon
-                    const isCompleted = step.id === 'account' ? account?.exists : false
-                    
-                    return (
-                      <div key={step.id} className="flex flex-col items-center">
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 ${
-                          isCompleted ? 'bg-gradient-to-br from-green-400 to-green-600 border-green-500 text-white shadow-lg' :
-                          'border-white/30 text-white/60 bg-white/5'
-                        }`}>
-                          <Icon className="h-5 w-5" />
-                        </div>
-                        <span className="text-xs mt-2 text-white/80">{step.label}</span>
+              <CardContent className="space-y-4">
+                {steps.map((step) => {
+                  const Icon = step.icon
+                  const isCompleted = isStepComplete(step.id)
+                  const isCurrent = currentStep === step.id
+                  const canAccess = canProceedToStep(step.id)
+                  
+                  return (
+                    <div 
+                      key={step.id} 
+                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                        isCurrent ? 'bg-gradient-to-r from-purple-600/50 to-blue-600/50 border border-purple-400/30' :
+                        canAccess ? 'hover:bg-white/10' : 'opacity-50 cursor-not-allowed'
+                      }`}
+                      onClick={() => canAccess && goToStep(step.id)}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        isCompleted ? 'bg-gradient-to-br from-green-400 to-green-600 text-white shadow-lg' :
+                        isCurrent ? 'bg-gradient-to-br from-purple-400 to-blue-400 text-white shadow-lg' :
+                        'border border-white/30 text-white/60'
+                      }`}>
+                        {isCompleted ? <CheckCircle className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
                       </div>
-                    )
-                  })}
-                </div>
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-white">{step.label}</div>
+                        <div className="text-xs text-purple-200">{step.description}</div>
+                      </div>
+                    </div>
+                  )
+                })}
               </CardContent>
             </Card>
-
-            {/* Main Content Area */}
-            <div className="text-center py-12 text-white">
-              <h2 className="text-2xl font-bold mb-4">Fine-tuning with Real 0G SDK Integration</h2>
-              <p className="text-purple-200 mb-6">
-                The Fine-tuning system has been rebuilt with real 0G SDK integration.
-                All mocks have been replaced with actual 0G Compute Network calls.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
-                <div className="p-6 bg-white/10 rounded-lg backdrop-blur-sm">
-                  <h3 className="font-semibold mb-2">✅ Real SDK Integration</h3>
-                  <p className="text-sm text-purple-200">Connected to @0glabs/0g-serving-broker</p>
-                </div>
-                <div className="p-6 bg-white/10 rounded-lg backdrop-blur-sm">
-                  <h3 className="font-semibold mb-2">🔗 0G Storage Upload</h3>
-                  <p className="text-sm text-purple-200">Real dataset upload to 0G Storage</p>
-                </div>
-                <div className="p-6 bg-white/10 rounded-lg backdrop-blur-sm">
-                  <h3 className="font-semibold mb-2">🤖 6 AI Models</h3>
-                  <p className="text-sm text-purple-200">Full catalog: DistilBERT, Llama, DeepSeek, GPT-3.5, Code Llama, Mistral</p>
-                </div>
-                <div className="p-6 bg-white/10 rounded-lg backdrop-blur-sm">
-                  <h3 className="font-semibold mb-2">📡 Provider API</h3>
-                  <p className="text-sm text-purple-200">Real task monitoring via 0G provider endpoints</p>
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Account Status */}
-            <Card className="bg-white/10 border-white/20 backdrop-blur-sm">
+          {/* Main Content Area */}
+          <div className="lg:col-span-3">
+            <Card className="bg-white/10 border-white/20 backdrop-blur-sm min-h-[600px]">
               <CardHeader>
-                <CardTitle className="text-sm text-white">Account Status</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-white">
+                  {steps.find(s => s.id === currentStep)?.icon && 
+                    React.createElement(steps.find(s => s.id === currentStep)!.icon, { className: "h-5 w-5" })
+                  }
+                  Step {currentStep}: {steps.find(s => s.id === currentStep)?.label}
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${account?.exists ? 'bg-green-400 shadow-lg shadow-green-400/50' : 'bg-red-400 shadow-lg shadow-red-400/50'}`} />
-                  <span className="text-sm text-white">{account?.exists ? 'Active' : 'Not Created'}</span>
-                </div>
-                
-                {account?.exists ? (
-                  <>
-                    <div className="p-3 bg-white/10 rounded-lg">
-                      <div className="text-xs text-purple-200">Balance</div>
-                      <div className="font-semibold text-white">{account.balance} OG</div>
+              <CardContent className="space-y-6">
+                {/* Step 1: Account */}
+                {currentStep === 1 && (
+                  <div className="space-y-6">
+                    <div className="text-center">
+                      <h3 className="text-xl font-semibold text-white mb-2">Account Setup</h3>
+                      <p className="text-purple-200">Create and fund your Fine-tuning account</p>
                     </div>
-                    <div className="p-3 bg-white/10 rounded-lg">
-                      <div className="text-xs text-purple-200">Locked</div>
-                      <div className="font-semibold text-orange-300">{account.locked} OG</div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="p-3 bg-orange-900/20 border border-orange-500/30 rounded-lg">
-                    <div className="text-xs text-orange-200 mb-2">Account Required</div>
-                    <div className="text-sm text-orange-100">
-                      Create a Fine-tuning account to get started
-                    </div>
-                  </div>
-                )}
-                
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={refreshAccount}
-                  disabled={loading}
-                  className="w-full bg-white/10 border-white/20 text-white hover:bg-white/20"
-                >
-                  Refresh
-                </Button>
 
-                {/* Create/Fund Account Section */}
-                {(!account?.exists || (account?.exists && parseFloat(account.balance) < 0.01)) && (
-                  <div className="pt-2 border-t border-white/10">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          placeholder="0.01"
-                          value={depositAmount}
-                          onChange={(e) => setDepositAmount(e.target.value)}
-                          className="flex-1 bg-white/5 border-white/20 text-white placeholder:text-white/40"
-                          min="0.001"
-                          step="0.001"
-                        />
-                        <span className="text-xs text-white/60">OG</span>
-                      </div>
-                      
-                      <Button
-                        onClick={() => {
-                          const amount = parseFloat(depositAmount) || 0.01
-                          if (!account?.exists) {
-                            initializeAccount(amount)
-                          } else {
-                            deposit(amount)
-                          }
-                        }}
-                        disabled={loading || !isConnected}
-                        className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white border-0"
-                        size="sm"
-                      >
-                        {loading ? (
-                          <Clock className="h-3 w-3 mr-2 animate-spin" />
+                    <div className="max-w-md mx-auto space-y-4">
+                      {/* Account Status */}
+                      <div className="p-6 bg-white/10 rounded-lg">
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className={`w-4 h-4 rounded-full ${account?.exists ? 'bg-green-400 shadow-lg shadow-green-400/50' : 'bg-red-400 shadow-lg shadow-red-400/50'}`} />
+                          <span className="text-white font-medium">
+                            {account?.exists ? 'Account Active' : 'Account Required'}
+                          </span>
+                        </div>
+                        
+                        {account?.exists ? (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="text-center">
+                              <div className="text-xs text-purple-200">Balance</div>
+                              <div className="font-semibold text-white">{account.balance} OG</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-xs text-purple-200">Locked</div>
+                              <div className="font-semibold text-orange-300">{account.locked} OG</div>
+                            </div>
+                          </div>
                         ) : (
-                          <Wallet className="h-3 w-3 mr-2" />
+                          <div className="text-center">
+                            <div className="text-sm text-orange-200">
+                              You need to create a Fine-tuning account to continue
+                            </div>
+                          </div>
                         )}
-                        {!account?.exists ? 'Create Account' : 'Add Funds'}
-                      </Button>
-                      
-                      <div className="text-xs text-purple-200 text-center">
-                        Minimum: 0.01 OG required
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="space-y-3">
+                        <Button 
+                          variant="outline" 
+                          onClick={refreshAccount}
+                          disabled={loading}
+                          className="w-full bg-white/10 border-white/20 text-white hover:bg-white/20"
+                        >
+                          {loading ? <Clock className="h-4 w-4 mr-2 animate-spin" /> : <Eye className="h-4 w-4 mr-2" />}
+                          Refresh Account
+                        </Button>
+
+                        {(!account?.exists || parseFloat(account?.balance || '0') < 0.01) && (
+                          <div className="space-y-3 pt-3 border-t border-white/10">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                placeholder="0.01"
+                                value={depositAmount}
+                                onChange={(e) => setDepositAmount(e.target.value)}
+                                className="flex-1 bg-white/5 border-white/20 text-white placeholder:text-white/40"
+                                min="0.001"
+                                step="0.001"
+                              />
+                              <span className="text-xs text-white/60">OG</span>
+                            </div>
+                            
+                            <Button
+                              onClick={() => {
+                                const amount = parseFloat(depositAmount) || 0.01
+                                if (!account?.exists) {
+                                  initializeAccount(amount)
+                                } else {
+                                  deposit(amount)
+                                }
+                              }}
+                              disabled={loading || !isConnected}
+                              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white border-0"
+                            >
+                              {loading ? (
+                                <Clock className="h-4 w-4 mr-2 animate-spin" />
+                              ) : (
+                                <Wallet className="h-4 w-4 mr-2" />
+                              )}
+                              {!account?.exists ? 'Create Account' : 'Add Funds'}
+                            </Button>
+                            
+                            <div className="text-xs text-purple-200 text-center">
+                              Minimum: 0.01 OG required for fine-tuning
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
                 )}
-              </CardContent>
-            </Card>
 
-            {/* Quick Guide */}
-            <Card className="bg-white/10 border-white/20 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="text-sm text-white">Quick Guide</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                {[
-                  'Create Fine-tuning account',
-                  'Upload training dataset',
-                  'Select base model',
-                  'Configure training',
-                  'Monitor progress',
-                  'Download trained model'
-                ].map((step, index) => (
-                  <div key={index} className="flex items-start gap-2">
-                    <div className="w-2 h-2 rounded-full bg-gradient-to-r from-purple-400 to-pink-400 mt-1.5 shadow-sm" />
-                    <span className="text-purple-200">{step}</span>
+                {/* Step 2: Dataset */}
+                {currentStep === 2 && (
+                  <div className="space-y-6">
+                    <div className="text-center">
+                      <h3 className="text-xl font-semibold text-white mb-2">Upload Training Dataset</h3>
+                      <p className="text-purple-200">Provide training data for your AI model</p>
+                    </div>
+
+                    {!uploadedDataset ? (
+                      <div className="max-w-2xl mx-auto space-y-4">
+                        {/* File Upload */}
+                        <div 
+                          {...getRootProps()} 
+                          className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
+                            isDragActive ? 'border-purple-400 bg-purple-400/10' : 'border-white/30 hover:border-white/50'
+                          }`}
+                        >
+                          <input {...getInputProps()} />
+                          <Upload className="h-12 w-12 mx-auto mb-4 text-purple-300" />
+                          <div className="text-white mb-2">
+                            {isDragActive ? 'Drop your dataset here' : 'Drag & drop your dataset, or click to browse'}
+                          </div>
+                          <div className="text-sm text-purple-200">
+                            Supported: .jsonl, .json, .txt (max 100MB)
+                          </div>
+                        </div>
+
+                        {datasetFile && (
+                          <div className="p-4 bg-white/10 rounded-lg">
+                            <div className="flex items-center gap-3">
+                              <FileText className="h-5 w-5 text-purple-300" />
+                              <div className="flex-1">
+                                <div className="text-white font-medium">{datasetFile.name}</div>
+                                <div className="text-sm text-purple-200">
+                                  {(datasetFile.size / 1024 / 1024).toFixed(2)} MB
+                                </div>
+                              </div>
+                              <Button
+                                onClick={handleDatasetUpload}
+                                disabled={loading}
+                                className="bg-gradient-to-r from-purple-600 to-blue-600"
+                              >
+                                {loading ? <Clock className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+                                Upload
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="max-w-md mx-auto">
+                        <div className="p-6 bg-green-900/20 border border-green-500/50 rounded-lg text-center">
+                          <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-400" />
+                          <h4 className="text-lg font-semibold text-white mb-2">Dataset Uploaded</h4>
+                          <div className="text-sm text-green-200 space-y-1">
+                            <div>Root Hash: {uploadedDataset.rootHash.slice(0, 20)}...</div>
+                            <div>Size: {uploadedDataset.size} bytes</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))}
+                )}
+
+                {/* Step 3: Model Selection */}
+                {currentStep === 3 && (
+                  <div className="space-y-6">
+                    <div className="text-center">
+                      <h3 className="text-xl font-semibold text-white mb-2">Select Base Model</h3>
+                      <p className="text-purple-200">Choose the AI model you want to fine-tune</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {getActiveModels().map((model) => (
+                        <div
+                          key={model.id}
+                          onClick={() => setSelectedModel(model.id)}
+                          className={`p-6 rounded-lg border-2 cursor-pointer transition-all ${
+                            selectedModel === model.id 
+                              ? 'border-purple-400 bg-purple-400/10 shadow-lg' 
+                              : 'border-white/20 bg-white/5 hover:border-white/40 hover:bg-white/10'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <Brain className="h-6 w-6 text-purple-300 mt-1 flex-shrink-0" />
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-white mb-1">{model.name}</h4>
+                              <p className="text-sm text-purple-200 mb-3">{model.description}</p>
+                              <div className="space-y-1 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="text-purple-300">Parameters:</span>
+                                  <span className="text-white">{model.parameters}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-purple-300">Training Time:</span>
+                                  <span className="text-white">{model.trainingTime}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-purple-300">GPU Required:</span>
+                                  <span className="text-white">{model.gpuRequirement}</span>
+                                </div>
+                              </div>
+                            </div>
+                            {selectedModel === model.id && (
+                              <CheckCircle className="h-5 w-5 text-green-400 flex-shrink-0" />
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 4: Parameters */}
+                {currentStep === 4 && (
+                  <div className="space-y-6">
+                    <div className="text-center">
+                      <h3 className="text-xl font-semibold text-white mb-2">Training Parameters</h3>
+                      <p className="text-purple-200">Configure how your model will be trained</p>
+                    </div>
+
+                    <div className="max-w-2xl mx-auto space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label className="text-white">Training Epochs</Label>
+                          <Input
+                            type="number"
+                            value={trainingParams.epochs}
+                            onChange={(e) => setTrainingParams({...trainingParams, epochs: parseInt(e.target.value)})}
+                            className="bg-white/5 border-white/20 text-white"
+                            min="1"
+                            max="10"
+                          />
+                          <div className="text-xs text-purple-200">Number of training iterations</div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-white">Learning Rate</Label>
+                          <Input
+                            type="number"
+                            value={trainingParams.learningRate}
+                            onChange={(e) => setTrainingParams({...trainingParams, learningRate: parseFloat(e.target.value)})}
+                            className="bg-white/5 border-white/20 text-white"
+                            step="0.0001"
+                            min="0.0001"
+                            max="0.01"
+                          />
+                          <div className="text-xs text-purple-200">How fast the model learns</div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-white">Batch Size</Label>
+                          <Input
+                            type="number"
+                            value={trainingParams.batchSize}
+                            onChange={(e) => setTrainingParams({...trainingParams, batchSize: parseInt(e.target.value)})}
+                            className="bg-white/5 border-white/20 text-white"
+                            min="1"
+                            max="64"
+                          />
+                          <div className="text-xs text-purple-200">Training samples per batch</div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-white">Training Steps</Label>
+                          <Input
+                            type="number"
+                            value={trainingParams.steps}
+                            onChange={(e) => setTrainingParams({...trainingParams, steps: parseInt(e.target.value)})}
+                            className="bg-white/5 border-white/20 text-white"
+                            min="100"
+                            max="10000"
+                          />
+                          <div className="text-xs text-purple-200">Total training steps</div>
+                        </div>
+                      </div>
+
+                      {/* Preset Buttons */}
+                      <div className="flex gap-2 justify-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTrainingParams({...DEFAULT_TRAINING_PARAMS, epochs: 1, steps: 100})}
+                          className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                        >
+                          Quick Test
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTrainingParams(DEFAULT_TRAINING_PARAMS)}
+                          className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                        >
+                          Balanced
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTrainingParams({...DEFAULT_TRAINING_PARAMS, epochs: 5, steps: 2000})}
+                          className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                        >
+                          High Quality
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 5: Start Training */}
+                {currentStep === 5 && (
+                  <div className="space-y-6">
+                    <div className="text-center">
+                      <h3 className="text-xl font-semibold text-white mb-2">Start Fine-tuning</h3>
+                      <p className="text-purple-200">Review settings and begin training</p>
+                    </div>
+
+                    <div className="max-w-2xl mx-auto space-y-6">
+                      {/* Summary */}
+                      <div className="p-6 bg-white/10 rounded-lg space-y-4">
+                        <h4 className="font-semibold text-white">Training Summary</h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-purple-200">Model:</span>
+                            <div className="text-white font-medium">
+                              {getActiveModels().find(m => m.id === selectedModel)?.name}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-purple-200">Dataset:</span>
+                            <div className="text-white font-medium">
+                              {uploadedDataset ? `${uploadedDataset.size} bytes` : 'None'}
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-purple-200">Epochs:</span>
+                            <div className="text-white font-medium">{trainingParams.epochs}</div>
+                          </div>
+                          <div>
+                            <span className="text-purple-200">Learning Rate:</span>
+                            <div className="text-white font-medium">{trainingParams.learningRate}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Start Button */}
+                      <div className="text-center">
+                        <Button
+                          onClick={handleStartTraining}
+                          disabled={loading || !uploadedDataset || !selectedModel}
+                          className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white border-0 px-8 py-3"
+                          size="lg"
+                        >
+                          {loading ? (
+                            <Clock className="h-5 w-5 mr-2 animate-spin" />
+                          ) : (
+                            <Play className="h-5 w-5 mr-2" />
+                          )}
+                          Start Fine-tuning
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 6: Monitor */}
+                {currentStep === 6 && (
+                  <div className="space-y-6">
+                    <div className="text-center">
+                      <h3 className="text-xl font-semibold text-white mb-2">Training Progress</h3>
+                      <p className="text-purple-200">Monitor your fine-tuning task</p>
+                    </div>
+
+                    {currentTask ? (
+                      <div className="max-w-2xl mx-auto space-y-4">
+                        {/* Status */}
+                        <div className="p-4 bg-white/10 rounded-lg">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-white font-medium">Status</span>
+                            <Badge variant={currentTask.status === 'Failed' ? 'destructive' : 'default'}>
+                              {currentTask.status}
+                            </Badge>
+                          </div>
+                          <div className="text-sm text-purple-200">
+                            Task ID: {currentTask.taskId}
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        {currentTask.status === 'Training' && (
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-purple-200">Training Progress</span>
+                              <span className="text-white">~50%</span>
+                            </div>
+                            <Progress value={50} className="h-2" />
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        {currentTask.status === 'Delivered' && (
+                          <div className="text-center">
+                            <Button
+                              onClick={() => acknowledgeModel(currentTask.taskId, selectedProvider)}
+                              className="bg-gradient-to-r from-purple-600 to-blue-600"
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Download & Acknowledge Model
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center text-purple-200">
+                        No active training task
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Navigation Buttons */}
+                <div className="flex justify-between pt-6 border-t border-white/10">
+                  <Button
+                    variant="outline"
+                    onClick={prevStep}
+                    disabled={currentStep === 1}
+                    className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-2" />
+                    Back
+                  </Button>
+
+                  <Button
+                    onClick={nextStep}
+                    disabled={!canProceedToStep(currentStep + 1) || currentStep === 6}
+                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white border-0"
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4 ml-2" />
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 
-            {/* Help */}
-            <Card className="bg-white/10 border-white/20 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="text-sm text-white">Need Help?</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm">
-                <p className="text-purple-200 mb-3">
-                  Learn more about Fine-tuning with 0G Compute Network
-                </p>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="w-full bg-white/10 border-white/20 text-white hover:bg-white/20"
+            {/* Collapsible Help Section */}
+            <Card className="bg-white/10 border-white/20 backdrop-blur-sm mt-4">
+              <CardHeader className="pb-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowHelp(!showHelp)}
+                  className="w-full justify-between text-white hover:bg-white/10 p-0"
                 >
-                  <ExternalLink className="h-3 w-3 mr-2" />
-                  Documentation
+                  <span className="font-medium">Help & Documentation</span>
+                  {showHelp ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </Button>
-              </CardContent>
+              </CardHeader>
+              {showHelp && (
+                <CardContent className="space-y-6">
+                  {/* Real SDK Integration Info */}
+                  <div>
+                    <h4 className="font-semibold text-white mb-3">✅ Real SDK Integration</h4>
+                    <p className="text-sm text-purple-200 mb-3">
+                      Connected to @0glabs/0g-serving-broker v0.2.14. All operations use real blockchain calls.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="p-3 bg-white/5 rounded text-sm">
+                        <div className="font-medium text-white">🔗 0G Storage Upload</div>
+                        <div className="text-purple-200">Real dataset upload to 0G Storage</div>
+                      </div>
+                      <div className="p-3 bg-white/5 rounded text-sm">
+                        <div className="font-medium text-white">🤖 6 AI Models</div>
+                        <div className="text-purple-200">DistilBERT, Llama, DeepSeek, GPT-3.5, Code Llama, Mistral</div>
+                      </div>
+                      <div className="p-3 bg-white/5 rounded text-sm">
+                        <div className="font-medium text-white">📡 Provider API</div>
+                        <div className="text-purple-200">Real task monitoring via 0G provider endpoints</div>
+                      </div>
+                      <div className="p-3 bg-white/5 rounded text-sm">
+                        <div className="font-medium text-white">💰 Real Payments</div>
+                        <div className="text-purple-200">Automatic micropayments on 0G Network</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Guide */}
+                  <div>
+                    <h4 className="font-semibold text-white mb-3">📋 Quick Guide</h4>
+                    <div className="space-y-2 text-sm">
+                      {[
+                        'Create Fine-tuning account with minimum 0.01 OG',
+                        'Upload training dataset (JSONL/JSON/TXT format)',
+                        'Select base model from 6 available options',
+                        'Configure training parameters or use presets',
+                        'Start fine-tuning and monitor progress',
+                        'Download and acknowledge completed model'
+                      ].map((step, index) => (
+                        <div key={index} className="flex items-start gap-2">
+                          <div className="w-5 h-5 rounded-full bg-gradient-to-r from-purple-400 to-pink-400 text-white text-xs flex items-center justify-center mt-0.5 flex-shrink-0">
+                            {index + 1}
+                          </div>
+                          <span className="text-purple-200">{step}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Documentation Link */}
+                  <div className="pt-3 border-t border-white/10">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full bg-white/10 border-white/20 text-white hover:bg-white/20"
+                    >
+                      <ExternalLink className="h-3 w-3 mr-2" />
+                      View Full Documentation
+                    </Button>
+                  </div>
+                </CardContent>
+              )}
             </Card>
           </div>
         </div>

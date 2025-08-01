@@ -518,7 +518,95 @@ Created collapsible help section for documentation content
 Result
 The Fine-tune page now provides a clean, intuitive, and fully functional interface that guides users through the complete AI model training process while maintaining the beautiful gradient design aesthetic.
 
+Problem
+The fine-tuning dataset upload functionality had critical issues preventing users from uploading training data:
 
+.txt and .json files: Upload button appeared to work but nothing happened (no network requests, no server logs)
+.jsonl files: Files uploaded to 0G Storage successfully but UI showed "Upload failed" error
+File size display: Always showed "0.00 MB" regardless of actual file size
+Format compatibility: No conversion to .jsonl format required by 0G fine-tuning system
+Root Cause
+API Response Format Mismatch: The upload endpoint returned { root, size } but the frontend expected { success: true, rootHash, size }
+Missing Format Conversion: 0G fine-tuning requires .jsonl format, but .json and .txt files weren't being converted
+Poor Error Handling: "File already exists" responses treated as failures instead of successful idempotent operations
+Solution
+Backend Changes
+Fixed API Response Format (/api/storage/upload-dataset):
+
+// Before
+return Response.json({ root, size })
+
+// After  
+return Response.json({ 
+  success: true, 
+  rootHash, 
+  size,
+  alreadyExists: false
+})
+Added Format Conversion:
+
+JSON → JSONL: Handles arrays, nested data structures, and single objects
+TXT → JSONL: Converts text lines to conversation message format
+JSONL: Passthrough (no conversion needed)
+Enhanced Error Handling:
+
+"File already exists" now returns success with alreadyExists: true
+Better validation messages for unsupported formats
+Graceful fallback handling
+Frontend Changes
+Updated Service Integration (lib/fine-tuning/service-simple.ts):
+
+const data = await response.json()
+if (!data.success) {
+  throw new Error(data.error || 'Upload failed')
+}
+
+const message = data.alreadyExists 
+  ? `Dataset already exists in 0G Storage. Root hash: ${data.rootHash}`
+  : `Dataset uploaded successfully. Root hash: ${data.rootHash}`
+Improved UI Display (app/agents/[id]/fine-tune/page.tsx):
+
+Shows actual file size in MB from File object
+Displays file type and conversion status
+Better upload success/error feedback
+Clear format support information
+Format Conversion Examples
+JSON Input:
+
+{
+  "data": [
+    {
+      "messages": [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is machine learning?"},
+        {"role": "assistant", "content": "Machine learning is..."}
+      ]
+    }
+  ]
+}
+Converted JSONL Output:
+
+{"messages":[{"role":"system","content":"You are a helpful assistant."},{"role":"user","content":"What is machine learning?"},{"role":"assistant","content":"Machine learning is..."}]}
+User Experience Improvements
+Format Indicator: "📄 .json and .txt files will be automatically converted to .jsonl format"
+File Details: Shows filename, actual size in MB, and file type
+Success Feedback: Clear confirmation with root hash preview
+Error Messages: Helpful validation feedback for unsupported formats
+Testing
+✅ Build Verification: TypeScript compilation and Next.js build successful
+✅ Format Conversion: All three formats (.jsonl, .json, .txt) convert correctly
+✅ API Integration: Proper request/response handling
+✅ UI Functionality: File selection, upload, and feedback working
+
+Result
+All three dataset formats now work correctly:
+
+✅ .txt files: Upload and convert to JSONL
+✅ .json files: Upload and convert to JSONL
+✅ .jsonl files: Upload without conversion
+✅ Proper file size display (no more "0.00 MB")
+✅ "File already exists" handled as success
+Users can now complete the fine-tuning workflow from dataset upload through model training without upload blockages.
 
 
 

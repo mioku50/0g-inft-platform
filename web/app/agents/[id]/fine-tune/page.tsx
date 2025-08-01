@@ -138,7 +138,7 @@ export default function FineTunePage() {
   // Step validation logic
   const isStepComplete = (stepId: number): boolean => {
     switch (stepId) {
-      case 1: return account?.exists && parseFloat(account.balance) >= 0.01
+      case 1: return !!(account?.exists && parseFloat(account.balance) >= 0.01)
       case 2: return uploadedDataset !== null
       case 3: return selectedModel !== ''
       case 4: return true // Parameters always valid with defaults
@@ -443,8 +443,9 @@ export default function FineTunePage() {
                           <div className="text-white mb-2">
                             {isDragActive ? 'Drop your dataset here' : 'Drag & drop your dataset, or click to browse'}
                           </div>
-                          <div className="text-sm text-purple-200">
-                            Supported: .jsonl, .json, .txt (max 100MB)
+                          <div className="text-sm text-purple-200 space-y-1">
+                            <div>Supported: .jsonl (recommended), .json, .txt (max 100MB)</div>
+                            <div className="text-xs">📄 .json and .txt files will be automatically converted to .jsonl format</div>
                           </div>
                         </div>
 
@@ -455,7 +456,7 @@ export default function FineTunePage() {
                               <div className="flex-1">
                                 <div className="text-white font-medium">{datasetFile.name}</div>
                                 <div className="text-sm text-purple-200">
-                                  {(datasetFile.size / 1024 / 1024).toFixed(2)} MB
+                                  {(datasetFile.size / 1024 / 1024).toFixed(2)} MB • {datasetFile.type || 'Unknown type'}
                                 </div>
                               </div>
                               <Button
@@ -477,7 +478,10 @@ export default function FineTunePage() {
                           <h4 className="text-lg font-semibold text-white mb-2">Dataset Uploaded</h4>
                           <div className="text-sm text-green-200 space-y-1">
                             <div>Root Hash: {uploadedDataset.rootHash.slice(0, 20)}...</div>
-                            <div>Size: {uploadedDataset.size} bytes</div>
+                            <div>Size: {(uploadedDataset.size / 1024 / 1024).toFixed(2)} MB</div>
+                            {datasetFile && (
+                              <div>Original: {datasetFile.name}</div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -704,7 +708,7 @@ export default function FineTunePage() {
                             </Badge>
                           </div>
                           <div className="text-sm text-purple-200">
-                            Task ID: {currentTask.taskId}
+                            Task ID: {currentTask.id}
                           </div>
                         </div>
 
@@ -723,7 +727,7 @@ export default function FineTunePage() {
                         {currentTask.status === 'Delivered' && (
                           <div className="text-center">
                             <Button
-                              onClick={() => acknowledgeModel(currentTask.taskId, selectedProvider)}
+                              onClick={() => acknowledgeModel(currentTask.id, selectedProvider)}
                               className="bg-gradient-to-r from-purple-600 to-blue-600"
                             >
                               <Download className="h-4 w-4 mr-2" />

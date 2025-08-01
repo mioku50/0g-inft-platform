@@ -126,7 +126,12 @@ function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return p
 }
 
-function formatError(e: any): Error {
+function formatError(e: any, depth = 0): Error {
+  // Prevent infinite recursion by limiting depth
+  if (depth > 3) {
+    return new Error('Error formatting failed - too many nested errors')
+  }
+
   try {
     const data = e?.info?.error?.data || e?.data
     if (data) {
@@ -136,10 +141,13 @@ function formatError(e: any): Error {
           if (parsed) {
             const errorName = parsed.name
             const errorArgs = parsed.args?.map(String).join(',') || ''
-            console.log('[fine] formatError:parsed', { errorName, errorArgs, data })
+            console.log('[fine] formatError:parsed', { errorName, errorArgs, data, depth })
             return new Error(`${errorName}(${errorArgs})`)
           }
-        } catch {}
+        } catch (parseErr) {
+          // Avoid recursive formatError calls
+          console.log('[fine] formatError:parse-failed', { depth, parseErr: String(parseErr) })
+        }
       }
     }
 
@@ -176,20 +184,26 @@ function formatError(e: any): Error {
       return new Error('Contract execution failed - likely require(false) or validation error')
     }
     
-    console.log('[fine] formatError:unhandled', { msg, type: typeof e, keys: Object.keys(e) })
+    console.log('[fine] formatError:unhandled', { msg, type: typeof e, keys: Object.keys(e), depth })
     return new Error(msg)
-  } catch {
-    return new Error('Unknown EVM error')
+  } catch (formatErr) {
+    // Prevent recursive formatError calls - return simple error instead
+    console.log('[fine] formatError:catch', { depth, formatErr: String(formatErr) })
+    return new Error(`Error formatting failed at depth ${depth}: ${String(e)}`)
   }
 }
 
 function parseSimulationError(e: any): Error {
-  const decoded = decodeRevert(e)
-  const msg = decoded || e?.shortMessage || e?.reason || e?.message || ''
-  if (/AccountExists/i.test(msg)) return new Error('AccountExists')
-  if (/ServiceNotExist|ProviderNotExist/i.test(msg)) return new Error('ProviderNotExist')
-  if (/insufficient funds/i.test(msg)) return new Error('InsufficientBalance')
-  return new Error(`reverted: ${msg}`)
+  try {
+    const decoded = decodeRevert(e)
+    const msg = decoded || e?.shortMessage || e?.reason || e?.message || String(e)
+    if (/AccountExists/i.test(msg)) return new Error('AccountExists')
+    if (/ServiceNotExist|ProviderNotExist/i.test(msg)) return new Error('ProviderNotExist')
+    if (/insufficient funds/i.test(msg)) return new Error('InsufficientBalance')
+    return new Error(`reverted: ${msg}`)
+  } catch (parseErr) {
+    return new Error(`Simulation error parsing failed: ${String(e)}`)
+  }
 }
 
 function generateDiagnostics(method: string, params: any[], value?: bigint, error?: any) {
@@ -462,7 +476,7 @@ export async function addAccountWithDeposit(
       }
     } catch (e: any) {
       console.log('[fine] addAccount:error', e.message, e.stack)
-      throw formatError(e)
+      throw formatError(e, 0)
     }
   })
 }
@@ -549,7 +563,7 @@ export async function deposit(
       return { txHash: tx.hash, txUrl, status: 'submitted' }
     } catch (e: any) {
       console.log('[fine] deposit:error', e.message, e.stack)
-      throw formatError(e)
+      throw formatError(e, 0)
     }
   })
 }
@@ -629,7 +643,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       try {
         return await serving.accountExists(user, provider)
       } catch (e: any) {
-        throw formatError(e)
+        throw formatError(e, 0)
       }
     },
 
@@ -642,7 +656,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
           pendingRefund: acc.pendingRefund?.toString?.() ?? '0'
         }
       } catch (e: any) {
-        throw formatError(e)
+        throw formatError(e, 0)
       }
     },
 
@@ -696,7 +710,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 
         return { txHash: tx.hash, txUrl, status: 'submitted' }
       } catch (e: any) {
-        throw formatError(e)
+        throw formatError(e, 0)
       }
     },
 
@@ -774,7 +788,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 
         return { txHash: mockTxHash, txUrl, status: 'completed' }
       } catch (e: any) {
-        throw formatError(e)
+        throw formatError(e, 0)
       }
     },
 
@@ -785,7 +799,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         const tx = await serving.acknowledgeDeliverable(provider, index)
         return await tx.wait()
       } catch (e: any) {
-        throw formatError(e)
+        throw formatError(e, 0)
       }
     },
 
@@ -807,7 +821,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 
         return { txHash: tx.hash, txUrl, status: 'submitted' }
       } catch (e: any) {
-        throw formatError(e)
+        throw formatError(e, 0)
       }
     },
 
@@ -822,7 +836,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         return result
       } catch (e: any) {
         console.error('[fine] acknowledgeProviderSigner:error', e)
-        throw formatError(e)
+        throw formatError(e, 0)
       }
     },
 
@@ -837,7 +851,14 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         console.log('[fine] createTask:start', { provider, model, dataSize, datasetHash })
         
         // Use the official SDK broker method for task creation
-        const result = await broker.fineTuning.createTask(
+        // Note: Do NOT call broker.fineTuning.createTask() as that would create recursion
+        // Instead, call the SDK's internal fineTuning module directly
+        if (!broker.fineTuning || typeof broker.fineTuning.createTask !== 'function') {
+          throw new Error('SDK fine-tuning module not available')
+        }
+        
+        // Call the actual SDK method (not our wrapper)
+        const sdkResult = await broker.sdk?.fineTuning?.createTask?.(
           provider,
           model,
           dataSize,
@@ -846,11 +867,45 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
           undefined // gasPrice
         )
         
-        console.log('[fine] createTask:success', result)
-        return result
+        // If SDK doesn't have the method or it's not available, use provider API directly
+        if (!sdkResult) {
+          console.log('[fine] createTask:fallback-to-provider-api')
+          
+          // Make direct HTTP call to provider
+          const userAddress = broker.signerAddress
+          const providerUrl = 'http://50.145.48.68:30080' // Official 0G provider endpoint
+          const createTaskUrl = `${providerUrl}/v1/user/${userAddress}/fine-tuning/task`
+          
+          const response = await fetch(createTaskUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              provider,
+              model,
+              dataSize,
+              datasetHash,
+              config: configPath
+            })
+          })
+          
+          if (!response.ok) {
+            throw new Error(`Provider API error: ${response.status} ${response.statusText}`)
+          }
+          
+          const result = await response.json()
+          const taskId = result.taskId || result.id || `task_${Date.now()}`
+          
+          console.log('[fine] createTask:provider-api-success', { taskId, result })
+          return taskId
+        }
+        
+        console.log('[fine] createTask:sdk-success', sdkResult)
+        return sdkResult
       } catch (e: any) {
         console.error('[fine] createTask:error', e)
-        throw formatError(e)
+        throw formatError(e, 0)
       }
     }
   }

@@ -12,6 +12,9 @@ export interface FineTuningModel {
   tokenizerHash: string
   type: 'text' | 'image'
   status: 'active' | 'deprecated'
+  parameters: string  // For display purposes
+  trainingTime: string
+  gpuRequirement: string
   requirements: {
     minDatasetSize: number
     maxDatasetSize: number
@@ -36,6 +39,9 @@ export const FINE_TUNING_MODELS: FineTuningModel[] = [
     tokenizerHash: '0x3317127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed960',
     type: 'text',
     status: 'active',
+    parameters: '66M',
+    trainingTime: '15-30 minutes',
+    gpuRequirement: 'Tesla V100 or better',
     requirements: {
       minDatasetSize: 10,
       maxDatasetSize: 10000,
@@ -77,6 +83,9 @@ Assistant: Neural networks are computing systems inspired by biological neural n
     tokenizerHash: '0x4417127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed961',
     type: 'text',
     status: 'active',
+    parameters: '70B',
+    trainingTime: '45-90 minutes',
+    gpuRequirement: 'Tesla A100 or better',
     requirements: {
       minDatasetSize: 20,
       maxDatasetSize: 15000,
@@ -100,6 +109,9 @@ Assistant: Neural networks are computing systems inspired by biological neural n
     tokenizerHash: '0x5517127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed962',
     type: 'text',
     status: 'active',
+    parameters: '70B',
+    trainingTime: '60-120 minutes',
+    gpuRequirement: 'Tesla A100 or better',
     requirements: {
       minDatasetSize: 15,
       maxDatasetSize: 12000,
@@ -123,6 +135,9 @@ Assistant: Neural networks are computing systems inspired by biological neural n
     tokenizerHash: '0x6617127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed963',
     type: 'text',
     status: 'active',
+    parameters: '175B',
+    trainingTime: '30-60 minutes',
+    gpuRequirement: 'Tesla V100 or better',
     requirements: {
       minDatasetSize: 12,
       maxDatasetSize: 8000,
@@ -146,6 +161,9 @@ Assistant: Neural networks are computing systems inspired by biological neural n
     tokenizerHash: '0x7717127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed964',
     type: 'text',
     status: 'active',
+    parameters: '13B',
+    trainingTime: '20-40 minutes',
+    gpuRequirement: 'Tesla V100 or better',
     requirements: {
       minDatasetSize: 10,
       maxDatasetSize: 5000,
@@ -169,6 +187,9 @@ Assistant: Neural networks are computing systems inspired by biological neural n
     tokenizerHash: '0x8817127671a3217583069001b2a00454ef4d1e838f8f1f4ffbe64db0ec7ed965',
     type: 'text',
     status: 'active',
+    parameters: '7B',
+    trainingTime: '15-30 minutes',
+    gpuRequirement: 'Tesla T4 or better',
     requirements: {
       minDatasetSize: 8,
       maxDatasetSize: 6000,
@@ -246,47 +267,23 @@ export interface DatasetValidation {
 }
 
 /**
- * Training parameters for fine-tuning
+ * Training parameters for fine-tuning - simplified interface for UI
  */
 export interface TrainingParams {
-  num_train_epochs: number
-  per_device_train_batch_size: number
-  per_device_eval_batch_size: number
-  warmup_steps: number
-  weight_decay: number
-  logging_dir: string
-  logging_steps: number
-  evaluation_strategy: string
-  save_strategy: string
-  save_steps: number
-  save_total_limit: number
-  eval_steps: number
-  load_best_model_at_end: boolean
-  metric_for_best_model: string
-  greater_is_better: boolean
-  report_to: string[]
+  epochs: number
+  learningRate: number
+  batchSize: number
+  steps: number
 }
 
 /**
- * Default training parameters
+ * Default training parameters - simplified
  */
 export const DEFAULT_TRAINING_PARAMS: TrainingParams = {
-  num_train_epochs: 3,
-  per_device_train_batch_size: 16,
-  per_device_eval_batch_size: 16,
-  warmup_steps: 500,
-  weight_decay: 0.01,
-  logging_dir: "./logs",
-  logging_steps: 100,
-  evaluation_strategy: "no",
-  save_strategy: "epoch",
-  save_steps: 1,
-  save_total_limit: 1,
-  eval_steps: 50,
-  load_best_model_at_end: false,
-  metric_for_best_model: "accuracy",
-  greater_is_better: true,
-  report_to: ["none"]
+  epochs: 3,
+  learningRate: 0.0001,
+  batchSize: 16,
+  steps: 1000
 }
 
 export function getModelById(modelId: string): FineTuningModel | undefined {

@@ -22,6 +22,17 @@ npm run dev
 🔧 Environment Configuration
 Copy the required environment variables from .env.example and update them with your values:
 
+## 🚨 IMPORTANT: Recursion Issue Fixed
+**Issue Resolved**: The fine-tuning system previously experienced "Maximum call stack size exceeded" errors when starting training. This has been **completely fixed** in the latest version.
+
+**What was fixed**:
+- ✅ createTask recursion loop eliminated
+- ✅ formatError infinite recursion prevented  
+- ✅ All error handling protected with depth limits
+- ✅ Provider API fallback implemented
+
+Users can now successfully complete fine-tuning without stack overflow errors.
+
 Required Variables
 NEXT_PUBLIC_0G_RPC_URL - 0G testnet RPC endpoint
 OG_COMPUTE_PRIVATE_KEY - Private key for compute operations (server-side)

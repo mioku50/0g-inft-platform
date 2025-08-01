@@ -608,7 +608,89 @@ All three dataset formats now work correctly:
 ✅ "File already exists" handled as success
 Users can now complete the fine-tuning workflow from dataset upload through model training without upload blockages.
 
+Problem
+On Step 2: Dataset of the fine-tuning workflow, the upload functionality was completely broken:
 
+Upload button clicks generated no network activity
+File size always displayed as "0.00 MB" regardless of actual file size
+Storage path permission errors caused API failures
+No support for automatic format conversion (.json/.txt → .jsonl)
+Solution
+🔧 Core Upload Fix
+Fixed storage path configuration that was causing permission denied errors when trying to create /data directory:
+
+// Before: Absolute path causing permission issues
+const METADATA_DIR = path.join(process.cwd(), 'data', 'metadata')
+
+// After: Relative path that works in serverless environment  
+const METADATA_DIR = path.join(__dirname, '..', '..', 'data', 'metadata')
+📏 File Size Display Fix
+Implemented intelligent file size formatting instead of always showing MB:
+
+// Before: Always showed 0.00 MB for small files
+{(datasetFile.size / 1024 / 1024).toFixed(2)} MB
+
+// After: Smart formatting based on file size
+{datasetFile.size >= 1024 * 1024 
+  ? `${(datasetFile.size / 1024 / 1024).toFixed(2)} MB` 
+  : datasetFile.size >= 1024 
+    ? `${(datasetFile.size / 1024).toFixed(1)} KB`
+    : `${datasetFile.size} bytes`
+}
+🔄 Format Conversion Implementation
+Added automatic conversion for 0G fine-tuning compatibility:
+
+.jsonl files: Pass through without modification (recommended format)
+.json files: Convert arrays/objects to JSONL format (one JSON object per line)
+.txt files: Convert text lines to conversation message format
+💾 localStorage Caching
+Added dataset persistence to improve user experience:
+
+Caches { rootHash, size, fileName, timestamp } per agent
+Automatically restores uploaded datasets on page refresh
+24-hour cache expiry for data freshness
+🌐 Network Resilience
+Enhanced error handling for network connectivity issues:
+
+Primary: Attempts upload to 0G Storage network
+Fallback: Uses local storage when network unavailable (sandbox environments)
+User-friendly success/error messages via toast notifications
+Testing Results
+All three supported formats now work correctly:
+
+# JSONL (recommended) - 92 bytes
+curl -X POST -F "file=@dataset.jsonl" /api/storage/upload-dataset
+# → {"success":true,"rootHash":"local://c971...","size":92}
+
+# JSON with conversion - 130 bytes → 118 bytes (converted)  
+curl -X POST -F "file=@dataset.json" /api/storage/upload-dataset
+# → {"success":true,"rootHash":"local://f541...","size":118}
+
+# TXT with conversion - converted to conversation format
+curl -X POST -F "file=@dataset.txt" /api/storage/upload-dataset  
+# → {"success":true,"rootHash":"local://f23b...","size":347}
+UI Screenshots
+Step 2: Dataset Upload Interface
+Dataset Upload Interface
+
+Working Upload with Correct File Size Display
+Upload Working
+
+The screenshots show:
+
+Beautiful preserved gradient design (purple-to-blue)
+Clear step-based navigation with progress indicators
+Functional drag & drop upload area
+Correct file size display ("130 bytes" instead of "0.00 MB")
+Upload button that actually triggers network requests
+Impact
+✅ Upload button now generates network requests and server logs
+✅ File size displays correctly (bytes/KB/MB based on actual size)
+✅ All three formats (.jsonl, .json, .txt) work with automatic conversion
+✅ "File already exists" handled as success scenario
+✅ Next step automatically unlocks after successful upload
+✅ Dataset data cached locally for improved UX
+This resolves the core blocking issue preventing users from uploading training datasets in the fine-tuning workflow.
 
 root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.git' -L 5
 .

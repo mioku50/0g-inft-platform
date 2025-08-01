@@ -221,11 +221,15 @@ export class FineTuningService {
         throw new Error(data.error || 'Upload failed')
       }
       
-      console.log(`Dataset uploaded successfully. Root hash: ${data.rootHash}`)
+      const message = data.alreadyExists 
+        ? `Dataset already exists in 0G Storage. Root hash: ${data.rootHash}`
+        : `Dataset uploaded successfully. Root hash: ${data.rootHash}`
+      
+      console.log(message)
       
       return {
         rootHash: data.rootHash,
-        size: file.size
+        size: data.size || file.size
       }
     } catch (error: any) {
       console.error('Failed to upload dataset:', error)

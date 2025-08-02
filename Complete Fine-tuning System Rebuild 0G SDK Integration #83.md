@@ -1291,6 +1291,57 @@ Proper 0G Fine-tuning Provider specification compliance
 Better user experience with clear, actionable error messages
 This resolves the core issue preventing users from accessing fine-tuning functionality due to incorrect provider health validation.
 
+Problem
+The fine-tuning system was attempting to call broker.fineTuning.createTask() which could be undefined in certain conditions, causing the entire fine-tuning workflow to fail before any HTTP requests were sent to the provider.
+
+Solution
+Completely removed SDK dependency and implemented direct HTTP communication with 0G providers as specified in the official API documentation:
+
+// Before (broken)
+taskId = await broker.fineTuning.createTask(provider, modelId, dataSize, datasetHash, config)
+
+// After (working)
+const response = await fetch(`${providerUrl}/v1/user/${userAddress}/task`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', ...authHeaders },
+  body: JSON.stringify({
+    userAddress,
+    datasetHash,
+    preTrainedModelHash,
+    trainingParams: JSON.stringify(config),
+    fee: "0",
+    nonce: Date.now().toString(),
+    signature: "0x"
+  })
+})
+Key Improvements
+Enhanced Error Handling
+
+Returns specific HTTP status codes (503 for provider unavailable, 422 for validation errors)
+Provides actionable error messages like "Provider rejected task: invalid preTrainedModelHash"
+Distinguishes between network failures and provider rejections
+Better Debugging
+
+Logs modelId and preTrainedModelHash for model validation issues
+Captures and logs raw provider responses for troubleshooting
+Clear step-by-step error context
+API Compliance
+
+Uses correct endpoint /v1/user/{userAddress}/task (not the incorrect /fine-tuning/task)
+Follows 0G provider specification for request payload structure
+Maintains authentication via broker.inference.getRequestHeaders()
+Testing
+All validation checks pass:
+
+✅ No remaining SDK calls that could fail
+✅ Direct HTTP implementation with proper error handling
+✅ Correct 0G provider API endpoint usage
+✅ No recursive function calls
+Impact
+Users can now complete the fine-tuning workflow without encountering the createTask undefined error. The system provides clear feedback when providers reject requests due to invalid model hashes or unsupported models, making debugging much easier.
+
+
+
 
 
 

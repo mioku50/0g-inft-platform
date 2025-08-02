@@ -829,8 +829,12 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       try {
         console.log('[fine] acknowledgeProviderSigner:start', { provider })
         
-        // Use the official SDK broker method for Fine Tune acknowledge
-        // Call the actual SDK method, not our wrapper to avoid recursion
+        // Use the official SDK broker method for inference acknowledge
+        // Call the actual SDK inference method, not our wrapper to avoid recursion
+        if (!broker.inference || typeof broker.inference.acknowledgeProviderSigner !== 'function') {
+          throw new Error('SDK inference.acknowledgeProviderSigner not available')
+        }
+        
         const result = await broker.inference.acknowledgeProviderSigner(provider)
         
         console.log('[fine] acknowledgeProviderSigner:success', result)
@@ -851,8 +855,8 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       try {
         console.log('[fine] createTask:start', { provider, model, dataSize, datasetHash })
         
-        // Don't call SDK methods that don't exist. Use direct provider API calls.
-        console.log('[fine] createTask:using-provider-api')
+        // Always use direct provider API calls as per 0G specification
+        console.log('[fine] createTask:using-provider-api-only')
         
         // Make direct HTTP call to provider
         const userAddress = broker.signerAddress
@@ -879,14 +883,28 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         
         if (!response.ok) {
           const errorText = await response.text()
+          console.error('[fine] createTask:provider-api-error', { 
+            status: response.status, 
+            statusText: response.statusText, 
+            error: errorText 
+          })
           throw new Error(`Provider API error: ${response.status} ${response.statusText}: ${errorText}`)
         }
         
-        const result = await response.json()
-        const taskId = result.taskId || result.id || `task_${Date.now()}`
-        
-        console.log('[fine] createTask:provider-api-success', { taskId, result })
-        return taskId
+        // Expect 204 No Content according to 0G specification
+        let result
+        if (response.status === 204) {
+          // 204 No Content is success, no response body expected
+          const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+          console.log('[fine] createTask:success-204', { taskId })
+          return taskId
+        } else {
+          // If not 204, try to parse JSON response
+          result = await response.json()
+          const taskId = result.taskId || result.id || `task_${Date.now()}`
+          console.log('[fine] createTask:success-json', { taskId, result })
+          return taskId
+        }
       } catch (e: any) {
         console.error('[fine] createTask:error', e)
         throw formatError(e, 0)

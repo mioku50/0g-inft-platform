@@ -122,6 +122,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
+    console.log('📥 Received fine-tune request:', { 
+      agentId: body.agentId, 
+      userAddress: body.userAddress, 
+      modelId: body.modelId,
+      datasetSize: body.datasetSize,
+      providerAddress: body.providerAddress 
+    })
+
     const {
       agentId,
       userAddress,
@@ -132,17 +140,43 @@ export async function POST(request: NextRequest) {
       providerAddress
     } = body
 
-    if (!agentId || !userAddress || !modelId || !datasetHash || !datasetSize) {
+    // Enhanced validation with detailed error messages
+    const validationErrors = []
+    if (!agentId) validationErrors.push('agentId is required')
+    if (!userAddress) validationErrors.push('userAddress is required')
+    if (!ethers.isAddress(userAddress)) validationErrors.push('userAddress must be a valid Ethereum address')
+    if (!modelId) validationErrors.push('modelId is required')
+    if (!datasetHash) validationErrors.push('datasetHash is required')
+    if (!datasetSize || isNaN(parseInt(datasetSize))) validationErrors.push('datasetSize must be a valid number')
+
+    if (validationErrors.length > 0) {
+      console.error('❌ Validation failed:', validationErrors)
       return NextResponse.json(
-        { error: 'Missing required parameters: agentId, userAddress, modelId, datasetHash, datasetSize' },
+        { error: 'Validation failed', details: validationErrors },
         { status: 400 }
       )
     }
 
+    // Validate datasetHash format
+    if (!datasetHash.startsWith('0x') && !datasetHash.match(/^[a-fA-F0-9]{64}$/)) {
+      console.error('❌ Invalid datasetHash format:', datasetHash)
+      return NextResponse.json(
+        { error: 'datasetHash must be a valid hash (0x prefixed or 64 hex chars)' },
+        { status: 400 }
+      )
+    }
+
+    // Initialize broker with detailed error logging
+    console.log('🔧 Initializing 0G broker...')
     const broker = await getBroker()
     if (!broker) {
-      return NextResponse.json({ error: 'Failed to initialize broker' }, { status: 500 })
+      console.error('❌ Failed to initialize 0G broker')
+      return NextResponse.json({ 
+        error: 'Failed to initialize 0G broker',
+        details: 'Check OG_COMPUTE_PRIVATE_KEY and network configuration'
+      }, { status: 500 })
     }
+    console.log('✅ 0G broker initialized successfully')
 
     // Create config for training parameters
     const config = {
@@ -168,64 +202,106 @@ export async function POST(request: NextRequest) {
     const provider = providerAddress || '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
     
     // Calculate hashes for on-chain attestation
+    console.log('🧮 Calculating hashes for attestation...')
     const trainingParamsHash = calculateTrainingParamsHash(config)
-    const pretrainedHash = getModelHash(modelId) // Get from models definition
+    const pretrainedHash = getModelHash(modelId)
     
     console.log(`🚀 Creating fine-tuning task for agent ${agentId}...`)
-
-    // Step 1: Create task using 0G SDK (platform-funded)
-    const taskId = await broker.fineTuning.createTask(
+    console.log(`📊 Parameters:`, {
       provider,
       modelId,
-      parseInt(datasetSize),
-      datasetHash,
-      JSON.stringify(config)
-    )
-
-    console.log(`✅ Task created with ID: ${taskId}`)
-
-    // Step 2: Attest task creation on-chain (platform pays gas)
-    const txHashAttested = await AgentModelRegistryService.attestTask(
-      parseInt(agentId),
-      userAddress,
-      provider,
-      datasetHash,
-      pretrainedHash,
-      trainingParamsHash,
-      taskId
-    )
-
-    console.log(`✅ Task attested on-chain: ${txHashAttested}`)
-
-    // Step 3: Save task to database
-    await db.createTrainingTask({
-      taskId,
-      agentId: parseInt(agentId),
-      userAddress,
-      providerAddress: provider,
-      modelId,
-      datasetRootHash: datasetHash,
-      trainingParamsHash,
-      status: 'Init',
-      txHashAttested
+      datasetSize: parseInt(datasetSize),
+      datasetHash: datasetHash.slice(0, 10) + '...',
+      configKeys: Object.keys(config)
     })
 
-    console.log(`✅ Task saved to database`)
+    // Step 1: Create task using 0G SDK (platform-funded)
+    let taskId: string
+    try {
+      taskId = await broker.fineTuning.createTask(
+        provider,
+        modelId,
+        parseInt(datasetSize),
+        datasetHash,
+        JSON.stringify(config)
+      )
+      console.log(`✅ Task created with ID: ${taskId}`)
+    } catch (createError: any) {
+      console.error('❌ Failed to create task with 0G SDK:', createError)
+      return NextResponse.json({
+        error: 'Failed to create task with 0G provider',
+        details: createError.message,
+        provider,
+        step: '0G SDK createTask'
+      }, { status: 500 })
+    }
 
-    return NextResponse.json({
+    // Step 2: Attest task creation on-chain (platform pays gas)
+    let txHashAttested: string
+    try {
+      console.log('⛓️  Attesting task creation on-chain...')
+      txHashAttested = await AgentModelRegistryService.attestTask(
+        parseInt(agentId),
+        userAddress,
+        provider,
+        datasetHash,
+        pretrainedHash,
+        trainingParamsHash,
+        taskId
+      )
+      console.log(`✅ Task attested on-chain: ${txHashAttested}`)
+    } catch (attestError: any) {
+      console.error('❌ Failed to attest task on-chain:', attestError)
+      return NextResponse.json({
+        error: 'Failed to attest task on blockchain',
+        details: attestError.message,
+        taskId,
+        step: 'on-chain attestation'
+      }, { status: 500 })
+    }
+
+    // Step 3: Save task to database
+    try {
+      console.log('💾 Saving task to database...')
+      await db.createTrainingTask({
+        taskId,
+        agentId: parseInt(agentId),
+        userAddress,
+        providerAddress: provider,
+        modelId,
+        datasetRootHash: datasetHash,
+        trainingParamsHash,
+        status: 'Init',
+        txHashAttested
+      })
+      console.log(`✅ Task saved to database`)
+    } catch (dbError: any) {
+      console.error('❌ Failed to save task to database:', dbError)
+      // Don't fail the entire request for database issues
+      console.warn('⚠️  Continuing despite database save failure')
+    }
+
+    const result = {
       success: true,
       taskId,
       txHashAttested,
       chainLink: AgentModelRegistryService.getChainLink(txHashAttested),
       message: 'Fine-tuning task created and attested successfully'
-    })
+    }
+
+    console.log('🎉 Fine-tuning task created successfully:', result)
+    return NextResponse.json(result)
 
   } catch (error: any) {
-    console.error('Failed to create fine-tuning task:', error)
-    return NextResponse.json(
-      { error: error.message || 'Failed to create task' },
-      { status: 500 }
-    )
+    console.error('💥 Unexpected error in fine-tune API:', error)
+    console.error('Stack trace:', error.stack)
+    
+    return NextResponse.json({
+      error: 'Internal server error',
+      message: error.message || 'An unexpected error occurred',
+      timestamp: new Date().toISOString(),
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    }, { status: 500 })
   }
 }
 

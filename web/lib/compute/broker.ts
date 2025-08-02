@@ -857,7 +857,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         // Make direct HTTP call to provider
         const userAddress = broker.signerAddress
         const providerUrl = getProviderUrl(provider)
-        const createTaskUrl = `${providerUrl}/v1/user/${userAddress}/fine-tuning/task`
+        const createTaskUrl = `${providerUrl}/v1/user/${userAddress}/task`
         
         // Get proper headers using broker inference module
         const headers = await broker.inference.getRequestHeaders(provider, configPath)

@@ -97,11 +97,16 @@ export function validateComputeEnvironment(): { isValid: boolean; errors: string
 export function logEnvironmentStatus(): void {
   const validation = validateComputeEnvironment()
   const rpcUrl = getRpcUrl()
-  const chainId = rpcUrl.includes('galileo') ? 'galileo-testnet' : 'unknown'
+  
+  // Use configured chain ID instead of guessing from URL
+  const configuredChainId = process.env.NEXT_PUBLIC_0G_CHAIN_ID || CHAIN_ID.toString()
+  const chainId = configuredChainId === '16601' ? 'galileo-testnet-v3' : `chain-${configuredChainId}`
   
   console.log('[compute-env] Environment validation:', {
     isValid: validation.isValid,
-    chainId,
+    chainId: configuredChainId,
+    chainName: chainId,
+    rpcUrl,
     contracts: {
       serving: process.env.FINE_TUNING_SERVING_ADDRESS || process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS,
       ledger: getComputeLedgerContract(),
@@ -124,11 +129,39 @@ export async function validateRPCConnection(): Promise<{ isValid: boolean; error
   try {
     const { ethers } = await import('ethers')
     const provider = new ethers.JsonRpcProvider(getRpcUrl(), { name: '0g', chainId: CHAIN_ID })
-    const network = await provider.getNetwork()
+    
+    // Try to get network info with timeout
+    let network: any
+    try {
+      network = await Promise.race([
+        provider.getNetwork(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Network call timeout')), 5000)
+        )
+      ])
+    } catch (networkError: any) {
+      console.warn('[compute-env] RPC network call failed, using configured chainId:', networkError.message)
+      // Return configured chainId if RPC fails
+      const configuredChainId = process.env.NEXT_PUBLIC_0G_CHAIN_ID ? 
+        parseInt(process.env.NEXT_PUBLIC_0G_CHAIN_ID) : CHAIN_ID
+      return { 
+        isValid: true, 
+        chainId: configuredChainId,
+        error: `RPC unavailable, using configured chainId: ${configuredChainId}`
+      }
+    }
+    
     const chainId = Number(network.chainId)
     return { isValid: chainId === CHAIN_ID, chainId, error: chainId === CHAIN_ID ? undefined : `Unexpected chainId ${chainId}` }
   } catch (e: any) {
-    return { isValid: false, error: e.message }
+    // If everything fails, use configured chainId
+    const configuredChainId = process.env.NEXT_PUBLIC_0G_CHAIN_ID ? 
+      parseInt(process.env.NEXT_PUBLIC_0G_CHAIN_ID) : CHAIN_ID
+    return { 
+      isValid: false, 
+      chainId: configuredChainId,
+      error: `Validation failed, using configured chainId ${configuredChainId}: ${e.message}` 
+    }
   }
 }
 

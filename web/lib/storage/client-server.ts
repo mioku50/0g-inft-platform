@@ -87,7 +87,7 @@ export async function uploadToStorage(file: File | Buffer | string, fileName = '
   try {
     console.log('Attempting real 0G Storage upload...')
     return await client.upload(data, fileName)
-  } catch (err) {
+  } catch (err: any) {
     console.log('Real 0G Storage upload failed, falling back to local storage:', err?.message || err)
     const content = typeof file === 'string' ? file : data.toString()
     const localHash = await saveLocal(content)

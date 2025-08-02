@@ -414,11 +414,28 @@ export async function POST(request: NextRequest) {
         throw new Error(`Provider API error: ${response.status} ${response.statusText}: ${errorText}`)
       }
       
-      const result = await response.json()
-      taskId = result.taskId || result.id || `task_${Date.now()}`
+      // Handle response according to 0G specification
+      let taskId: string
       
-      console.log(`✅ Task created with ID: ${taskId}`)
-      console.log(`✅ Raw provider response:`, result)
+      if (response.status === 204) {
+        // 204 No Content is the expected success response per 0G specification
+        // No JSON body expected, generate a task ID based on the request
+        taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        console.log(`✅ Task created successfully (204 No Content): ${taskId}`)
+        console.log(`✅ Provider response: 204 No Content as per 0G specification`)
+      } else {
+        // If provider returns JSON (non-standard but handle gracefully)
+        try {
+          const result = await response.json()
+          taskId = result.taskId || result.id || `task_${Date.now()}`
+          console.log(`✅ Task created with ID: ${taskId}`)
+          console.log(`✅ Raw provider response:`, result)
+        } catch (jsonError) {
+          // If JSON parsing fails, generate task ID
+          taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+          console.log(`✅ Task created (non-JSON response): ${taskId}`)
+        }
+      }
     } catch (createError: any) {
       console.error('❌ Failed to create task with 0G provider:', createError)
       

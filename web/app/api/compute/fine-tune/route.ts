@@ -386,6 +386,7 @@ export async function POST(request: NextRequest) {
       
       console.log(`🚀 Creating task via provider API: ${createTaskUrl}`)
       console.log(`📦 Payload:`, taskPayload)
+      console.log(`🎯 Model details: modelId=${modelId}, preTrainedModelHash=${pretrainedHash}`)
       
       const response = await fetch(createTaskUrl, {
         method: 'POST',
@@ -400,6 +401,16 @@ export async function POST(request: NextRequest) {
         const errorText = await response.text()
         console.error(`❌ Provider API error: ${response.status} ${response.statusText}`)
         console.error(`❌ Error details: ${errorText}`)
+        console.error(`❌ Raw provider response:`, errorText)
+        
+        // Check for specific provider errors mentioned in problem statement
+        if (response.status === 400 && errorText.includes('preTrainedModelHash')) {
+          throw new Error(`Provider rejected task: invalid preTrainedModelHash for model ${modelId}`)
+        }
+        if (response.status === 400 && errorText.includes('model')) {
+          throw new Error(`Unsupported model ${modelId} for this provider`)
+        }
+        
         throw new Error(`Provider API error: ${response.status} ${response.statusText}: ${errorText}`)
       }
       
@@ -407,7 +418,7 @@ export async function POST(request: NextRequest) {
       taskId = result.taskId || result.id || `task_${Date.now()}`
       
       console.log(`✅ Task created with ID: ${taskId}`)
-      console.log(`✅ Provider response:`, result)
+      console.log(`✅ Raw provider response:`, result)
     } catch (createError: any) {
       console.error('❌ Failed to create task with 0G provider:', createError)
       
@@ -422,6 +433,24 @@ export async function POST(request: NextRequest) {
           provider,
           step: 'Provider API call'
         }, { status: 503 })
+      }
+      
+      if (createError.message?.includes('invalid preTrainedModelHash')) {
+        return NextResponse.json({
+          error: 'Provider rejected task: invalid preTrainedModelHash',
+          details: `Model hash not recognized by provider. Model: ${modelId}, Hash: ${pretrainedHash}`,
+          provider,
+          step: 'Model validation'
+        }, { status: 422 })
+      }
+      
+      if (createError.message?.includes('Unsupported model')) {
+        return NextResponse.json({
+          error: `Unsupported model for this provider`,
+          details: `Model ${modelId} is not supported by provider ${provider}`,
+          provider,
+          step: 'Model compatibility check'
+        }, { status: 422 })
       }
       
       if (createError.message?.includes('400') || 

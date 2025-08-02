@@ -702,6 +702,80 @@ Impact
 ✅ Next step automatically unlocks after successful upload
 ✅ Dataset data cached locally for improved UX
 This resolves the core blocking issue preventing users from uploading training datasets in the fine-tuning workflow.
+Fix fine-tuning system recursion causing "Maximum call stack size exceeded" #89
+ Draft
+Copilot wants to merge 3 commits into main from copilot/fix-f4dbe133-8564-42e6-a987-3c0891243912  
++666 −26 
+ Conversation 0
+ Commits 3
+ Checks 0
+ Files changed 6
+Conversation
+Copilot
+Copilot AI commented 10 hours ago • 
+Problem
+The fine-tuning system was experiencing critical "Maximum call stack size exceeded" errors when users clicked "Start Fine-tuning", completely preventing any fine-tuning operations from working. This was causing HTTP 500 responses and blocking the entire Step 5: Training workflow.
+
+Root Cause
+Two recursive function calls were creating infinite loops:
+
+createTask recursion: The createTask method in broker.ts was calling itself indefinitely:
+
+createTask: async (...) => {
+  // This called the same method recursively!
+  const result = await broker.fineTuning.createTask(...)
+}
+formatError recursion: Error formatting was triggering additional errors in nested try/catch blocks, leading to recursive formatError calls without depth protection.
+
+Solution
+1. Fixed createTask Method
+Replaced the recursive call with proper SDK method resolution and provider API fallback:
+
+createTask: async (...) => {
+  // Call SDK's internal method, not our wrapper
+  const sdkResult = await broker.sdk?.fineTuning?.createTask?.(...)
+  
+  // Fallback to direct provider API if SDK unavailable
+  if (!sdkResult) {
+    const response = await fetch(`${providerUrl}/v1/user/${userAddress}/fine-tuning/task`, {
+      method: 'POST',
+      body: JSON.stringify({ provider, model, dataSize, datasetHash, config })
+    })
+    return (await response.json()).taskId
+  }
+}
+2. Added formatError Depth Protection
+Implemented recursion depth limiting to prevent infinite error formatting:
+
+function formatError(e: any, depth = 0): Error {
+  // Prevent infinite recursion
+  if (depth > 3) {
+    return new Error('Error formatting failed - too many nested errors')
+  }
+  
+  try {
+    // Error processing...
+  } catch (formatErr) {
+    // Return simple error instead of recursive call
+    return new Error(`Error formatting failed at depth ${depth}: ${String(e)}`)
+  }
+}
+3. Updated All Error Handling
+Applied depth protection across all broker methods (10+ instances):
+
+accountExists, getAccount, addAccount, depositFund, etc.
+All now use formatError(e, 0) instead of formatError(e)
+Testing
+✅ TypeScript compilation successful
+✅ No recursive calls detected in code analysis
+✅ Stack overflow protection tests pass
+✅ Error handling scenarios protected
+✅ End-to-end workflow simulation successful
+Impact
+Before: Users encountered stack overflow when starting fine-tuning
+After: Users can successfully complete the entire fine-tuning workflow from Step 5: Training through Step 6: Monitor
+
+This fix resolves the core blocking issue mentioned in the requirements, allowing the fine-tuning system to work as intended with real 0G SDK integration.
 
 root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.git' -L 5
 .

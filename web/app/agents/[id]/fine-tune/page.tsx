@@ -97,7 +97,8 @@ export default function FineTunePage() {
     acknowledgeModel,
     acknowledgeProvider,
     setCurrentTask,
-    clearError
+    clearError,
+    activateModel
   } = useFineTuning()
 
   // Local state for workflow
@@ -227,6 +228,7 @@ export default function FineTunePage() {
     try {
       const taskId = await createTask({
         agentId,
+        userAddress: address!,
         modelId: selectedModel,
         datasetHash: uploadedDataset.rootHash,
         datasetSize: uploadedDataset.size,
@@ -729,7 +731,7 @@ export default function FineTunePage() {
                   <div className="space-y-6">
                     <div className="text-center">
                       <h3 className="text-xl font-semibold text-white mb-2">Training Progress</h3>
-                      <p className="text-purple-200">Monitor your fine-tuning task</p>
+                      <p className="text-purple-200">Monitor your fine-tuning task and manage model versions</p>
                     </div>
 
                     {currentTask ? (
@@ -745,6 +747,11 @@ export default function FineTunePage() {
                           <div className="text-sm text-purple-200">
                             Task ID: {currentTask.id}
                           </div>
+                          {currentTask.status === 'Init' && (
+                            <div className="text-xs text-blue-300 mt-1">
+                              ✅ Task created and attested on-chain
+                            </div>
+                          )}
                         </div>
 
                         {/* Progress Bar */}
@@ -758,23 +765,120 @@ export default function FineTunePage() {
                           </div>
                         )}
 
-                        {/* Actions */}
+                        {/* Model Delivered - Show Candidate Status */}
                         {currentTask.status === 'Delivered' && (
-                          <div className="text-center">
-                            <Button
-                              onClick={() => acknowledgeModel(currentTask.id, selectedProvider)}
-                              className="bg-gradient-to-r from-purple-600 to-blue-600"
-                            >
-                              <Download className="h-4 w-4 mr-2" />
-                              Download & Acknowledge Model
-                            </Button>
+                          <div className="space-y-4">
+                            <div className="p-4 bg-green-500/20 border border-green-500/30 rounded-lg">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center space-x-2">
+                                  <CheckCircle className="h-5 w-5 text-green-400" />
+                                  <span className="text-white font-medium">Model Delivered</span>
+                                </div>
+                                <Badge variant="secondary" className="bg-orange-500/20 text-orange-300 border-orange-500/30">
+                                  Candidate
+                                </Badge>
+                              </div>
+                              <div className="text-sm text-green-300">
+                                Model trained successfully and delivered to 0G Storage
+                              </div>
+                              {currentTask.modelRootHash && (
+                                <div className="text-xs text-green-200 mt-1 font-mono">
+                                  Hash: {currentTask.modelRootHash.slice(0, 20)}...
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="text-center">
+                              <Button
+                                onClick={async () => {
+                                  if (!currentTask.modelRootHash || !address) return
+                                  
+                                  try {
+                                    const result = await activateModel(agentId, currentTask.modelRootHash)
+                                    if (result) {
+                                      toast({
+                                        title: 'Model Activated',
+                                        description: 'Model is now active for this agent',
+                                        action: {
+                                          altText: 'View on chain',
+                                          onClick: () => window.open(result.chainLink, '_blank')
+                                        }
+                                      })
+                                      // Refresh to show new status
+                                      setTimeout(() => window.location.reload(), 2000)
+                                    }
+                                  } catch (error) {
+                                    toast({
+                                      variant: 'destructive',
+                                      title: 'Activation Failed',
+                                      description: error instanceof Error ? error.message : 'Failed to activate model'
+                                    })
+                                  }
+                                }}
+                                className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700"
+                                disabled={!currentTask.modelRootHash || !address}
+                              >
+                                <Zap className="h-4 w-4 mr-2" />
+                                Make Active
+                              </Button>
+                              <p className="text-xs text-purple-300 mt-2">
+                                This will set the trained model as the active version for your agent
+                              </p>
+                            </div>
                           </div>
                         )}
+
+                        {/* Model Finished/Acknowledged */}
+                        {currentTask.status === 'Finished' && (
+                          <div className="p-4 bg-blue-500/20 border border-blue-500/30 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center space-x-2">
+                                <CheckCircle className="h-5 w-5 text-blue-400" />
+                                <span className="text-white font-medium">Training Complete</span>
+                              </div>
+                              <Badge variant="secondary" className="bg-green-500/20 text-green-300 border-green-500/30">
+                                Active
+                              </Badge>
+                            </div>
+                            <div className="text-sm text-blue-300">
+                              Model has been activated and is now live for this agent
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Failed Status */}
+                        {currentTask.status === 'Failed' && (
+                          <div className="p-4 bg-red-500/20 border border-red-500/30 rounded-lg">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <AlertCircle className="h-5 w-5 text-red-400" />
+                              <span className="text-white font-medium">Training Failed</span>
+                            </div>
+                            <div className="text-sm text-red-300">
+                              {currentTask.error || 'Training encountered an error'}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* View on Chain Links */}
+                        <div className="flex justify-center space-x-4 pt-4">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open(`https://chainscan-galileo.0g.ai/tx/${currentTask.id}`, '_blank')}
+                            className="text-purple-300 border-purple-300 hover:bg-purple-300 hover:text-purple-900"
+                          >
+                            <ExternalLink className="h-3 w-3 mr-1" />
+                            View on Chain
+                          </Button>
+                        </div>
                       </div>
                     ) : (
                       <div className="text-center text-purple-200">
                         No active training task
                       </div>
+                    )}
+                  </div>
+                )}
                     )}
                   </div>
                 )}

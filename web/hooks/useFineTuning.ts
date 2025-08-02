@@ -58,6 +58,10 @@ interface UseFineTuningActions {
   // Utilities
   clearError: () => void
   setCurrentTask: (task: FineTuningTask | null) => void
+  
+  // Model activation
+  activateModel: (agentId: string, modelRootHash: string, consentSignature?: { signature: string; hash: string }) => Promise<{ txHashActivated: string; chainLink: string } | null>
+  getAgentModelInfo: (agentId: string) => Promise<any>
 }
 
 export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
@@ -245,19 +249,30 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
   }) => {
     return await withLoading(async () => {
       const service = await getService()
-      const taskId = await service.createTask(params)
+      
+      // Add userAddress to params for new API
+      const createParams = {
+        ...params,
+        userAddress: address!
+      }
+      
+      const result = await service.createTask(createParams)
       
       // Refresh account to show locked funds
       await refreshAccount()
       
       toast({
-        title: 'Task Created',
-        description: `Fine-tuning task created. Task ID: ${taskId}`
+        title: 'Task Created & Attested',
+        description: `Fine-tuning task created and attested on-chain. Task ID: ${result.taskId}`,
+        action: result.chainLink ? {
+          altText: 'View on chain',
+          onClick: () => window.open(result.chainLink, '_blank')
+        } : undefined
       })
       
-      return taskId
+      return result.taskId
     }, 'Failed to create Fine-tuning task')
-  }, [getService, withLoading, refreshAccount])
+  }, [getService, withLoading, refreshAccount, address])
 
   const getTask = useCallback(async (taskId: string, providerAddress?: string) => {
     return await withLoading(async () => {
@@ -330,6 +345,36 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
     setState(prev => ({ ...prev, currentTask: task }))
   }, [])
 
+  // Model activation
+  const activateModel = useCallback(async (
+    agentId: string, 
+    modelRootHash: string, 
+    consentSignature?: { signature: string; hash: string }
+  ) => {
+    return await withLoading(async () => {
+      const service = await getService()
+      const result = await service.activateModel(agentId, modelRootHash, address!, consentSignature)
+      
+      toast({
+        title: 'Model Activated',
+        description: `Model has been activated and is now live for agent ${agentId}`,
+        action: result.chainLink ? {
+          altText: 'View on chain',
+          onClick: () => window.open(result.chainLink, '_blank')
+        } : undefined
+      })
+      
+      return result
+    }, 'Failed to activate model')
+  }, [getService, withLoading, address])
+
+  const getAgentModelInfo = useCallback(async (agentId: string) => {
+    return await withLoading(async () => {
+      const service = await getService()
+      return await service.getAgentModelInfo(agentId)
+    }, 'Failed to get agent model info')
+  }, [getService, withLoading])
+
   // Auto-refresh account when wallet connects
   useEffect(() => {
     if (isConnected && walletClient) {
@@ -356,6 +401,8 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
     listProviders,
     acknowledgeProvider,
     clearError,
-    setCurrentTask
+    setCurrentTask,
+    activateModel,
+    getAgentModelInfo
   }
 }

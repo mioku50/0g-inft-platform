@@ -359,16 +359,17 @@ export class FineTuningService {
   }
 
   /**
-   * Create a Fine-tuning task via API route
+   * Create a Fine-tuning task via API route with on-chain attestation
    */
   async createTask(params: {
     agentId: string
+    userAddress: string
     modelId: string
     datasetHash: string
     datasetSize: number
     trainingParams?: Partial<TrainingParams>
     providerAddress?: string
-  }): Promise<string> {
+  }): Promise<{ taskId: string; txHashAttested: string; chainLink: string }> {
     await this.initialize()
     
     try {
@@ -378,6 +379,8 @@ export class FineTuningService {
       }
 
       console.log('Creating Fine-tuning task:', {
+        agentId: params.agentId,
+        userAddress: params.userAddress,
         model: params.modelId,
         dataset: params.datasetHash,
         provider: params.providerAddress,
@@ -393,7 +396,8 @@ export class FineTuningService {
       })
       
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        const errorData = await response.json()
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
       }
       
       const data = await response.json()
@@ -401,9 +405,15 @@ export class FineTuningService {
         throw new Error(data.error || 'Failed to create task')
       }
       
-      console.log(`Fine-tuning task created successfully. Task ID: ${data.taskId}`)
+      console.log(`✅ Fine-tuning task created successfully`)
+      console.log(`📄 Task ID: ${data.taskId}`)
+      console.log(`🔗 On-chain attestation: ${data.txHashAttested}`)
       
-      return data.taskId
+      return {
+        taskId: data.taskId,
+        txHashAttested: data.txHashAttested,
+        chainLink: data.chainLink
+      }
     } catch (error: any) {
       console.error('Failed to create Fine-tuning task:', error)
       throw error
@@ -532,6 +542,87 @@ export class FineTuningService {
       console.log(`Task ${taskId} cancelled successfully`)
     } catch (error: any) {
       console.error('Failed to cancel task:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Activate a candidate model (make it the active model for an agent)
+   */
+  async activateModel(
+    agentId: string,
+    modelRootHash: string,
+    userAddress: string,
+    consentSignature?: { signature: string; hash: string }
+  ): Promise<{ txHashActivated: string; chainLink: string }> {
+    await this.initialize()
+    
+    try {
+      console.log(`Activating model for agent ${agentId}...`)
+      
+      const response = await fetch(`/api/agents/${agentId}/activate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          modelRootHash,
+          userAddress,
+          consentSignature
+        })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to activate model')
+      }
+      
+      console.log(`✅ Model activated successfully`)
+      console.log(`🔗 On-chain activation: ${data.txHashActivated}`)
+      
+      return {
+        txHashActivated: data.txHashActivated,
+        chainLink: data.chainLink
+      }
+    } catch (error: any) {
+      console.error('Failed to activate model:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get agent model information (active and candidate models)
+   */
+  async getAgentModelInfo(agentId: string): Promise<{
+    agentId: number;
+    summary: any;
+    onChain: {
+      activeModel: string;
+      candidateModel: { modelRoot: string; hasCandidate: boolean };
+    };
+  }> {
+    await this.initialize()
+    
+    try {
+      const response = await fetch(`/api/agents/${agentId}/activate`)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to get model info')
+      }
+      
+      return data
+    } catch (error: any) {
+      console.error('Failed to get agent model info:', error)
       throw error
     }
   }

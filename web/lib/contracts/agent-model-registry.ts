@@ -1,0 +1,350 @@
+// lib/contracts/agent-model-registry.ts
+// Integration with AgentModelRegistry smart contract
+
+import { ethers } from 'ethers';
+import AgentModelRegistryABI from '@/contracts/AgentModelRegistry.abi.json';
+
+// Contract configuration for Galileo Testnet v3
+const AGENT_MODEL_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_MODEL_REGISTRY_ADDRESS || 
+  '0x0000000000000000000000000000000000000000'; // Will be set after deployment
+
+const RPC_URL = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai';
+const PLATFORM_PRIVATE_KEY = process.env.OG_COMPUTE_PRIVATE_KEY;
+
+if (!PLATFORM_PRIVATE_KEY) {
+  throw new Error('OG_COMPUTE_PRIVATE_KEY environment variable required for platform operations');
+}
+
+// Provider and signer for platform operations
+const provider = new ethers.JsonRpcProvider(RPC_URL);
+const platformSigner = new ethers.Wallet(PLATFORM_PRIVATE_KEY, provider);
+
+// Contract instance
+const registryContract = new ethers.Contract(
+  AGENT_MODEL_REGISTRY_ADDRESS,
+  AgentModelRegistryABI,
+  platformSigner
+);
+
+/**
+ * Platform service for interacting with AgentModelRegistry
+ * All methods are called by the platform on behalf of users
+ */
+export class AgentModelRegistryService {
+  
+  /**
+   * Attest the creation of a fine-tuning task on-chain
+   * Platform pays gas for this transaction
+   */
+  static async attestTask(
+    tokenId: number,
+    userAddress: string,
+    providerAddress: string,
+    datasetRoot: string,
+    pretrainedHash: string,
+    trainingParamsHash: string,
+    taskId: string
+  ): Promise<string> {
+    try {
+      console.log(`🔗 Attesting task creation for agent ${tokenId}...`);
+      
+      // Validate inputs
+      if (!ethers.isAddress(userAddress)) {
+        throw new Error('Invalid user address');
+      }
+      if (!ethers.isAddress(providerAddress)) {
+        throw new Error('Invalid provider address');
+      }
+      
+      // Convert strings to bytes32 if needed
+      const datasetRootBytes32 = datasetRoot.startsWith('0x') ? datasetRoot : ethers.keccak256(ethers.toUtf8Bytes(datasetRoot));
+      const pretrainedHashBytes32 = pretrainedHash.startsWith('0x') ? pretrainedHash : ethers.keccak256(ethers.toUtf8Bytes(pretrainedHash));
+      const trainingParamsHashBytes32 = trainingParamsHash.startsWith('0x') ? trainingParamsHash : ethers.keccak256(ethers.toUtf8Bytes(trainingParamsHash));
+      
+      // Call contract method (platform pays gas)
+      const tx = await registryContract.attestTask(
+        tokenId,
+        userAddress,
+        providerAddress,
+        datasetRootBytes32,
+        pretrainedHashBytes32,
+        trainingParamsHashBytes32,
+        taskId
+      );
+      
+      console.log(`📄 TaskCreated transaction sent: ${tx.hash}`);
+      
+      // Wait for confirmation
+      const receipt = await tx.wait();
+      
+      if (receipt.status !== 1) {
+        throw new Error('Transaction failed');
+      }
+      
+      console.log(`✅ Task attested successfully in block ${receipt.blockNumber}`);
+      
+      return tx.hash;
+      
+    } catch (error: any) {
+      console.error('Failed to attest task:', error);
+      throw new Error(`Task attestation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Attest the delivery of a trained model on-chain
+   * Platform pays gas for this transaction
+   */
+  static async attestDelivery(
+    tokenId: number,
+    userAddress: string,
+    providerAddress: string,
+    modelRoot: string,
+    metricsHash: string,
+    logRoot: string,
+    taskId: string
+  ): Promise<string> {
+    try {
+      console.log(`🔗 Attesting model delivery for agent ${tokenId}...`);
+      
+      // Validate inputs
+      if (!ethers.isAddress(userAddress)) {
+        throw new Error('Invalid user address');
+      }
+      if (!ethers.isAddress(providerAddress)) {
+        throw new Error('Invalid provider address');
+      }
+      
+      // Convert strings to bytes32 if needed
+      const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot));
+      const metricsHashBytes32 = metricsHash.startsWith('0x') ? metricsHash : ethers.keccak256(ethers.toUtf8Bytes(metricsHash));
+      const logRootBytes32 = logRoot.startsWith('0x') ? logRoot : ethers.keccak256(ethers.toUtf8Bytes(logRoot));
+      
+      // Call contract method (platform pays gas)
+      const tx = await registryContract.attestDelivery(
+        tokenId,
+        userAddress,
+        providerAddress,
+        modelRootBytes32,
+        metricsHashBytes32,
+        logRootBytes32,
+        taskId
+      );
+      
+      console.log(`📄 ModelDelivered transaction sent: ${tx.hash}`);
+      
+      // Wait for confirmation
+      const receipt = await tx.wait();
+      
+      if (receipt.status !== 1) {
+        throw new Error('Transaction failed');
+      }
+      
+      console.log(`✅ Model delivery attested successfully in block ${receipt.blockNumber}`);
+      
+      return tx.hash;
+      
+    } catch (error: any) {
+      console.error('Failed to attest delivery:', error);
+      throw new Error(`Delivery attestation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Set active model for an agent on-chain
+   * Platform pays gas for this transaction
+   */
+  static async setActiveModel(
+    tokenId: number,
+    modelRoot: string,
+    byAddress: string
+  ): Promise<string> {
+    try {
+      console.log(`🔗 Setting active model for agent ${tokenId}...`);
+      
+      // Validate inputs
+      if (!ethers.isAddress(byAddress)) {
+        throw new Error('Invalid address');
+      }
+      
+      // Convert string to bytes32 if needed
+      const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot));
+      
+      // Call contract method (platform pays gas)
+      const tx = await registryContract.setActiveModel(
+        tokenId,
+        modelRootBytes32,
+        byAddress
+      );
+      
+      console.log(`📄 ModelActivated transaction sent: ${tx.hash}`);
+      
+      // Wait for confirmation
+      const receipt = await tx.wait();
+      
+      if (receipt.status !== 1) {
+        throw new Error('Transaction failed');
+      }
+      
+      console.log(`✅ Model activated successfully in block ${receipt.blockNumber}`);
+      
+      return tx.hash;
+      
+    } catch (error: any) {
+      console.error('Failed to set active model:', error);
+      throw new Error(`Model activation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get active model for an agent (read-only)
+   */
+  static async getActiveModel(tokenId: number): Promise<string> {
+    try {
+      const activeModel = await registryContract.getActiveModel(tokenId);
+      return activeModel;
+    } catch (error: any) {
+      console.error('Failed to get active model:', error);
+      return '0x0000000000000000000000000000000000000000000000000000000000000000';
+    }
+  }
+
+  /**
+   * Get candidate model for an agent (read-only)
+   */
+  static async getCandidateModel(tokenId: number): Promise<{ modelRoot: string; hasCandidate: boolean }> {
+    try {
+      const [modelRoot, hasCandidate] = await registryContract.getCandidateModel(tokenId);
+      return {
+        modelRoot,
+        hasCandidate
+      };
+    } catch (error: any) {
+      console.error('Failed to get candidate model:', error);
+      return {
+        modelRoot: '0x0000000000000000000000000000000000000000000000000000000000000000',
+        hasCandidate: false
+      };
+    }
+  }
+
+  /**
+   * Get all model versions for an agent (read-only)
+   */
+  static async getModelVersions(tokenId: number): Promise<any[]> {
+    try {
+      const versions = await registryContract.getModelVersions(tokenId);
+      return versions;
+    } catch (error: any) {
+      console.error('Failed to get model versions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Check if a model was delivered for an agent (read-only)
+   */
+  static async isModelDelivered(tokenId: number, modelRoot: string): Promise<boolean> {
+    try {
+      const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot));
+      const isDelivered = await registryContract.isModelDelivered(tokenId, modelRootBytes32);
+      return isDelivered;
+    } catch (error: any) {
+      console.error('Failed to check model delivery:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if a task was processed (read-only)
+   */
+  static async isTaskProcessed(taskId: string): Promise<boolean> {
+    try {
+      const isProcessed = await registryContract.isTaskProcessed(taskId);
+      return isProcessed;
+    } catch (error: any) {
+      console.error('Failed to check task status:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Generate chain link for viewing transaction
+   */
+  static getChainLink(txHash: string): string {
+    return `https://chainscan-galileo.0g.ai/tx/${txHash}`;
+  }
+
+  /**
+   * Get contract address for frontend
+   */
+  static getContractAddress(): string {
+    return AGENT_MODEL_REGISTRY_ADDRESS;
+  }
+
+  /**
+   * Validate contract deployment
+   */
+  static async validateContract(): Promise<boolean> {
+    try {
+      if (AGENT_MODEL_REGISTRY_ADDRESS === '0x0000000000000000000000000000000000000000') {
+        console.warn('⚠️  AgentModelRegistry contract address not configured');
+        return false;
+      }
+      
+      const owner = await registryContract.owner();
+      const expectedOwner = platformSigner.address;
+      
+      if (owner.toLowerCase() !== expectedOwner.toLowerCase()) {
+        console.error(`❌ Contract owner mismatch. Expected: ${expectedOwner}, Got: ${owner}`);
+        return false;
+      }
+      
+      console.log('✅ AgentModelRegistry contract validated');
+      return true;
+      
+    } catch (error: any) {
+      console.error('Failed to validate contract:', error);
+      return false;
+    }
+  }
+}
+
+// Utility function to calculate hashes
+export function calculateTrainingParamsHash(params: any): string {
+  return ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(params)));
+}
+
+export function calculateMetricsHash(metrics: any): string {
+  return ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(metrics)));
+}
+
+// Event listeners for real-time updates (optional)
+export class AgentModelRegistryEvents {
+  
+  static setupEventListeners() {
+    // Listen for TaskCreated events
+    registryContract.on('TaskCreated', (tokenId, user, provider, datasetRoot, pretrainedHash, trainingParamsHash, taskId, timestamp) => {
+      console.log(`🎉 TaskCreated event: Agent ${tokenId}, Task ${taskId}`);
+      // Emit to frontend via WebSocket/SSE if needed
+    });
+
+    // Listen for ModelDelivered events
+    registryContract.on('ModelDelivered', (tokenId, user, provider, modelRoot, metricsHash, logRoot, taskId, timestamp) => {
+      console.log(`🎉 ModelDelivered event: Agent ${tokenId}, Task ${taskId}`);
+      // Update database and notify frontend
+    });
+
+    // Listen for ModelActivated events
+    registryContract.on('ModelActivated', (tokenId, modelRoot, by, timestamp) => {
+      console.log(`🎉 ModelActivated event: Agent ${tokenId}`);
+      // Update database and notify frontend
+    });
+  }
+
+  static removeEventListeners() {
+    registryContract.removeAllListeners();
+  }
+}
+
+export default AgentModelRegistryService;

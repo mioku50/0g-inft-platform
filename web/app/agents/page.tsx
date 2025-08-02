@@ -20,7 +20,7 @@ import {
 } from '@/components/ui'
 import Link from 'next/link'
 import { INFT_ABI, AGENT_MARKETPLACE_ABI } from '@/lib/contracts/abis'
-import { toast } from '@/components/ui'
+import { toast } from '@/hooks/use-toast'
 import { parseEther, formatEther } from 'viem'
 import { 
   ShoppingCart, 
@@ -41,6 +41,7 @@ import { TransferModal } from '@/components/agents/TransferModal'
 import { CloneModal } from '@/components/agents/CloneModal'
 import { PromptManager } from '@/components/agents/PromptManager'
 import AgentAvatar from '@/components/agents/AgentAvatar'
+import { ModelStatusBadge } from '@/components/agents/ModelStatusBadge'
 import { getCachedMetadata } from '@/lib/cache/local-metadata'
 
 const metadataCache = new Map<string, any>()
@@ -101,6 +102,33 @@ const AgentCard = React.memo(({
           <Badge className="bg-purple-100 text-purple-700 border-0">
             {agent.metadata?.model || 'Unknown'}
           </Badge>
+        </div>
+        
+        {/* Model Status Badges */}
+        <div className="mb-3">
+          <ModelStatusBadge 
+            agentId={agent.tokenId} 
+            compact={true}
+            onActivateModel={async (agentId, modelRootHash) => {
+              try {
+                // For now, just show a toast - full implementation would need activation logic
+                toast({
+                  title: 'Model Activation',
+                  description: `Navigate to agent ${agentId} fine-tune page to activate the candidate model`,
+                  action: {
+                    altText: 'Go to Fine-tune',
+                    onClick: () => window.open(`/agents/${agentId}/fine-tune`, '_blank')
+                  }
+                })
+              } catch (error) {
+                toast({
+                  variant: 'destructive',
+                  title: 'Activation Failed',
+                  description: error instanceof Error ? error.message : 'Failed to activate model'
+                })
+              }
+            }}
+          />
         </div>
         
         <p className="text-gray-600 text-sm mb-4 line-clamp-2">

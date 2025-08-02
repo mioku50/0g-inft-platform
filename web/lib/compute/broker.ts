@@ -830,7 +830,8 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         console.log('[fine] acknowledgeProviderSigner:start', { provider })
         
         // Use the official SDK broker method for Fine Tune acknowledge
-        const result = await broker.fineTuning.acknowledgeProviderSigner(provider)
+        // Call the actual SDK method, not our wrapper to avoid recursion
+        const result = await broker.inference.acknowledgeProviderSigner(provider)
         
         console.log('[fine] acknowledgeProviderSigner:success', result)
         return result
@@ -850,59 +851,42 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       try {
         console.log('[fine] createTask:start', { provider, model, dataSize, datasetHash })
         
-        // Use the official SDK broker method for task creation
-        // Note: Do NOT call broker.fineTuning.createTask() as that would create recursion
-        // Instead, call the SDK's internal fineTuning module directly
-        if (!broker.fineTuning || typeof broker.fineTuning.createTask !== 'function') {
-          throw new Error('SDK fine-tuning module not available')
-        }
+        // Don't call SDK methods that don't exist. Use direct provider API calls.
+        console.log('[fine] createTask:using-provider-api')
         
-        // Call the actual SDK method (not our wrapper)
-        const sdkResult = await broker.sdk?.fineTuning?.createTask?.(
-          provider,
-          model,
-          dataSize,
-          datasetHash,
-          configPath,
-          undefined // gasPrice
-        )
+        // Make direct HTTP call to provider
+        const userAddress = broker.signerAddress
+        const providerUrl = getProviderUrl(provider)
+        const createTaskUrl = `${providerUrl}/v1/user/${userAddress}/fine-tuning/task`
         
-        // If SDK doesn't have the method or it's not available, use provider API directly
-        if (!sdkResult) {
-          console.log('[fine] createTask:fallback-to-provider-api')
-          
-          // Make direct HTTP call to provider
-          const userAddress = broker.signerAddress
-          const providerUrl = 'http://50.145.48.68:30080' // Official 0G provider endpoint
-          const createTaskUrl = `${providerUrl}/v1/user/${userAddress}/fine-tuning/task`
-          
-          const response = await fetch(createTaskUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              provider,
-              model,
-              dataSize,
-              datasetHash,
-              config: configPath
-            })
+        // Get proper headers using broker inference module
+        const headers = await broker.inference.getRequestHeaders(provider, configPath)
+        
+        const response = await fetch(createTaskUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...headers
+          },
+          body: JSON.stringify({
+            provider,
+            model,
+            dataSize,
+            datasetHash,
+            config: configPath
           })
-          
-          if (!response.ok) {
-            throw new Error(`Provider API error: ${response.status} ${response.statusText}`)
-          }
-          
-          const result = await response.json()
-          const taskId = result.taskId || result.id || `task_${Date.now()}`
-          
-          console.log('[fine] createTask:provider-api-success', { taskId, result })
-          return taskId
+        })
+        
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`Provider API error: ${response.status} ${response.statusText}: ${errorText}`)
         }
         
-        console.log('[fine] createTask:sdk-success', sdkResult)
-        return sdkResult
+        const result = await response.json()
+        const taskId = result.taskId || result.id || `task_${Date.now()}`
+        
+        console.log('[fine] createTask:provider-api-success', { taskId, result })
+        return taskId
       } catch (e: any) {
         console.error('[fine] createTask:error', e)
         throw formatError(e, 0)
@@ -913,6 +897,18 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
 
 
 export { getFineTuneProvider }
+
+// Provider URL mapping helper
+function getProviderUrl(providerAddress: string): string {
+  // Map provider addresses to their URLs
+  const providerUrls: Record<string, string> = {
+    '0x960E74Fc0AF1a6fBcADA3eEFCBe3152fA5E87A5f': 'http://50.145.48.68:30080',
+    '0xf07240Efa67755B5311bc75784a061eDB47165Dd': 'http://50.145.48.68:30080',
+    '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3': 'http://50.145.48.68:30080'
+  }
+  
+  return providerUrls[providerAddress] || 'http://50.145.48.68:30080'
+}
 
 export async function getBroker() {
   return getBrokerOrThrow()

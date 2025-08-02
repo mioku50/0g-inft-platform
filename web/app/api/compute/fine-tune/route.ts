@@ -226,7 +226,32 @@ export async function POST(request: NextRequest) {
       ...trainingParams
     }
 
-    const provider = providerAddress || '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
+    // Unified provider address management - config as source of truth
+    const configProvider = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER || '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
+    let finalProvider = configProvider
+    
+    // If user provided a different provider, validate it against allowed list
+    if (providerAddress && providerAddress !== configProvider) {
+      const allowedProviders = [
+        '0x960E74Fc0AF1a6fBcADA3eEFCBe3152fA5E87A5f',
+        '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
+        '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'
+      ]
+      
+      if (allowedProviders.includes(providerAddress)) {
+        finalProvider = providerAddress
+        console.log(`📋 Using user-selected provider: ${providerAddress}`)
+      } else {
+        console.warn(`⚠️  Invalid provider ${providerAddress}, using config default: ${configProvider}`)
+        finalProvider = configProvider
+      }
+    }
+    
+    console.log(`🎯 Final provider selection: ${finalProvider}`)
+    console.log(`🌐 Provider endpoint: ${getProviderUrl(finalProvider)}`)
+    console.log(`📊 Dataset hash: ${normalizedDatasetHash}`)
+    
+    const provider = finalProvider
     
     // Calculate hashes for on-chain attestation
     console.log('🧮 Calculating hashes for attestation...')
@@ -242,6 +267,39 @@ export async function POST(request: NextRequest) {
       configKeys: Object.keys(config)
     })
 
+    // Step 0: Preflight check - verify provider is available
+    try {
+      console.log('🔍 Running provider preflight check...')
+      const providerUrl = getProviderUrl(provider)
+      const healthUrl = `${providerUrl}/v1/quote/health`
+      
+      const healthResponse = await fetch(healthUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      })
+      
+      if (!healthResponse.ok) {
+        console.warn(`⚠️  Provider health check failed: ${healthResponse.status}`)
+        return NextResponse.json({
+          error: 'Provider unavailable, try later',
+          details: `Provider health check failed with status ${healthResponse.status}`,
+          provider,
+          step: 'preflight health check'
+        }, { status: 503 })
+      }
+      
+      console.log('✅ Provider preflight check passed')
+    } catch (preflightError: any) {
+      console.warn('⚠️  Provider preflight check failed:', preflightError.message)
+      return NextResponse.json({
+        error: 'Provider unavailable, try later',
+        details: `Provider not responding: ${preflightError.message}`,
+        provider,
+        step: 'preflight health check'
+      }, { status: 503 })
+    }
+
     // Step 1: Create task using 0G SDK (platform-funded)
     let taskId: string
     try {
@@ -255,11 +313,34 @@ export async function POST(request: NextRequest) {
       console.log(`✅ Task created with ID: ${taskId}`)
     } catch (createError: any) {
       console.error('❌ Failed to create task with 0G SDK:', createError)
+      
+      // Enhanced error handling with specific status codes
+      if (createError.message?.includes('Provider unavailable') || 
+          createError.message?.includes('Provider not responding')) {
+        return NextResponse.json({
+          error: 'Provider unavailable, try later',
+          details: createError.message,
+          provider,
+          step: 'Provider API call'
+        }, { status: 503 })
+      }
+      
+      if (createError.message?.includes('Invalid') || 
+          createError.message?.includes('validation')) {
+        return NextResponse.json({
+          error: 'Invalid request parameters',
+          details: createError.message,
+          provider,
+          step: 'Parameter validation'
+        }, { status: 422 })
+      }
+      
       return NextResponse.json({
         error: 'Failed to create task with 0G provider',
         details: createError.message,
         provider,
-        step: '0G SDK createTask'
+        step: '0G SDK createTask',
+        context: 'Task creation failed during provider communication'
       }, { status: 500 })
     }
 
@@ -279,11 +360,24 @@ export async function POST(request: NextRequest) {
       console.log(`✅ Task attested on-chain: ${txHashAttested}`)
     } catch (attestError: any) {
       console.error('❌ Failed to attest task on-chain:', attestError)
+      
+      // Enhanced error handling for attestation failures
+      if (attestError.message?.includes('insufficient funds')) {
+        return NextResponse.json({
+          error: 'Platform account insufficient funds',
+          details: 'Platform needs more ETH for gas fees',
+          taskId,
+          step: 'On-chain attestation',
+          context: 'Platform gas account needs funding'
+        }, { status: 500 })
+      }
+      
       return NextResponse.json({
         error: 'Failed to attest task on blockchain',
         details: attestError.message,
         taskId,
-        step: 'on-chain attestation'
+        step: 'On-chain attestation',
+        context: 'Blockchain transaction failed'
       }, { status: 500 })
     }
 

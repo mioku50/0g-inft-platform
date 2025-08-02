@@ -25,6 +25,7 @@ export interface ModelVersion {
   deliveredAt?: Date;
   activatedAt?: Date;
   archivedAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface TrainingTask {

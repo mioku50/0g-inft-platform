@@ -111,6 +111,9 @@ export default function FineTunePage() {
   const [depositAmount, setDepositAmount] = useState('0.01')
   const [taskPolling, setTaskPolling] = useState<NodeJS.Timeout | null>(null)
   const [showHelp, setShowHelp] = useState(false)
+  const [taskCreationTxHash, setTaskCreationTxHash] = useState<string>('')
+  const [candidateModels, setCandidateModels] = useState<any[]>([])
+  const [activeModel, setActiveModel] = useState<any>(null)
 
   // Initialize defaults
   useEffect(() => {
@@ -225,7 +228,7 @@ export default function FineTunePage() {
     if (!uploadedDataset || !selectedModel) return
 
     try {
-      const taskId = await createTask({
+      const taskResult = await createTask({
         agentId,
         modelId: selectedModel,
         datasetHash: uploadedDataset.rootHash,
@@ -234,15 +237,25 @@ export default function FineTunePage() {
         providerAddress: selectedProvider
       })
 
-      if (taskId) {
+      if (taskResult) {
+        // Store transaction hash for "View on chain" link
+        if (taskResult.txHash) {
+          setTaskCreationTxHash(taskResult.txHash)
+        }
+
         // Start polling for status
         const polling = setInterval(async () => {
-          const task = await getTask(taskId, selectedProvider)
+          const task = await getTask(taskResult, selectedProvider)
           if (task) {
             setCurrentTask(task)
             if (task.status === 'Delivered' || task.status === 'Finished' || task.status === 'Failed') {
               if (taskPolling) clearInterval(taskPolling)
               setTaskPolling(null)
+              
+              // Load candidate models when task is delivered
+              if (task.status === 'Delivered') {
+                loadCandidateModels()
+              }
             }
           }
         }, 15000)
@@ -254,6 +267,71 @@ export default function FineTunePage() {
       console.error('Training start error:', error)
     }
   }
+
+  // Load candidate models for the agent
+  const loadCandidateModels = async () => {
+    try {
+      const response = await fetch(`/api/agents/${agentId}/activate`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setCandidateModels(data.candidateModels || [])
+          setActiveModel(data.activeModel)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load candidate models:', error)
+    }
+  }
+
+  // Handle model activation
+  const handleActivateModel = async (modelRootHash: string) => {
+    if (!address) return
+
+    try {
+      const response = await fetch(`/api/agents/${agentId}/activate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          modelRootHash,
+          userAddress: address
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          toast({
+            title: 'Model Activated',
+            description: `Model is now active for Agent #${agentId}`
+          })
+          
+          // Refresh candidate models
+          loadCandidateModels()
+        } else {
+          throw new Error(data.error || 'Activation failed')
+        }
+      } else {
+        throw new Error('Activation request failed')
+      }
+    } catch (error: any) {
+      console.error('Model activation error:', error)
+      toast({
+        title: 'Activation Failed',
+        description: error.message,
+        variant: 'destructive'
+      })
+    }
+  }
+
+  // Load candidate models on mount
+  useEffect(() => {
+    if (agentId) {
+      loadCandidateModels()
+    }
+  }, [agentId])
 
   if (!isConnected) {
     return (
@@ -677,49 +755,77 @@ export default function FineTunePage() {
                     </div>
 
                     <div className="max-w-2xl mx-auto space-y-6">
-                      {/* Summary */}
-                      <div className="p-6 bg-white/10 rounded-lg space-y-4">
-                        <h4 className="font-semibold text-white">Training Summary</h4>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="text-purple-200">Model:</span>
-                            <div className="text-white font-medium">
-                              {getActiveModels().find(m => m.id === selectedModel)?.name}
-                            </div>
-                          </div>
-                          <div>
-                            <span className="text-purple-200">Dataset:</span>
-                            <div className="text-white font-medium">
-                              {uploadedDataset ? `${uploadedDataset.size} bytes` : 'None'}
-                            </div>
-                          </div>
-                          <div>
-                            <span className="text-purple-200">Epochs:</span>
-                            <div className="text-white font-medium">{trainingParams.epochs}</div>
-                          </div>
-                          <div>
-                            <span className="text-purple-200">Learning Rate:</span>
-                            <div className="text-white font-medium">{trainingParams.learningRate}</div>
+                      {/* Task Created Success */}
+                      {currentTask && (
+                        <div className="p-6 bg-green-900/20 border border-green-500/50 rounded-lg text-center">
+                          <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-400" />
+                          <h4 className="text-lg font-semibold text-white mb-2">Task Created Successfully</h4>
+                          <div className="text-sm text-green-200 space-y-2">
+                            <div>Task ID: {currentTask.id}</div>
+                            {taskCreationTxHash && (
+                              <div className="pt-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                                  onClick={() => window.open(`https://chainscan-galileo.0g.ai/tx/${taskCreationTxHash}`, '_blank')}
+                                >
+                                  <ExternalLink className="h-3 w-3 mr-2" />
+                                  View on Chain
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      </div>
+                      )}
 
-                      {/* Start Button */}
-                      <div className="text-center">
-                        <Button
-                          onClick={handleStartTraining}
-                          disabled={loading || !uploadedDataset || !selectedModel}
-                          className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white border-0 px-8 py-3"
-                          size="lg"
-                        >
-                          {loading ? (
-                            <Clock className="h-5 w-5 mr-2 animate-spin" />
-                          ) : (
-                            <Play className="h-5 w-5 mr-2" />
-                          )}
-                          Start Fine-tuning
-                        </Button>
-                      </div>
+                      {/* Summary */}
+                      {!currentTask && (
+                        <>
+                          <div className="p-6 bg-white/10 rounded-lg space-y-4">
+                            <h4 className="font-semibold text-white">Training Summary</h4>
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="text-purple-200">Model:</span>
+                                <div className="text-white font-medium">
+                                  {getActiveModels().find(m => m.id === selectedModel)?.name}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-purple-200">Dataset:</span>
+                                <div className="text-white font-medium">
+                                  {uploadedDataset ? `${uploadedDataset.size} bytes` : 'None'}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-purple-200">Epochs:</span>
+                                <div className="text-white font-medium">{trainingParams.epochs}</div>
+                              </div>
+                              <div>
+                                <span className="text-purple-200">Learning Rate:</span>
+                                <div className="text-white font-medium">{trainingParams.learningRate}</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Start Button */}
+                          <div className="text-center">
+                            <Button
+                              onClick={handleStartTraining}
+                              disabled={loading || !uploadedDataset || !selectedModel}
+                              className="bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white border-0 px-8 py-3"
+                              size="lg"
+                            >
+                              {loading ? (
+                                <Clock className="h-5 w-5 mr-2 animate-spin" />
+                              ) : (
+                                <Play className="h-5 w-5 mr-2" />
+                              )}
+                              Start Fine-tuning
+                            </Button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -758,12 +864,45 @@ export default function FineTunePage() {
                           </div>
                         )}
 
+                        {/* Model Delivered */}
+                        {currentTask.status === 'Delivered' && (
+                          <div className="p-6 bg-green-900/20 border border-green-500/50 rounded-lg">
+                            <div className="text-center space-y-4">
+                              <CheckCircle className="h-12 w-12 mx-auto text-green-400" />
+                              <h4 className="text-lg font-semibold text-white">Model Delivered</h4>
+                              <div className="space-y-2">
+                                <Badge className="bg-orange-600 text-white">Candidate</Badge>
+                                <div className="text-sm text-green-200">
+                                  {currentTask.modelRootHash && (
+                                    <div>Model: {currentTask.modelRootHash.slice(0, 16)}...</div>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {/* Make Active Button */}
+                              <Button
+                                onClick={() => currentTask.modelRootHash && handleActivateModel(currentTask.modelRootHash)}
+                                className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white border-0"
+                                disabled={loading}
+                              >
+                                {loading ? (
+                                  <Clock className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                  <Sparkles className="h-4 w-4 mr-2" />
+                                )}
+                                Make Active
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Actions */}
                         {currentTask.status === 'Delivered' && (
                           <div className="text-center">
                             <Button
                               onClick={() => acknowledgeModel(currentTask.id, selectedProvider)}
-                              className="bg-gradient-to-r from-purple-600 to-blue-600"
+                              variant="outline"
+                              className="bg-white/10 border-white/20 text-white hover:bg-white/20"
                             >
                               <Download className="h-4 w-4 mr-2" />
                               Download & Acknowledge Model
@@ -774,6 +913,69 @@ export default function FineTunePage() {
                     ) : (
                       <div className="text-center text-purple-200">
                         No active training task
+                      </div>
+                    )}
+
+                    {/* Candidate Models */}
+                    {candidateModels.length > 0 && (
+                      <div className="max-w-2xl mx-auto">
+                        <h4 className="text-lg font-semibold text-white mb-4">Candidate Models</h4>
+                        <div className="space-y-3">
+                          {candidateModels.map((model, index) => (
+                            <div key={index} className="p-4 bg-white/10 rounded-lg">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Badge className="bg-orange-600 text-white">Candidate</Badge>
+                                    <span className="text-sm text-purple-200">
+                                      {new Date(model.createdAt * 1000).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                  <div className="text-sm text-purple-200">
+                                    Model: {model.modelRootHash?.slice(0, 16)}...
+                                  </div>
+                                  <div className="text-sm text-purple-200">
+                                    Task: {model.taskId}
+                                  </div>
+                                </div>
+                                <Button
+                                  onClick={() => handleActivateModel(model.modelRootHash)}
+                                  size="sm"
+                                  className="bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white border-0"
+                                  disabled={loading}
+                                >
+                                  {loading ? (
+                                    <Clock className="h-3 w-3 mr-1 animate-spin" />
+                                  ) : (
+                                    <Sparkles className="h-3 w-3 mr-1" />
+                                  )}
+                                  Make Active
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Active Model */}
+                    {activeModel && (
+                      <div className="max-w-2xl mx-auto">
+                        <h4 className="text-lg font-semibold text-white mb-4">Active Model</h4>
+                        <div className="p-4 bg-green-900/20 border border-green-500/50 rounded-lg">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge className="bg-green-600 text-white">Active v{activeModel.id}</Badge>
+                            <span className="text-sm text-green-200">
+                              Activated: {new Date(activeModel.activatedAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="text-sm text-green-200">
+                            Model: {activeModel.modelRootHash?.slice(0, 16)}...
+                          </div>
+                          <div className="text-sm text-green-200">
+                            Chat uses: Active model v{activeModel.id}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>

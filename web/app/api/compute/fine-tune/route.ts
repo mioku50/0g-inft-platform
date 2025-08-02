@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { getBroker } from '@/lib/compute/broker'
+import { createRegistryService } from '@/lib/contracts/agent-model-registry'
+import { ModelVersionService } from '@/lib/database/model-versions'
+import { getModelById } from '@/lib/fine-tuning/models'
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,6 +41,16 @@ export async function GET(request: NextRequest) {
     }
 
     const taskData = await response.json()
+
+    // Check if model was delivered and create database record
+    if (taskData.progress === 'Delivered' && taskData.modelRootHash) {
+      const existingModel = await ModelVersionService.getModelByTaskId(taskId)
+      if (!existingModel) {
+        // Create database record for delivered model
+        // Note: In real implementation, this would be triggered by ModelDelivered event
+        console.log('Model delivered - creating database record')
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -85,11 +98,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to initialize broker' }, { status: 500 })
     }
 
+    // Get user address from broker
+    const userAddress = broker.signerAddress
+
+    // Get model information
+    const model = getModelById(modelId)
+    if (!model) {
+      return NextResponse.json({ error: 'Invalid model ID' }, { status: 400 })
+    }
+
     // Create config for training parameters
     const config = {
-      num_train_epochs: 3,
-      per_device_train_batch_size: 16,
-      per_device_eval_batch_size: 16,
+      num_train_epochs: trainingParams?.epochs || 3,
+      per_device_train_batch_size: trainingParams?.batchSize || 16,
+      per_device_eval_batch_size: trainingParams?.batchSize || 16,
       warmup_steps: 500,
       weight_decay: 0.01,
       logging_dir: "./logs",
@@ -108,19 +130,56 @@ export async function POST(request: NextRequest) {
 
     const provider = providerAddress || '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
 
+    // Create hashes for on-chain attestation
+    const configString = JSON.stringify(config)
+    const trainingParamsHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(configString))
+    const pretrainedHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(model.hash))
+
     // Use the real broker's fine-tuning task creation
     const taskId = await broker.fineTuning.createTask(
       provider,
       modelId,
       datasetSize,
       datasetHash,
-      JSON.stringify(config)
+      configString
     )
+
+    // Attest task creation on-chain using platform service key
+    let txHash = ''
+    try {
+      if (process.env.OG_COMPUTE_PRIVATE_KEY && process.env.NEXT_PUBLIC_AGENT_MODEL_REGISTRY_ADDRESS) {
+        const registryService = createRegistryService(
+          process.env.NEXT_PUBLIC_AGENT_MODEL_REGISTRY_ADDRESS,
+          process.env.OG_COMPUTE_PRIVATE_KEY,
+          process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
+        )
+
+        const result = await registryService.attestTask({
+          tokenId: parseInt(agentId),
+          user: userAddress,
+          provider,
+          datasetRoot: datasetHash,
+          pretrainedHash,
+          trainingParamsHash,
+          taskId
+        })
+
+        txHash = result.txHash
+        console.log('Task attested on-chain:', txHash)
+      } else {
+        console.warn('Registry contract not configured - skipping on-chain attestation')
+      }
+    } catch (attestError) {
+      console.error('Failed to attest task on-chain:', attestError)
+      // Continue without failing the entire request
+    }
 
     return NextResponse.json({
       success: true,
       taskId,
-      message: 'Fine-tuning task created successfully'
+      txHash,
+      message: 'Fine-tuning task created successfully',
+      viewOnChainUrl: txHash ? `https://chainscan-galileo.0g.ai/tx/${txHash}` : undefined
     })
   } catch (error: any) {
     console.error('Failed to create fine-tuning task:', error)

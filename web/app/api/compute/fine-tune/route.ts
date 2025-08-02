@@ -157,11 +157,38 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate datasetHash format
-    if (!datasetHash.startsWith('0x') && !datasetHash.match(/^[a-fA-F0-9]{64}$/)) {
+    // Normalize and validate datasetHash format
+    let normalizedDatasetHash = datasetHash
+    if (datasetHash.startsWith('local://')) {
+      // Extract hash from local:// format and add 0x prefix
+      const extractedHash = datasetHash.replace('local://', '')
+      if (extractedHash.match(/^[a-fA-F0-9]{64}$/)) {
+        normalizedDatasetHash = `0x${extractedHash}`
+        console.log('🔄 Normalized local hash:', datasetHash, '→', normalizedDatasetHash)
+      } else {
+        console.error('❌ Invalid hash in local:// format:', datasetHash)
+        return NextResponse.json(
+          { error: 'Invalid datasetHash format: local:// must contain valid 64-char hex hash' },
+          { status: 400 }
+        )
+      }
+    } else if (datasetHash.startsWith('0x')) {
+      // Already properly formatted
+      if (!datasetHash.match(/^0x[a-fA-F0-9]{64}$/)) {
+        console.error('❌ Invalid 0x datasetHash format:', datasetHash)
+        return NextResponse.json(
+          { error: 'datasetHash must be 0x followed by 64 hex characters' },
+          { status: 400 }
+        )
+      }
+    } else if (datasetHash.match(/^[a-fA-F0-9]{64}$/)) {
+      // Add 0x prefix to bare hex
+      normalizedDatasetHash = `0x${datasetHash}`
+      console.log('🔄 Added 0x prefix:', datasetHash, '→', normalizedDatasetHash)
+    } else {
       console.error('❌ Invalid datasetHash format:', datasetHash)
       return NextResponse.json(
-        { error: 'datasetHash must be a valid hash (0x prefixed or 64 hex chars)' },
+        { error: 'datasetHash must be in format: 0x + 64 hex chars, local://hash, or 64 hex chars' },
         { status: 400 }
       )
     }
@@ -211,7 +238,7 @@ export async function POST(request: NextRequest) {
       provider,
       modelId,
       datasetSize: parseInt(datasetSize),
-      datasetHash: datasetHash.slice(0, 10) + '...',
+      datasetHash: normalizedDatasetHash.slice(0, 10) + '...',
       configKeys: Object.keys(config)
     })
 
@@ -222,7 +249,7 @@ export async function POST(request: NextRequest) {
         provider,
         modelId,
         parseInt(datasetSize),
-        datasetHash,
+        normalizedDatasetHash,
         JSON.stringify(config)
       )
       console.log(`✅ Task created with ID: ${taskId}`)
@@ -244,7 +271,7 @@ export async function POST(request: NextRequest) {
         parseInt(agentId),
         userAddress,
         provider,
-        datasetHash,
+        normalizedDatasetHash,
         pretrainedHash,
         trainingParamsHash,
         taskId
@@ -269,7 +296,7 @@ export async function POST(request: NextRequest) {
         userAddress,
         providerAddress: provider,
         modelId,
-        datasetRootHash: datasetHash,
+        datasetRootHash: normalizedDatasetHash,
         trainingParamsHash,
         status: 'Init',
         txHashAttested

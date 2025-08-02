@@ -17,6 +17,7 @@ import {
   Badge,
   Skeleton,
   useToast,
+  ToastAction
 } from '@/components/ui'
 import Link from 'next/link'
 import { INFT_ABI, AGENT_MARKETPLACE_ABI } from '@/lib/contracts/abis'
@@ -115,10 +116,14 @@ const AgentCard = React.memo(({
                 toast({
                   title: 'Model Activation',
                   description: `Navigate to agent ${agentId} fine-tune page to activate the candidate model`,
-                  action: {
-                    altText: 'Go to Fine-tune',
-                    onClick: () => window.open(`/agents/${agentId}/fine-tune`, '_blank')
-                  }
+                  action: (
+                    <ToastAction 
+                      altText="Go to Fine-tune"
+                      onClick={() => window.open(`/agents/${agentId}/fine-tune`, '_blank')}
+                    >
+                      Go to Fine-tune
+                    </ToastAction>
+                  )
                 })
               } catch (error) {
                 toast({

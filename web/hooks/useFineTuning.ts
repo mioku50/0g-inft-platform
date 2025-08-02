@@ -39,6 +39,7 @@ interface UseFineTuningActions {
   // Task management
   createTask: (params: {
     agentId: string
+    userAddress: string
     modelId: string
     datasetHash: string
     datasetSize: number
@@ -241,6 +242,7 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
   // Task management
   const createTask = useCallback(async (params: {
     agentId: string
+    userAddress: string
     modelId: string
     datasetHash: string
     datasetSize: number
@@ -250,24 +252,14 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
     return await withLoading(async () => {
       const service = await getService()
       
-      // Add userAddress to params for new API
-      const createParams = {
-        ...params,
-        userAddress: address!
-      }
-      
-      const result = await service.createTask(createParams)
+      const result = await service.createTask(params)
       
       // Refresh account to show locked funds
       await refreshAccount()
       
       toast({
         title: 'Task Created & Attested',
-        description: `Fine-tuning task created and attested on-chain. Task ID: ${result.taskId}`,
-        action: result.chainLink ? {
-          altText: 'View on chain',
-          onClick: () => window.open(result.chainLink, '_blank')
-        } : undefined
+        description: `Fine-tuning task created and attested on-chain. Task ID: ${result.taskId}`
       })
       
       return result.taskId
@@ -357,11 +349,7 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
       
       toast({
         title: 'Model Activated',
-        description: `Model has been activated and is now live for agent ${agentId}`,
-        action: result.chainLink ? {
-          altText: 'View on chain',
-          onClick: () => window.open(result.chainLink, '_blank')
-        } : undefined
+        description: `Model has been activated and is now live for agent ${agentId}`
       })
       
       return result

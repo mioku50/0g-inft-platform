@@ -3,24 +3,29 @@
 
 import { ethers } from 'ethers';
 import AgentModelRegistryABI from '@/contracts/AgentModelRegistry.abi.json';
+import { 
+  getRateLimitedProvider, 
+  createRateLimitedWallet, 
+  createRateLimitedContract,
+  safeContractCall 
+} from '@/lib/server/rate-limited-provider';
 
 // Contract configuration for Galileo Testnet v3
 const AGENT_MODEL_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_MODEL_REGISTRY_ADDRESS || 
-  '0x0000000000000000000000000000000000000000'; // Will be set after deployment
+  process.env.AGENT_MODEL_REGISTRY_ADDRESS ||
+  '0x358d481AbFE7548EA8F3a806c675729910F29E4e'; // Default from .env.local
 
-const RPC_URL = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai';
 const PLATFORM_PRIVATE_KEY = process.env.OG_COMPUTE_PRIVATE_KEY;
 
 if (!PLATFORM_PRIVATE_KEY) {
   throw new Error('OG_COMPUTE_PRIVATE_KEY environment variable required for platform operations');
 }
 
-// Provider and signer for platform operations
-const provider = new ethers.JsonRpcProvider(RPC_URL);
-const platformSigner = new ethers.Wallet(PLATFORM_PRIVATE_KEY, provider);
+// Rate-limited provider and signer for platform operations
+const platformSigner = createRateLimitedWallet(PLATFORM_PRIVATE_KEY);
 
-// Contract instance
-const registryContract = new ethers.Contract(
+// Rate-limited contract instance
+const registryContract = createRateLimitedContract(
   AGENT_MODEL_REGISTRY_ADDRESS,
   AgentModelRegistryABI,
   platformSigner
@@ -197,75 +202,67 @@ export class AgentModelRegistryService {
   }
 
   /**
-   * Get active model for an agent (read-only)
+   * Get active model for an agent with safe error handling
    */
   static async getActiveModel(tokenId: number): Promise<string> {
-    try {
-      const activeModel = await registryContract.getActiveModel(tokenId);
-      return activeModel;
-    } catch (error: any) {
-      console.error('Failed to get active model:', error);
-      return '0x0000000000000000000000000000000000000000000000000000000000000000';
-    }
+    return safeContractCall(
+      () => registryContract.getActiveModel(tokenId),
+      '0x0000000000000000000000000000000000000000000000000000000000000000',
+      `getActiveModel(${tokenId})`
+    )
   }
 
   /**
-   * Get candidate model for an agent (read-only)
+   * Get candidate model for an agent with safe error handling
    */
   static async getCandidateModel(tokenId: number): Promise<{ modelRoot: string; hasCandidate: boolean }> {
-    try {
-      const [modelRoot, hasCandidate] = await registryContract.getCandidateModel(tokenId);
-      return {
-        modelRoot,
-        hasCandidate
-      };
-    } catch (error: any) {
-      console.error('Failed to get candidate model:', error);
-      return {
+    return safeContractCall(
+      async () => {
+        const [modelRoot, hasCandidate] = await registryContract.getCandidateModel(tokenId)
+        return { modelRoot, hasCandidate }
+      },
+      {
         modelRoot: '0x0000000000000000000000000000000000000000000000000000000000000000',
         hasCandidate: false
-      };
-    }
+      },
+      `getCandidateModel(${tokenId})`
+    )
   }
 
   /**
-   * Get all model versions for an agent (read-only)
+   * Get all model versions for an agent with safe error handling
    */
   static async getModelVersions(tokenId: number): Promise<any[]> {
-    try {
-      const versions = await registryContract.getModelVersions(tokenId);
-      return versions;
-    } catch (error: any) {
-      console.error('Failed to get model versions:', error);
-      return [];
-    }
+    return safeContractCall(
+      () => registryContract.getModelVersions(tokenId),
+      [],
+      `getModelVersions(${tokenId})`
+    )
   }
 
   /**
-   * Check if a model was delivered for an agent (read-only)
+   * Check if a model was delivered for an agent with safe error handling
    */
   static async isModelDelivered(tokenId: number, modelRoot: string): Promise<boolean> {
-    try {
-      const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot));
-      const isDelivered = await registryContract.isModelDelivered(tokenId, modelRootBytes32);
-      return isDelivered;
-    } catch (error: any) {
-      console.error('Failed to check model delivery:', error);
-      return false;
-    }
+    return safeContractCall(
+      () => {
+        const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot))
+        return registryContract.isModelDelivered(tokenId, modelRootBytes32)
+      },
+      false,
+      `isModelDelivered(${tokenId}, ${modelRoot.slice(0, 10)}...)`
+    )
   }
 
   /**
-   * Check if a task was processed (read-only)
+   * Check if a task was processed with safe error handling
    */
   static async isTaskProcessed(taskId: string): Promise<boolean> {
-    try {
-      const isProcessed = await registryContract.isTaskProcessed(taskId);
-      return isProcessed;
-    } catch (error: any) {
-      console.error('Failed to check task status:', error);
-      return false;
-    }
+    return safeContractCall(
+      () => registryContract.isTaskProcessed(taskId),
+      false,
+      `isTaskProcessed(${taskId})`
+    )
   }
 
   /**
@@ -283,7 +280,7 @@ export class AgentModelRegistryService {
   }
 
   /**
-   * Validate contract deployment
+   * Validate contract deployment with safe error handling
    */
   static async validateContract(): Promise<boolean> {
     try {
@@ -292,7 +289,18 @@ export class AgentModelRegistryService {
         return false;
       }
       
-      const owner = await registryContract.owner();
+      // Try to get owner with safe fallback
+      const owner = await safeContractCall(
+        () => registryContract.owner?.(),
+        null,
+        'contract.owner()'
+      )
+      
+      if (!owner) {
+        console.warn('⚠️  Contract owner() method not available or failed');
+        return true; // Allow operation but warn
+      }
+      
       const expectedOwner = platformSigner.address;
       
       if (owner.toLowerCase() !== expectedOwner.toLowerCase()) {

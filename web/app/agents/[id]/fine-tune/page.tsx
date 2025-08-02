@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
 import { Textarea } from '@/components/ui/textarea'
 import { Slider } from '@/components/ui/slider'
+import { ToastAction } from '@/components/ui/toast'
 
 // Icons
 import { 
@@ -799,10 +800,14 @@ export default function FineTunePage() {
                                       toast({
                                         title: 'Model Activated',
                                         description: 'Model is now active for this agent',
-                                        action: {
-                                          altText: 'View on chain',
-                                          onClick: () => window.open(result.chainLink, '_blank')
-                                        }
+                                        action: result.chainLink ? (
+                                          <ToastAction 
+                                            altText="View on chain"
+                                            onClick={() => window.open(result.chainLink, '_blank')}
+                                          >
+                                            View on chain
+                                          </ToastAction>
+                                        ) : undefined
                                       })
                                       // Refresh to show new status
                                       setTimeout(() => window.location.reload(), 2000)
@@ -876,9 +881,6 @@ export default function FineTunePage() {
                       <div className="text-center text-purple-200">
                         No active training task
                       </div>
-                    )}
-                  </div>
-                )}
                     )}
                   </div>
                 )}

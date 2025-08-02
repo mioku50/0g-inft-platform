@@ -11,7 +11,7 @@ import {
   getComputeInferenceContract,
   logEnvironmentStatus
 } from '@/lib/server/compute-env'
-import { create0GProvider } from '@/lib/server/provider'
+import { getRateLimitedProvider, createRateLimitedWallet } from '@/lib/server/rate-limited-provider'
 
 export const SERVING_ABI = [
   'function accountExists(address user, address provider) view returns (bool)',
@@ -89,8 +89,8 @@ export async function getBroker() {
       throw new Error('Private key not found in environment')
     }
 
-    const provider = new JsonRpcProvider(rpcUrl)
-    const signer = new Wallet(privateKey, provider)
+    // Use rate-limited provider to prevent -32005 errors
+    const signer = createRateLimitedWallet(privateKey)
     
     console.log('[broker.server] Signer address:', await signer.getAddress())
     
@@ -136,8 +136,8 @@ export async function getSignerAddress(): Promise<string> {
     throw new Error('Private key not found')
   }
   
-  const provider = new JsonRpcProvider(getRpcUrl())
-  const signer = new Wallet(privateKey, provider)
+  // Use rate-limited provider for address lookup too
+  const signer = createRateLimitedWallet(privateKey)
   return await signer.getAddress()
 }
 

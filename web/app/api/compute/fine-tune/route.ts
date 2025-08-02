@@ -271,29 +271,86 @@ export async function POST(request: NextRequest) {
     try {
       console.log('🔍 Running provider preflight check...')
       const providerUrl = getProviderUrl(provider)
-      const healthUrl = `${providerUrl}/v1/quote/health`
       
-      const healthResponse = await fetch(healthUrl, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(5000) // 5 second timeout
-      })
+      // First try primary endpoint: GET /v1/quote (as per 0G spec)
+      let preflightPassed = false
+      let preflightMethod = ''
       
-      if (!healthResponse.ok) {
-        console.warn(`⚠️  Provider health check failed: ${healthResponse.status}`)
-        return NextResponse.json({
-          error: 'Provider unavailable, try later',
-          details: `Provider health check failed with status ${healthResponse.status}`,
-          provider,
-          step: 'preflight health check'
-        }, { status: 503 })
+      try {
+        const quoteUrl = `${providerUrl}/v1/quote`
+        const quoteResponse = await fetch(quoteUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(5000) // 5 second timeout
+        })
+        
+        if (quoteResponse.ok) {
+          console.log('✅ Provider preflight check passed via /v1/quote')
+          preflightPassed = true
+          preflightMethod = '/v1/quote'
+        } else if (quoteResponse.status === 404) {
+          console.log('ℹ️  /v1/quote not found, trying fallback endpoints...')
+        } else {
+          console.warn(`⚠️  /v1/quote returned ${quoteResponse.status}`)
+        }
+      } catch (quoteError: any) {
+        console.log('ℹ️  /v1/quote failed, trying fallback endpoints...', quoteError.message)
       }
       
-      console.log('✅ Provider preflight check passed')
+      // If primary endpoint failed, try fallback endpoints
+      if (!preflightPassed) {
+        const fallbackEndpoints = ['/health', '/status']
+        
+        for (const endpoint of fallbackEndpoints) {
+          try {
+            const fallbackUrl = `${providerUrl}${endpoint}`
+            const fallbackResponse = await fetch(fallbackUrl, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+              signal: AbortSignal.timeout(5000)
+            })
+            
+            if (fallbackResponse.ok) {
+              console.log(`✅ Provider preflight check passed via ${endpoint}`)
+              preflightPassed = true
+              preflightMethod = endpoint
+              break
+            }
+          } catch (fallbackError: any) {
+            console.log(`ℹ️  ${endpoint} failed:`, fallbackError.message)
+          }
+        }
+      }
+      
+      // If all endpoints failed with network errors, mark as unavailable
+      if (!preflightPassed) {
+        // Try one final basic connectivity test
+        try {
+          const basicResponse = await fetch(providerUrl, {
+            method: 'GET',
+            signal: AbortSignal.timeout(3000)
+          })
+          
+          // If we get any HTTP response (even 404), the server is reachable
+          console.log(`ℹ️  Provider reachable but health endpoints not supported, continuing with task creation`)
+          console.log(`📊 Provider responded with HTTP ${basicResponse.status}`)
+        } catch (networkError: any) {
+          // True network error - provider is actually unavailable
+          console.warn('⚠️  Provider network unreachable:', networkError.message)
+          return NextResponse.json({
+            error: 'Provider unavailable (timeout/network error)',
+            details: `Provider not responding: ${networkError.message}`,
+            provider,
+            step: 'network connectivity check'
+          }, { status: 503 })
+        }
+      }
+      
+      console.log(`✅ Provider preflight completed successfully${preflightMethod ? ` via ${preflightMethod}` : ' (basic connectivity)'}`)
     } catch (preflightError: any) {
       console.warn('⚠️  Provider preflight check failed:', preflightError.message)
       return NextResponse.json({
-        error: 'Provider unavailable, try later',
+        error: 'Provider unavailable (timeout/5xx)',
         details: `Provider not responding: ${preflightError.message}`,
         provider,
         step: 'preflight health check'

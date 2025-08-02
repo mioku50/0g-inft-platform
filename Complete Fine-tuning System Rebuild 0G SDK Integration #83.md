@@ -1148,6 +1148,81 @@ Progress Monitoring → Stable RPC calls without rate limits
 Model Activation → Safe registry reads for model status
 The fine-tuning system is now production-ready for Galileo Testnet v3 deployment.
 
+Problem
+The fine-tuning system was experiencing critical P0 blocking issues preventing users from creating training tasks:
+
+TypeError: Cannot read properties of undefined (reading 'createTask') - The API was calling non-existent SDK methods
+"Failed to create task with 0G provider" - Generic error banners showing in UI instead of actionable feedback
+Periodic -32005 rate exceeded errors - RPC calls hitting rate limits on eth_chainId and eth_call
+chainId: "unknown" - Environment validation failing to detect proper network
+Provider address mismatch - UI using 0x960E… while config specified different addresses
+Root Cause
+The core issue was that broker.fineTuning.createTask() and broker.fineTuning.acknowledgeProviderSigner() were calling themselves recursively, causing infinite loops and stack overflows. Additionally, the code was attempting to call non-existent SDK methods like broker.sdk?.fineTuning?.createTask?.().
+
+Solution
+Fixed Recursion Issues
+// BEFORE: Infinite recursion causing stack overflow
+acknowledgeProviderSigner: async (provider: string) => {
+  const result = await broker.fineTuning.acknowledgeProviderSigner(provider) // ❌ Calls itself
+}
+
+// AFTER: Proper delegation to SDK method  
+acknowledgeProviderSigner: async (provider: string) => {
+  const result = await broker.inference.acknowledgeProviderSigner(provider) // ✅ Uses actual SDK
+}
+Replaced Non-existent SDK Methods with Direct Provider API Calls
+// BEFORE: Attempting to call non-existent method
+const sdkResult = await broker.sdk?.fineTuning?.createTask?.(...) // ❌ Doesn't exist
+
+// AFTER: Direct HTTP communication with 0G providers
+const headers = await broker.inference.getRequestHeaders(provider, configPath)
+const response = await fetch(`${providerUrl}/v1/user/${userAddress}/fine-tuning/task`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', ...headers },
+  body: JSON.stringify({ provider, model, dataSize, datasetHash, config })
+})
+Enhanced Error Handling and User Experience
+Provider Health Checks: Added preflight /v1/quote/health endpoint validation
+Proper Status Codes: 422 for validation errors, 503 for provider unavailable
+Context-Aware Errors: Include specific operation step in error responses
+User-Friendly Messages: Replace generic failures with actionable guidance
+Implemented Rate Limiting
+Provider Singleton: All components use single rate-limited provider instance
+Concurrency Control: Max 4 concurrent requests with 200ms delays
+Exponential Backoff: 50ms → 2000ms retry logic for -32005 errors
+Request Caching: 30-second TTL for eth_chainId deduplication
+Fixed Environment Configuration
+chainId Fallback: Use NEXT_PUBLIC_0G_CHAIN_ID when RPC getNetwork() fails
+Provider Address Validation: Config as single source of truth with whitelist validation
+Enhanced Logging: Comprehensive startup validation and debugging information
+Testing
+All fixes have been validated with automated tests:
+
+✅ PASS: acknowledgeProviderSigner recursion fixed
+✅ PASS: createTask uses direct provider API calls  
+✅ PASS: Provider preflight health check implemented
+✅ PASS: Enhanced error handling with 422/503 status codes
+✅ PASS: Provider address validation implemented
+✅ PASS: chainId fallback configuration implemented
+✅ PASS: Rate limiting provider implemented
+Expected Results
+API Responses: POST /api/compute/fine-tune returns 200 with taskId (no TypeError)
+Error Handling: Provider unavailable returns 503 with "Provider unavailable, try later"
+Validation: Invalid input returns 422 with detailed validation messages
+Environment: Logs show chainId: 16601 (not "unknown")
+Stability: < 1% rate limit errors during normal operation
+Files Changed
+lib/compute/broker.ts - Fixed recursion, implemented direct provider API calls
+app/api/compute/fine-tune/route.ts - Enhanced error handling, added preflight checks
+lib/server/compute-env.ts - Fixed chainId validation with fallback configuration
+lib/server/rate-limited-provider.ts - Comprehensive RPC rate limiting implementation
+.env.example - Updated with all required environment variables and configuration
+This resolves all P0 blocking issues preventing fine-tuning functionality while maintaining compatibility with the existing 0G SDK architecture.
+
+
+
+
+
 
 root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.git' -L 5
 .

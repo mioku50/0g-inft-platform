@@ -7,6 +7,8 @@
 import { ethers } from 'ethers'
 import { AGENT_MODEL_REGISTRY_ABI } from './abis'
 
+const ZERO_HASH = '0x0000000000000000000000000000000000000000000000000000000000000000'
+
 export interface TaskCreatedEvent {
   tokenId: number
   user: string

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
+import { keccak256, toUtf8Bytes } from 'ethers/lib/utils'
 import { getBroker } from '@/lib/compute/broker'
 import { createRegistryService } from '@/lib/contracts/agent-model-registry'
 import { ModelVersionService } from '@/lib/database/model-versions'
@@ -132,8 +133,8 @@ export async function POST(request: NextRequest) {
 
     // Create hashes for on-chain attestation
     const configString = JSON.stringify(config)
-    const trainingParamsHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(configString))
-    const pretrainedHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(model.hash))
+    const trainingParamsHash = keccak256(toUtf8Bytes(configString))
+    const pretrainedHash = keccak256(toUtf8Bytes(model.hash))
 
     // Use the real broker's fine-tuning task creation
     const taskId = await broker.fineTuning.createTask(

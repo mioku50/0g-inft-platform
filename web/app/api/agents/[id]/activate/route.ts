@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
+import { keccak256, toUtf8Bytes } from 'ethers/lib/utils'
 import { createRegistryService } from '@/lib/contracts/agent-model-registry'
 import { ModelVersionService } from '@/lib/database/model-versions'
 
@@ -57,7 +58,7 @@ export async function POST(
         )
 
         // Create signature hash
-        const consentHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(consentSignature))
+        const consentHash = keccak256(toUtf8Bytes(consentSignature))
 
         // Record consent on-chain
         consentTxHash = await registryService.recordConsent({

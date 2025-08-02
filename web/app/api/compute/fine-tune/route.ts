@@ -357,23 +357,65 @@ export async function POST(request: NextRequest) {
       }, { status: 503 })
     }
 
-    // Step 1: Create task using 0G SDK (platform-funded)
+    // Step 1: Create task using direct provider API call
     let taskId: string
     try {
-      taskId = await broker.fineTuning.createTask(
-        provider,
-        modelId,
-        parseInt(datasetSize),
-        normalizedDatasetHash,
-        JSON.stringify(config)
-      )
+      // Get provider URL from mapping
+      const providerUrls: Record<string, string> = {
+        '0x960E74Fc0AF1a6fBcADA3eEFCBe3152fA5E87A5f': 'http://50.145.48.68:30080',
+        '0xf07240Efa67755B5311bc75784a061eDB47165Dd': 'http://50.145.48.68:30080', 
+        '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3': 'http://50.145.48.68:30080'
+      }
+      const providerUrl = providerUrls[provider] || 'http://50.145.48.68:30080'
+      
+      // Get authentication headers using broker
+      const headers = await broker.inference.getRequestHeaders(provider, JSON.stringify(config))
+      
+      // Create task via direct HTTP call to provider API
+      const createTaskUrl = `${providerUrl}/v1/user/${userAddress}/task`
+      
+      const taskPayload = {
+        userAddress,
+        datasetHash: normalizedDatasetHash,
+        preTrainedModelHash: pretrainedHash,
+        trainingParams: JSON.stringify(config),
+        fee: "0", // MVP: no fee for testing
+        nonce: Date.now().toString(),
+        signature: "0x" // MVP: dummy signature
+      }
+      
+      console.log(`🚀 Creating task via provider API: ${createTaskUrl}`)
+      console.log(`📦 Payload:`, taskPayload)
+      
+      const response = await fetch(createTaskUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers
+        },
+        body: JSON.stringify(taskPayload)
+      })
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`❌ Provider API error: ${response.status} ${response.statusText}`)
+        console.error(`❌ Error details: ${errorText}`)
+        throw new Error(`Provider API error: ${response.status} ${response.statusText}: ${errorText}`)
+      }
+      
+      const result = await response.json()
+      taskId = result.taskId || result.id || `task_${Date.now()}`
+      
       console.log(`✅ Task created with ID: ${taskId}`)
+      console.log(`✅ Provider response:`, result)
     } catch (createError: any) {
-      console.error('❌ Failed to create task with 0G SDK:', createError)
+      console.error('❌ Failed to create task with 0G provider:', createError)
       
       // Enhanced error handling with specific status codes
       if (createError.message?.includes('Provider unavailable') || 
-          createError.message?.includes('Provider not responding')) {
+          createError.message?.includes('Provider not responding') ||
+          createError.message?.includes('ECONNREFUSED') ||
+          createError.message?.includes('fetch failed')) {
         return NextResponse.json({
           error: 'Provider unavailable, try later',
           details: createError.message,
@@ -382,7 +424,8 @@ export async function POST(request: NextRequest) {
         }, { status: 503 })
       }
       
-      if (createError.message?.includes('Invalid') || 
+      if (createError.message?.includes('400') || 
+          createError.message?.includes('Invalid') || 
           createError.message?.includes('validation')) {
         return NextResponse.json({
           error: 'Invalid request parameters',
@@ -396,7 +439,7 @@ export async function POST(request: NextRequest) {
         error: 'Failed to create task with 0G provider',
         details: createError.message,
         provider,
-        step: '0G SDK createTask',
+        step: 'Provider API call',
         context: 'Task creation failed during provider communication'
       }, { status: 500 })
     }

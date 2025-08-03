@@ -1460,7 +1460,97 @@ Before: Fine-tuning failed completely for unregistered providers
 After: Fine-tuning works seamlessly with both registered and unregistered providers
 
 This enables the platform to work with any 0G-compatible provider regardless of registry status, while maintaining full error handling and monitoring capabilities. Users can now successfully create fine-tuning tasks even when providers are not formally registered in the 0G registry contract.
+Problem
 
+The fine-tuning system was failing when users attempted to create training tasks with unregistered 0G providers. The system would crash with ServiceNotExist errors and fail on-chain attestation with "execution reverted" messages, completely blocking fine-tuning workflows.
+
+From the error logs:
+
+Failed to attest task: Error: execution reverted (no data present; likely require(false) occurred
+Provider 0x960E74Fc0AF1a6fBcADA3eEFCBe3152fA5E87A5f not registered in registry, proceeding without authentication headers
+Solution
+
+This PR implements comprehensive support for unregistered 0G providers while maintaining full functionality for registered providers:
+
+1. Provider Registration Detection
+
+Added isProviderRegistered() function that safely checks provider status using broker.inference.contract.getService()
+Gracefully handles ServiceNotExist errors without crashing the system
+Only attempts on-chain attestation for registered providers
+2. Graceful Authentication Handling
+
+Enhanced the authentication header retrieval to handle unregistered providers:
+
+// Before: Would crash on ServiceNotExist
+const headers = await broker.inference.getRequestHeaders(provider, config)
+
+// After: Graceful fallback
+try {
+  authHeaders = await broker.inference.getRequestHeaders(provider, config)
+} catch (headerError) {
+  if (headerError.message?.includes('ServiceNotExist')) {
+    console.log(`Provider ${provider} not registered, proceeding without auth headers`)
+    // Continue without headers - expected for unregistered providers
+  }
+}
+3. Environment Flag Control
+
+Added FT_ATTEST_ONCHAIN environment variable to control on-chain attestation behavior:
+
+Defaults to 0 (disabled) for testing safety
+Set to 1 to enable attestation for registered providers only
+Prevents unnecessary blockchain calls for unregistered providers
+4. Enhanced Response Format
+
+The API now returns comprehensive status information for better UX:
+
+{
+  success: true,
+  taskId: "58db2406-9c67-41fc-b429-bce285b1d9ea",
+  provider: "0x960E74Fc0AF1a6fBcADA3eEFCBe3152fA5E87A5f",
+  attestation: {
+    status: "skipped",  // 'success' | 'skipped' | 'failed'
+    message: "On-chain attestation skipped (provider not registered in 0G registry)",
+    txHash: undefined,
+    enabled: false
+  },
+  monitoring: {
+    statusUrl: "http://50.145.48.68:30080/v1/user/{userAddress}/task/{taskId}",
+    logsUrl: "http://50.145.48.68:30080/v1/user/{userAddress}/task/{taskId}/log"
+  }
+}
+5. Hash Normalization
+
+Fixed hash format issues by properly converting local:// prefixed hashes to 0x format:
+
+// Handles: local://d0dcd65a... → 0xd0dcd65a...
+const normalizedHash = datasetHash.startsWith('local://') 
+  ? `0x${datasetHash.replace('local://', '')}`
+  : datasetHash
+6. Improved Error Handling
+
+422 errors: Return specific validation messages ("invalid preTrainedModelHash")
+503 errors: Clear "Provider unavailable" messages with retry guidance
+Enhanced logging: Provider address, endpoint, and operation context for debugging
+User Impact
+
+Before: Fine-tuning failed completely for unregistered providers
+After:
+
+✅ Unregistered providers: Tasks created successfully with "Off-chain" status and monitoring links
+✅ Registered providers: Full on-chain attestation with transaction links
+✅ Clear status indicators: UI shows appropriate messages based on attestation outcome
+✅ Universal monitoring: Status/log endpoints work regardless of provider registration
+Testing
+
+All functionality validated with comprehensive test coverage:
+
+Environment flag behavior (defaults to disabled for safety)
+Hash normalization for all input formats
+Provider endpoint mapping for known and unknown providers
+ServiceNotExist error handling without system crashes
+Response format validation for all attestation scenarios
+The system now supports any compatible 0G provider while maintaining transparency about on-chain vs off-chain operations.
 
 
 

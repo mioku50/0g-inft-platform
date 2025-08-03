@@ -1657,6 +1657,12 @@ All requirements from the original issue are now working:
 ✅ Enhanced validation in fine-tune API with 66-character 0x hash checks
 The fine-tuning system now works end-to-end without provider "file not found" errors! 🚀
 
+0g-inft-platform
+
+
+
+
+
 root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.git' -L 5
 .
 ├── app
@@ -1679,6 +1685,8 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │   │   └── page.tsx
 │   ├── api
 │   │   ├── agents
+│   │   │   ├── [id]
+│   │   │   │   └── activate
 │   │   │   └── list
 │   │   │       └── route.ts
 │   │   ├── compute
@@ -1695,6 +1703,10 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │   │   │   │   └── route.ts
 │   │   │   ├── execute
 │   │   │   │   └── route.ts
+│   │   │   ├── fine-tune
+│   │   │   │   └── route.ts
+│   │   │   ├── fine-tune-account
+│   │   │   │   └── route.ts
 │   │   │   ├── generate
 │   │   │   │   └── route.ts
 │   │   │   ├── generate-prompt
@@ -1703,6 +1715,9 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │   │   │   │   └── route.ts
 │   │   │   └── wallet
 │   │   │       └── account
+│   │   ├── debug
+│   │   │   └── env
+│   │   │       └── route.ts
 │   │   ├── oracle
 │   │   │   └── transfer
 │   │   │       └── route.ts
@@ -1771,6 +1786,7 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │   ├── agents
 │   │   ├── AgentAvatar.tsx
 │   │   ├── CloneModal.tsx
+│   │   ├── ModelStatusBadge.tsx
 │   │   ├── PromptManager.tsx
 │   │   └── TransferModal.tsx
 │   ├── ConnectButton.tsx
@@ -1817,6 +1833,11 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │   └── wallet-test.tsx
 ├── components.json
 ├── COMPREHENSIVE_ANALYSIS_REPORT.md
+├── contracts
+│   ├── AgentModelRegistry.abi.json
+│   ├── AgentModelRegistry.sol
+│   ├── deploy-agent-model-registry.js
+│   └── deployed-contracts.json
 ├── data
 │   └── metadata
 │       ├── 015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862.json
@@ -1844,20 +1865,32 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │       ├── 0xff0aea2869e3e74a0879cf0b9002157d4802eb5b8f8318c3931265a515f00824.json
 │       ├── testhash.json
 │       └── token-hash-mapping.json
+├── database
+│   ├── connection.ts
+│   └── schema.sql
+├── demo-debug-endpoint.js
+├── deploy-contract.sh
 ├── dev.log
+├── final-verification.js
 ├── FINE_TUNE_COMPREHENSIVE_FIX_REPORT.md
+├── FINE_TUNE_FIX_REPORT.md
 ├── FINE_TUNE_ISSUE_REPORT.md
 ├── FINE_TUNE_V2_RECOMMENDATIONS.md
+├── FINE_TUNING_FIXES_DOCUMENTATION.md
+├── FINE_TUNING_FIX_SUMMARY.md
+├── FINE_TUNING_SYSTEM_README.md
 ├── fix_all_quotes.py
 ├── fix-all-quotes.sh
 ├── fix-quotes.sh
 ├── fix_ui_components.sh
 ├── hooks
 │   ├── useAccountSafe.ts
+│   ├── useAgentModelInfo.ts
 │   ├── useFineTuning.ts
 │   ├── useForceAccountSync.ts
 │   ├── useMetadataSync.ts
 │   └── use-toast.ts
+├── IMPLEMENTATION_COMPLETE.md
 ├── lib
 │   ├── 0g-serving-broker
 │   │   ├── api
@@ -1919,44 +1952,316 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │   │   │       └── basic-setup.png
 │   │   └── README.md
 │   ├── 0g-serving-contract
-│   │   └── contracts
-│   │       ├── fine-tuning
-│   │       │   ├── FineTuningAccount.sol
-│   │       │   ├── FineTuningService.sol
-│   │       │   ├── FineTuningServing.sol
-│   │       │   └── FineTuningVerifier.sol
-│   │       ├── inference
-│   │       │   ├── BatchVerifier.sol
-│   │       │   ├── InferenceAccount.sol
-│   │       │   ├── InferenceService.sol
-│   │       │   └── InferenceServing.sol
-│   │       ├── ledger
-│   │       │   └── LedgerManager.sol
-│   │       ├── proxy
-│   │       │   ├── BeaconProxy.sol
-│   │       │   └── UpgradeableBeacon.sol
-│   │       └── utils
-│   │           └── Initializable.sol
+│   │   ├── contracts
+│   │   │   ├── fine-tuning
+│   │   │   │   ├── FineTuningAccount.sol
+│   │   │   │   ├── FineTuningService.sol
+│   │   │   │   ├── FineTuningServing.sol
+│   │   │   │   └── FineTuningVerifier.sol
+│   │   │   ├── inference
+│   │   │   │   ├── BatchVerifier.sol
+│   │   │   │   ├── InferenceAccount.sol
+│   │   │   │   ├── InferenceService.sol
+│   │   │   │   └── InferenceServing.sol
+│   │   │   ├── ledger
+│   │   │   │   └── LedgerManager.sol
+│   │   │   ├── proxy
+│   │   │   │   ├── BeaconProxy.sol
+│   │   │   │   └── UpgradeableBeacon.sol
+│   │   │   └── utils
+│   │   │       └── Initializable.sol
+│   │   ├── doc
+│   │   │   ├── deploy.md
+│   │   │   ├── design-doc.md
+│   │   │   ├── image
+│   │   │   │   └── architecture.png
+│   │   │   └── settlement.md
+│   │   ├── eslint.config.mjs
+│   │   ├── hardhat.config.ts
+│   │   ├── integrate
+│   │   │   ├── deploy.sh
+│   │   │   ├── Dockerfile
+│   │   │   ├── entrypoint.sh
+│   │   │   └── healthcheck.sh
+│   │   ├── package.json
+│   │   ├── pnpm-lock.yaml
+│   │   ├── README.md
+│   │   ├── src
+│   │   │   ├── deploy
+│   │   │   │   ├── deploy_compute_network.ts
+│   │   │   │   ├── deploy_finetune_serving.ts
+│   │   │   │   ├── deploy_inference_serving.ts
+│   │   │   │   ├── deploy_inference_verifier.ts
+│   │   │   │   ├── deploy_ledger_maneger.ts
+│   │   │   │   └── upgrade_verifier.ts
+│   │   │   ├── tasks
+│   │   │   │   └── upgrade.ts
+│   │   │   └── utils
+│   │   │       ├── utils.ts
+│   │   │       └── zk_settlement_calldata
+│   │   ├── test
+│   │   │   ├── fine_tuning_serving.spec.ts
+│   │   │   ├── inference_serving.spec.ts
+│   │   │   └── ledger_manager.spec.ts
+│   │   ├── tsconfig.json
+│   │   └── yarn.lock
 │   ├── 0g-serving-user-broker
 │   │   ├── account.ts
 │   │   ├── base.ts
+│   │   ├── binary
+│   │   │   ├── 0g-storage-client
+│   │   │   └── dcap-qvl-web_bg.wasm
 │   │   ├── broker.ts
+│   │   ├── cli.commonjs
+│   │   │   ├── cli
+│   │   │   │   ├── cli.d.ts
+│   │   │   │   ├── cli.d.ts.map
+│   │   │   │   ├── cli.js
+│   │   │   │   ├── cli.js.map
+│   │   │   │   ├── common.d.ts
+│   │   │   │   ├── common.d.ts.map
+│   │   │   │   ├── common.js
+│   │   │   │   ├── common.js.map
+│   │   │   │   ├── const.d.ts
+│   │   │   │   ├── const.d.ts.map
+│   │   │   │   ├── const.js
+│   │   │   │   ├── const.js.map
+│   │   │   │   ├── fine-tuning.d.ts
+│   │   │   │   ├── fine-tuning.d.ts.map
+│   │   │   │   ├── fine-tuning.js
+│   │   │   │   ├── fine-tuning.js.map
+│   │   │   │   ├── index.d.ts
+│   │   │   │   ├── index.d.ts.map
+│   │   │   │   ├── index.js
+│   │   │   │   ├── index.js.map
+│   │   │   │   ├── inference.d.ts
+│   │   │   │   ├── inference.d.ts.map
+│   │   │   │   ├── inference.js
+│   │   │   │   ├── inference.js.map
+│   │   │   │   ├── ledger.d.ts
+│   │   │   │   ├── ledger.d.ts.map
+│   │   │   │   ├── ledger.js
+│   │   │   │   ├── ledger.js.map
+│   │   │   │   ├── util.d.ts
+│   │   │   │   ├── util.d.ts.map
+│   │   │   │   ├── util.js
+│   │   │   │   └── util.js.map
+│   │   │   ├── example
+│   │   │   │   ├── inference-server.d.ts
+│   │   │   │   ├── inference-server.d.ts.map
+│   │   │   │   ├── inference-server.js
+│   │   │   │   └── inference-server.js.map
+│   │   │   └── sdk
+│   │   │       ├── broker.d.ts
+│   │   │       ├── broker.d.ts.map
+│   │   │       ├── broker.js
+│   │   │       ├── broker.js.map
+│   │   │       ├── common
+│   │   │       ├── fine-tuning
+│   │   │       ├── index.d.ts
+│   │   │       ├── index.d.ts.map
+│   │   │       ├── index.js
+│   │   │       ├── index.js.map
+│   │   │       ├── inference
+│   │   │       └── ledger
 │   │   ├── common.ts
 │   │   ├── createFineTuningBroker.html
 │   │   ├── createInferenceBroker.html
 │   │   ├── createLedgerBroker.html
 │   │   ├── createZGComputeNetworkBroker.html
+│   │   ├── docs
+│   │   │   ├── assets
+│   │   │   │   ├── hierarchy.js
+│   │   │   │   ├── highlight.css
+│   │   │   │   ├── icons.js
+│   │   │   │   ├── icons.svg
+│   │   │   │   ├── main.js
+│   │   │   │   ├── navigation.js
+│   │   │   │   ├── search.js
+│   │   │   │   └── style.css
+│   │   │   ├── classes
+│   │   │   │   ├── FineTuningBroker.html
+│   │   │   │   ├── InferenceAccountProcessor.html
+│   │   │   │   ├── InferenceBroker.html
+│   │   │   │   ├── InferenceModelProcessor.html
+│   │   │   │   ├── InferenceRequestProcessor.html
+│   │   │   │   ├── InferenceResponseProcessor.html
+│   │   │   │   ├── InferenceVerifier.html
+│   │   │   │   ├── LedgerBroker.html
+│   │   │   │   └── ZGComputeNetworkBroker.html
+│   │   │   ├── functions
+│   │   │   │   ├── createFineTuningBroker.html
+│   │   │   │   ├── createInferenceBroker.html
+│   │   │   │   ├── createLedgerBroker.html
+│   │   │   │   └── createZGComputeNetworkBroker.html
+│   │   │   ├── hierarchy.html
+│   │   │   ├── index.html
+│   │   │   ├── interfaces
+│   │   │   │   ├── InferenceServingRequestHeaders.html
+│   │   │   │   └── InferenceSingerRAVerificationResult.html
+│   │   │   ├── media
+│   │   │   │   └── index.html
+│   │   │   ├── modules.html
+│   │   │   └── types
+│   │   │       ├── FineTuningServiceStructOutput.html
+│   │   │       ├── InferenceAccountStructOutput.html
+│   │   │       └── InferenceServiceStructOutput.html
+│   │   ├── eslint.config.mjs
 │   │   ├── fine-tuning.ts
 │   │   ├── index.ts
 │   │   ├── inference-server.ts
 │   │   ├── inference.ts
+│   │   ├── Interface.md
 │   │   ├── ledger.ts
+│   │   ├── lib.commonjs
+│   │   │   ├── broker.d.ts
+│   │   │   ├── broker.d.ts.map
+│   │   │   ├── broker.js
+│   │   │   ├── broker.js.map
+│   │   │   ├── common
+│   │   │   │   ├── automata
+│   │   │   │   ├── settle-signer
+│   │   │   │   ├── storage
+│   │   │   │   └── utils
+│   │   │   ├── fine-tuning
+│   │   │   │   ├── broker
+│   │   │   │   ├── const.d.ts
+│   │   │   │   ├── const.d.ts.map
+│   │   │   │   ├── const.js
+│   │   │   │   ├── const.js.map
+│   │   │   │   ├── contract
+│   │   │   │   ├── index.d.ts
+│   │   │   │   ├── index.d.ts.map
+│   │   │   │   ├── index.js
+│   │   │   │   ├── index.js.map
+│   │   │   │   ├── provider
+│   │   │   │   ├── token
+│   │   │   │   └── zg-storage
+│   │   │   ├── index.d.ts
+│   │   │   ├── index.d.ts.map
+│   │   │   ├── index.js
+│   │   │   ├── index.js.map
+│   │   │   ├── inference
+│   │   │   │   ├── broker
+│   │   │   │   ├── contract
+│   │   │   │   ├── extractor
+│   │   │   │   ├── index.d.ts
+│   │   │   │   ├── index.d.ts.map
+│   │   │   │   ├── index.js
+│   │   │   │   └── index.js.map
+│   │   │   └── ledger
+│   │   │       ├── broker.d.ts
+│   │   │       ├── broker.d.ts.map
+│   │   │       ├── broker.js
+│   │   │       ├── broker.js.map
+│   │   │       ├── contract
+│   │   │       ├── index.d.ts
+│   │   │       ├── index.d.ts.map
+│   │   │       ├── index.js
+│   │   │       ├── index.js.map
+│   │   │       ├── ledger.d.ts
+│   │   │       ├── ledger.d.ts.map
+│   │   │       ├── ledger.js
+│   │   │       └── ledger.js.map
+│   │   ├── lib.esm
+│   │   │   ├── broker.d.ts
+│   │   │   ├── broker.d.ts.map
+│   │   │   ├── common
+│   │   │   │   ├── automata
+│   │   │   │   ├── settle-signer
+│   │   │   │   ├── storage
+│   │   │   │   └── utils
+│   │   │   ├── fine-tuning
+│   │   │   │   ├── broker
+│   │   │   │   ├── const.d.ts
+│   │   │   │   ├── const.d.ts.map
+│   │   │   │   ├── contract
+│   │   │   │   ├── index.d.ts
+│   │   │   │   ├── index.d.ts.map
+│   │   │   │   ├── provider
+│   │   │   │   ├── token
+│   │   │   │   └── zg-storage
+│   │   │   ├── index.d.ts
+│   │   │   ├── index.d.ts.map
+│   │   │   ├── index.mjs
+│   │   │   ├── index.mjs.map
+│   │   │   ├── inference
+│   │   │   │   ├── broker
+│   │   │   │   ├── contract
+│   │   │   │   ├── extractor
+│   │   │   │   ├── index.d.ts
+│   │   │   │   └── index.d.ts.map
+│   │   │   └── ledger
+│   │   │       ├── broker.d.ts
+│   │   │       ├── broker.d.ts.map
+│   │   │       ├── contract
+│   │   │       ├── index.d.ts
+│   │   │       ├── index.d.ts.map
+│   │   │       ├── ledger.d.ts
+│   │   │       └── ledger.d.ts.map
+│   │   ├── mock_model.txt
 │   │   ├── model.ts
+│   │   ├── pnpm-lock.yaml
 │   │   ├── provider.ts
 │   │   ├── README.md
 │   │   ├── request.ts
 │   │   ├── response.ts
+│   │   ├── rollup.config.mjs
 │   │   ├── service.ts
+│   │   ├── src.ts
+│   │   │   ├── cli
+│   │   │   │   ├── cli.ts
+│   │   │   │   ├── common.ts
+│   │   │   │   ├── const.ts
+│   │   │   │   ├── fine-tuning.ts
+│   │   │   │   ├── index.ts
+│   │   │   │   ├── inference.ts
+│   │   │   │   ├── ledger.ts
+│   │   │   │   └── util.ts
+│   │   │   ├── example
+│   │   │   │   └── inference-server.ts
+│   │   │   └── sdk
+│   │   │       ├── broker.ts
+│   │   │       ├── common
+│   │   │       ├── example
+│   │   │       ├── fine-tuning
+│   │   │       ├── index.ts
+│   │   │       ├── inference
+│   │   │       └── ledger
+│   │   ├── types
+│   │   │   ├── broker.d.ts
+│   │   │   ├── broker.d.ts.map
+│   │   │   ├── common
+│   │   │   │   ├── automata
+│   │   │   │   ├── settle-signer
+│   │   │   │   ├── storage
+│   │   │   │   └── utils
+│   │   │   ├── fine-tuning
+│   │   │   │   ├── broker
+│   │   │   │   ├── const.d.ts
+│   │   │   │   ├── const.d.ts.map
+│   │   │   │   ├── contract
+│   │   │   │   ├── index.d.ts
+│   │   │   │   ├── index.d.ts.map
+│   │   │   │   ├── provider
+│   │   │   │   ├── token
+│   │   │   │   └── zg-storage
+│   │   │   ├── index.d.ts
+│   │   │   ├── index.d.ts.map
+│   │   │   ├── inference
+│   │   │   │   ├── broker
+│   │   │   │   ├── contract
+│   │   │   │   ├── extractor
+│   │   │   │   ├── index.d.ts
+│   │   │   │   └── index.d.ts.map
+│   │   │   └── ledger
+│   │   │       ├── broker.d.ts
+│   │   │       ├── broker.d.ts.map
+│   │   │       ├── contract
+│   │   │       ├── index.d.ts
+│   │   │       ├── index.d.ts.map
+│   │   │       ├── ledger.d.ts
+│   │   │       └── ledger.d.ts.map
 │   │   ├── util.ts
 │   │   ├── verifier.test.ts
 │   │   ├── verifier.ts
@@ -1987,6 +2292,7 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │   ├── constants.ts
 │   ├── contracts
 │   │   ├── abis.ts
+│   │   ├── agent-model-registry.ts
 │   │   ├── BatchVerifier.sol
 │   │   ├── deploy_compute_network.ts
 │   │   ├── deploy_finetune_serving.ts
@@ -2017,7 +2323,8 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │   ├── load-env.ts
 │   ├── server
 │   │   ├── compute-env.ts
-│   │   └── provider.ts
+│   │   ├── provider.ts
+│   │   └── rate-limited-provider.ts
 │   ├── services
 │   │   └── metadata-sync.ts
 │   ├── storage
@@ -2043,6 +2350,7 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │   ├── example-dataset.jsonl
 │   ├── test-upload-debug.html
 │   └── test-upload.html
+├── RECURSION_FIX_REPORT.md
 ├── scripts
 │   ├── check-ledger-serving-link.js
 │   ├── check-links.js
@@ -2065,13 +2373,32 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 │   ├── update-problematic-tokens.ts
 │   └── validate-fix.js
 ├── SDK_REQUIREMENTS_SUMMARY.md
+├── solution-summary.html
 ├── tailwind.config.js
+├── test-balance-fix.js
+├── test-complete-fix.js
+├── test-dataset.json
 ├── test-dataset.jsonl
+├── test-dataset.txt
+├── test-enhanced-system.sh
+├── test-environment.sh
+├── test-fine-tune-fix.js
+├── test-fine-tuning-enhancements.js
+├── test-fine-tuning-fixes.js
+├── test-fine-tuning-workflow.js
+├── test-fixes.js
+├── test-integration.js
+├── test-parseenv.js
+├── test-recursion-fix.js
 ├── tests
 │   ├── compute-account.route.test.ts
 │   ├── storage.test.ts
 │   └── upload-dataset.route.test.ts
+├── test-service-not-exist.js
 ├── test-upload-debug.js
+├── test-workflow-complete.js
+├── tmp
+│   └── README.md
 ├── tsconfig.json
 ├── tsconfig.scripts.json
 ├── tsconfig.tsbuildinfo
@@ -2081,5 +2408,5 @@ root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.gi
 ├── vitest.config.ts
 └── yarn.lock
 
-135 directories, 286 files
-
+232 directories, 510 files
+root@elite-mint:~/0g-inft-platform/web#

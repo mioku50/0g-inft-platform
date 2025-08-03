@@ -129,6 +129,10 @@ export async function POST(request: NextRequest) {
       datasetSize: body.datasetSize,
       providerAddress: body.providerAddress 
     })
+    
+    // Log on-chain attestation status at the start
+    const shouldAttest = shouldAttestOnChain()
+    console.log(`[fine-tune] On-chain attestation enabled: ${shouldAttest}`)
 
     const {
       agentId,
@@ -157,14 +161,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Normalize and validate datasetHash format
+    // Enhanced validation with network root preference
     let normalizedDatasetHash = datasetHash
+    
     if (datasetHash.startsWith('local://')) {
       // Extract hash from local:// format and add 0x prefix
       const extractedHash = datasetHash.replace('local://', '')
       if (extractedHash.match(/^[a-fA-F0-9]{64}$/)) {
         normalizedDatasetHash = `0x${extractedHash}`
         console.log('🔄 Normalized local hash:', datasetHash, '→', normalizedDatasetHash)
+        console.log('📋 Note: Providers will access dataset via network root:', normalizedDatasetHash)
       } else {
         console.error('❌ Invalid hash in local:// format:', datasetHash)
         return NextResponse.json(
@@ -173,7 +179,7 @@ export async function POST(request: NextRequest) {
         )
       }
     } else if (datasetHash.startsWith('0x')) {
-      // Already properly formatted
+      // Already properly formatted - this is the preferred format
       if (!datasetHash.match(/^0x[a-fA-F0-9]{64}$/)) {
         console.error('❌ Invalid 0x datasetHash format:', datasetHash)
         return NextResponse.json(
@@ -181,6 +187,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         )
       }
+      console.log('✅ Network root hash format confirmed:', normalizedDatasetHash)
     } else if (datasetHash.match(/^[a-fA-F0-9]{64}$/)) {
       // Add 0x prefix to bare hex
       normalizedDatasetHash = `0x${datasetHash}`
@@ -191,6 +198,30 @@ export async function POST(request: NextRequest) {
         { error: 'datasetHash must be in format: 0x + 64 hex chars, local://hash, or 64 hex chars' },
         { status: 400 }
       )
+    }
+    
+    // Validate that dataset is accessible via network storage as per requirements
+    console.log('🔍 Ensuring dataset accessibility on 0G Storage network...')
+    const indexerUrl = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
+    const datasetUrl = `${indexerUrl}/${normalizedDatasetHash}`
+    
+    try {
+      const headResponse = await fetch(datasetUrl, { 
+        method: 'HEAD',
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      })
+      console.log(`📊 Dataset accessibility check: ${headResponse.status} ${headResponse.statusText}`)
+      if (!headResponse.ok) {
+        console.warn(`⚠️  Dataset may not be immediately accessible: HTTP ${headResponse.status}`)
+        console.warn(`⚠️  URL: ${datasetUrl}`)
+        console.warn(`⚠️  This may cause providers to fail with "file not found"`)
+      } else {
+        console.log('✅ Dataset confirmed accessible on 0G Storage network')
+      }
+    } catch (accessError: any) {
+      console.warn(`⚠️  Dataset accessibility check failed: ${accessError.message}`)
+      console.warn(`⚠️  URL: ${datasetUrl}`)
+      console.warn(`⚠️  Providers may encounter "file not found" errors`)
     }
 
     // Initialize broker with detailed error logging
@@ -550,8 +581,10 @@ export async function POST(request: NextRequest) {
     let attestationMessage: string = ''
     
     // Check if on-chain attestation is enabled
-    const shouldAttest = shouldAttestOnChain()
-    console.log(`🔧 On-chain attestation enabled: ${shouldAttest}`)
+    console.log(`🔧 On-chain attestation configuration check:`)
+    console.log(`📋 FT_ATTEST_ONCHAIN environment variable: "${process.env.FT_ATTEST_ONCHAIN}"`)
+    console.log(`📋 Parsed result: ${shouldAttest}`)
+    console.log(`📋 On-chain attestation enabled: ${shouldAttest}`)
     
     let providerRegistered = false
     

@@ -1,6 +1,18 @@
 export const runtime = 'nodejs'
 
-import { uploadToStorage } from '@/lib/storage/client-server'
+import { hashAndExists } from '@/lib/storage/client-server'
+import { ZgFile, Indexer } from '@0glabs/0g-ts-sdk'
+import { ethers } from 'ethers'
+import * as fs from 'fs/promises'
+import path from 'path'
+
+interface UploadResult {
+  rootHash: string
+  txHash?: string
+  size: number
+  segments?: number
+  alreadyExists: boolean
+}
 
 export async function POST(req: Request) {
   console.log('[upload-dataset] POST hit')
@@ -23,54 +35,179 @@ export async function POST(req: Request) {
       }, { status: 400 })
     }
 
-    try {
-      // Convert file content if needed
-      let processedFile = file
-      
-      if (fileName.endsWith('.json') || fileName.endsWith('.txt')) {
-        console.log('[upload-dataset] Converting file format to JSONL...')
-        const content = await file.text()
-        const jsonlContent = await convertToJsonl(content, fileName)
-        const jsonlBlob = new Blob([jsonlContent], { type: 'application/jsonl' })
-        processedFile = new File([jsonlBlob], file.name.replace(/\.(json|txt)$/, '.jsonl'), { type: 'application/jsonl' })
-        console.log('[upload-dataset] Converted to JSONL, new size:', processedFile.size)
-      }
-
-      const result = await uploadToStorage(processedFile, processedFile.name)
-      const rootHash = result.rootHash
-      const size = result.size ?? processedFile.size
-      
-      console.log('[upload-dataset] Upload successful:', { rootHash: rootHash.slice(0, 20) + '...', size })
-      
-      return Response.json({ 
-        success: true, 
-        rootHash, 
-        size,
-        alreadyExists: false
-      })
-    } catch (e: any) {
-      console.error('[upload-dataset] upload error:', e)
-      
-      // Check if it's a "file already exists" error
-      if (e?.message?.includes('already exists') || e?.message?.includes('File already exists')) {
-        console.log('[upload-dataset] File already exists, treating as success')
-        // For existing files, we'll return a mock success response
-        return Response.json({ 
-          success: true, 
-          rootHash: '0x' + Buffer.from(file.name + file.size).toString('hex').slice(0, 64).padEnd(64, '0'), 
-          size: file.size,
-          alreadyExists: true
-        })
-      }
-      
-      throw e
+    // Convert file content if needed
+    let processedFile = file
+    
+    if (fileName.endsWith('.json') || fileName.endsWith('.txt')) {
+      console.log('[upload-dataset] Converting file format to JSONL...')
+      const content = await file.text()
+      const jsonlContent = await convertToJsonl(content, fileName)
+      const jsonlBlob = new Blob([jsonlContent], { type: 'application/jsonl' })
+      processedFile = new File([jsonlBlob], file.name.replace(/\.(json|txt)$/, '.jsonl'), { type: 'application/jsonl' })
+      console.log('[upload-dataset] Converted to JSONL, new size:', processedFile.size)
     }
+
+    // Always upload to 0G Storage network - never return local:// roots
+    const result = await uploadToNetworkStorage(processedFile)
+    
+    console.log('[upload-dataset] Upload successful:', { 
+      rootHash: result.rootHash.slice(0, 20) + '...', 
+      size: result.size,
+      alreadyExists: result.alreadyExists 
+    })
+    
+    // Add validation step as required
+    const networkOnly = new URL(req.url).searchParams.get('networkOnly') === '1'
+    if (networkOnly || true) { // Always validate for now
+      console.log('[upload-dataset] Validating network accessibility...')
+      const isAccessible = await validateNetworkAccess(result.rootHash)
+      console.log(`[upload-dataset] Network validation: ${isAccessible ? 'PASS' : 'FAIL'}`)
+      
+      if (!isAccessible) {
+        console.warn('[upload-dataset] Warning: File may not be immediately accessible via indexer')
+      }
+    }
+    
+    return Response.json({ 
+      success: true, 
+      rootHash: result.rootHash, 
+      size: result.size,
+      alreadyExists: result.alreadyExists
+    })
+
   } catch (e: any) {
     console.error('[upload-dataset] error', e)
     return Response.json({ 
       success: false, 
       error: e?.message || 'upload failed' 
     }, { status: 500 })
+  }
+}
+
+/**
+ * Upload file to 0G Storage network and always return network root hash
+ * Never returns local:// format as per requirements
+ */
+async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
+  const data = Buffer.from(await file.arrayBuffer())
+  
+  // Step 1: Calculate network root hash and check if file exists
+  console.log('[upload-dataset] Calculating network root hash...')
+  const { root: networkRoot, exists } = await hashAndExists(data)
+  
+  if (!networkRoot.startsWith('0x')) {
+    console.error('[upload-dataset] Invalid network root format:', networkRoot)
+    throw new Error('Failed to calculate valid network root hash')
+  }
+  
+  console.log(`[upload-dataset] Network root: ${networkRoot}, exists: ${exists}`)
+  
+  if (exists) {
+    console.log('[upload-dataset] File already exists in 0G Storage, returning existing root')
+    return {
+      rootHash: networkRoot,
+      size: data.length,
+      alreadyExists: true
+    }
+  }
+  
+  // Step 2: Upload to 0G Storage if file doesn't exist
+  console.log('[upload-dataset] Uploading to 0G Storage...')
+  const privateKey = process.env.OG_STORAGE_PRIVATE_KEY
+  if (!privateKey) {
+    throw new Error('OG_STORAGE_PRIVATE_KEY not configured')
+  }
+  
+  const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
+  const evmRpc = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
+  
+  const provider = new ethers.JsonRpcProvider(evmRpc)
+  const wallet = new ethers.Wallet(privateKey, provider)
+  
+  // Create temporary file for 0G SDK
+  const tempDir = path.join(process.cwd(), 'tmp')
+  await fs.mkdir(tempDir, { recursive: true })
+  const tempFile = path.join(tempDir, `upload-${Date.now()}-${file.name}`)
+  await fs.writeFile(tempFile, data)
+  
+  try {
+    const zgFile = await ZgFile.fromFilePath(tempFile)
+    const [tree] = await zgFile.merkleTree()
+    const calculatedRoot = tree!.rootHash() as string
+    
+    // Verify the calculated root matches our expected network root
+    if (calculatedRoot !== networkRoot) {
+      console.warn(`[upload-dataset] Root mismatch: calculated=${calculatedRoot}, expected=${networkRoot}`)
+    }
+    
+    const indexer = new Indexer(indexerRpc)
+    
+    // Upload with retry logic
+    let lastError: any
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`[upload-dataset] Upload attempt ${attempt}/3...`)
+        const feeData = await provider.getFeeData()
+        const gasPrice = (feeData.gasPrice || ethers.parseUnits('1', 'gwei')) * BigInt(attempt)
+        
+        const [txHash, error] = await indexer.upload(zgFile, evmRpc, wallet, undefined, undefined, { gasPrice })
+        
+        if (!error) {
+          const size = zgFile.size()
+          await zgFile.close()
+          await fs.unlink(tempFile).catch(() => {})
+          
+          console.log(`[upload-dataset] Upload successful: tx=${txHash}, root=${networkRoot}`)
+          return {
+            rootHash: networkRoot, // Always return the network root format
+            txHash,
+            size,
+            segments: Math.ceil(size / 256 / 1024),
+            alreadyExists: false
+          }
+        }
+        
+        lastError = error
+        console.warn(`[upload-dataset] Upload attempt ${attempt} failed:`, error)
+        
+      } catch (uploadError) {
+        lastError = uploadError
+        console.warn(`[upload-dataset] Upload attempt ${attempt} error:`, uploadError)
+      }
+    }
+    
+    await zgFile.close()
+    throw new Error(`Upload failed after 3 attempts: ${lastError}`)
+    
+  } finally {
+    await fs.unlink(tempFile).catch(() => {})
+  }
+}
+
+/**
+ * Validate that uploaded file is accessible via 0G Storage indexer
+ * Performs HEAD request to indexer as required
+ */
+async function validateNetworkAccess(rootHash: string): Promise<boolean> {
+  try {
+    const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
+    const cleanHash = rootHash.replace('0x', '')
+    
+    // Perform HEAD request to indexer
+    const headUrl = `${indexerRpc}/${rootHash}`
+    console.log(`[upload-dataset] Validating access: HEAD ${headUrl}`)
+    
+    const response = await fetch(headUrl, { 
+      method: 'HEAD',
+      signal: AbortSignal.timeout(10000) // 10 second timeout
+    })
+    
+    console.log(`[upload-dataset] HEAD response: ${response.status} ${response.statusText}`)
+    return response.ok
+    
+  } catch (error: any) {
+    console.warn(`[upload-dataset] Network validation failed: ${error.message}`)
+    return false
   }
 }
 

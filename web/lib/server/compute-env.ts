@@ -1,6 +1,54 @@
 import { CHAIN_ID } from '../constants'
 import type { JsonRpcProvider } from 'ethers'
 
+/**
+ * Parse boolean environment variables with comprehensive format support
+ * @param name Environment variable name
+ * @param defaultValue Default value if not set or invalid
+ * @param depth Recursion depth to prevent infinite loops
+ * @returns boolean value
+ */
+export function parseBoolEnv(name: string, defaultValue = false, depth = 0): boolean {
+  // Prevent infinite recursion
+  if (depth > 3) {
+    console.warn(`[parseBoolEnv] Max recursion depth reached for ${name}, returning default: ${defaultValue}`)
+    return defaultValue
+  }
+
+  try {
+    const value = process.env[name]
+    if (!value) {
+      return defaultValue
+    }
+
+    // Remove inline comments (anything after #)
+    const cleanValue = value.split('#')[0].trim().toLowerCase()
+    
+    if (!cleanValue) {
+      return defaultValue
+    }
+
+    // Handle true values
+    if (['1', 'true', 'yes', 'on', 'enable', 'enabled'].includes(cleanValue)) {
+      return true
+    }
+    
+    // Handle false values
+    if (['0', 'false', 'no', 'off', 'disable', 'disabled'].includes(cleanValue)) {
+      return false
+    }
+
+    // If value doesn't match expected patterns, log warning and use default
+    console.warn(`[parseBoolEnv] Invalid boolean value for ${name}: "${value}", using default: ${defaultValue}`)
+    return defaultValue
+
+  } catch (error) {
+    // Catch any errors and return default value
+    console.warn(`[parseBoolEnv] Error parsing ${name} at depth ${depth}: ${error}, using default: ${defaultValue}`)
+    return defaultValue
+  }
+}
+
 export function getRpcUrl(): string {
   const url = process.env.OG_RPC_URL || process.env.NEXT_PUBLIC_0G_RPC_URL
   if (!url) throw new Error('RPC_URL is not configured')
@@ -42,9 +90,11 @@ export function getComputeInferenceContract(): string {
 }
 
 export function shouldAttestOnChain(): boolean {
-  // Allow environment flag to control on-chain attestation
+  // Use parseBoolEnv utility for proper boolean parsing
   // Defaults to false for testing safety as per requirements
-  return process.env.FT_ATTEST_ONCHAIN === '1' || process.env.FT_ATTEST_ONCHAIN === 'true'
+  const enabled = parseBoolEnv('FT_ATTEST_ONCHAIN', false)
+  console.log(`[fine-tune] FT_ATTEST_ONCHAIN="${process.env.FT_ATTEST_ONCHAIN}" -> ${enabled}`)
+  return enabled
 }
 
 export function validateComputeEnvironment(): { isValid: boolean; errors: string[]; warnings: string[] } {

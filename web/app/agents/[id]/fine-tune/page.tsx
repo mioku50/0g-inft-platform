@@ -227,7 +227,7 @@ export default function FineTunePage() {
     if (!uploadedDataset || !selectedModel) return
 
     try {
-      const taskId = await createTask({
+      const result = await createTask({
         agentId,
         userAddress: address!,
         modelId: selectedModel,
@@ -237,10 +237,23 @@ export default function FineTunePage() {
         providerAddress: selectedProvider
       })
 
-      if (taskId) {
+      if (result && result.taskId) {
+        // Store result for monitoring 
+        setCurrentTask({
+          id: result.taskId,
+          agentId,
+          modelId: selectedModel,
+          datasetHash: uploadedDataset.rootHash,
+          status: 'Init',
+          progress: 'Starting...',
+          createdAt: new Date().toISOString(),
+          provider: result.provider,
+          fee: '0'
+        })
+        
         // Start polling for status
         const polling = setInterval(async () => {
-          const task = await getTask(taskId, selectedProvider)
+          const task = await getTask(result.taskId, result.provider)
           if (task) {
             setCurrentTask(task)
             if (task.status === 'Delivered' || task.status === 'Finished' || task.status === 'Failed') {

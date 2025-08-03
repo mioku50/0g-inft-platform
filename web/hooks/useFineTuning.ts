@@ -45,7 +45,21 @@ interface UseFineTuningActions {
     datasetSize: number
     trainingParams?: Partial<TrainingParams>
     providerAddress?: string
-  }) => Promise<string | null>
+  }) => Promise<{
+    taskId: string;
+    attestation: {
+      status: 'success' | 'skipped' | 'failed';
+      message: string;
+      txHash?: string;
+      chainLink?: string;
+      enabled: boolean;
+    };
+    monitoring: {
+      statusUrl: string;
+      logsUrl: string;
+    };
+    provider: string;
+  } | null>
   
   getTask: (taskId: string, providerAddress?: string) => Promise<FineTuningTask | null>
   getTaskLogs: (taskId: string, providerAddress?: string) => Promise<string[] | null>
@@ -257,12 +271,30 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
       // Refresh account to show locked funds
       await refreshAccount()
       
-      toast({
-        title: 'Task Created & Attested',
-        description: `Fine-tuning task created and attested on-chain. Task ID: ${result.taskId}`
-      })
+      // Enhanced toast messages based on attestation status
+      const { attestation } = result
       
-      return result.taskId
+      if (attestation.status === 'success') {
+        toast({
+          title: 'Task Created & Attested',
+          description: `Fine-tuning task created and attested on-chain. Task ID: ${result.taskId}`
+        })
+      } else if (attestation.status === 'skipped') {
+        toast({
+          title: 'Task Created',
+          description: `Fine-tuning task created successfully. ${attestation.message}. Task ID: ${result.taskId}`,
+          variant: 'default' // Show as informational, not error
+        })
+      } else {
+        toast({
+          title: 'Task Created (Attestation Failed)',
+          description: `Task created but attestation failed: ${attestation.message}. Task ID: ${result.taskId}`,
+          variant: 'destructive'
+        })
+      }
+      
+      // Return full result for detailed handling if needed
+      return result
     }, 'Failed to create Fine-tuning task')
   }, [getService, withLoading, refreshAccount, address])
 

@@ -85,81 +85,113 @@ export async function POST(req: Request) {
 }
 
 /**
- * Upload file to 0G Storage network and always return network root hash
+ * Upload file to 0G Storage Turbo network and always return network root hash
+ * IMPORTANT: Only uses Turbo indexer - no fallback to Standard per requirements
  * Never returns local:// format as per requirements
  */
 async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
   const data = Buffer.from(await file.arrayBuffer())
   
-  // Step 1: Calculate network root hash and check if file exists
-  console.log('[upload-dataset] Calculating network root hash...')
-  const { root: networkRoot, exists } = await hashAndExists(data)
+  // Step 1: Calculate network root hash before upload using 0G SDK
+  console.log('[upload-dataset] Calculating 0x network root hash using 0G SDK...')
   
-  if (!networkRoot.startsWith('0x')) {
-    console.error('[upload-dataset] Invalid network root format:', networkRoot)
-    throw new Error('Failed to calculate valid network root hash')
-  }
-  
-  console.log(`[upload-dataset] Network root: ${networkRoot}, exists: ${exists}`)
-  
-  if (exists) {
-    console.log('[upload-dataset] File already exists in 0G Storage, returning existing root')
-    return {
-      rootHash: networkRoot,
-      size: data.length,
-      alreadyExists: true
-    }
-  }
-  
-  // Step 2: Upload to 0G Storage if file doesn't exist
-  console.log('[upload-dataset] Uploading to 0G Storage...')
   const privateKey = process.env.OG_STORAGE_PRIVATE_KEY
   if (!privateKey) {
     throw new Error('OG_STORAGE_PRIVATE_KEY not configured')
   }
   
-  const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
+  // IMPORTANT: Only use Turbo indexer per requirements
+  const turboIndexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_TURBO_URL || 
+                          process.env.NEXT_PUBLIC_0G_STORAGE_URL || 
+                          'https://indexer-storage-testnet-turbo.0g.ai'
   const evmRpc = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
   
-  const provider = new ethers.JsonRpcProvider(evmRpc)
-  const wallet = new ethers.Wallet(privateKey, provider)
+  console.log(`[upload-dataset] Using Turbo indexer: ${turboIndexerRpc}`)
+  console.log(`[upload-dataset] Using EVM RPC: ${evmRpc}`)
   
-  // Create temporary file for 0G SDK
+  // Create temporary file for 0G SDK to calculate proper network root
   const tempDir = path.join(process.cwd(), 'tmp')
   await fs.mkdir(tempDir, { recursive: true })
   const tempFile = path.join(tempDir, `upload-${Date.now()}-${file.name}`)
   await fs.writeFile(tempFile, data)
   
+  let networkRoot: string
+  let alreadyExists = false
+  
   try {
     const zgFile = await ZgFile.fromFilePath(tempFile)
     const [tree] = await zgFile.merkleTree()
-    const calculatedRoot = tree!.rootHash() as string
+    networkRoot = tree!.rootHash() as string
     
-    // Verify the calculated root matches our expected network root
-    if (calculatedRoot !== networkRoot) {
-      console.warn(`[upload-dataset] Root mismatch: calculated=${calculatedRoot}, expected=${networkRoot}`)
+    if (!networkRoot.startsWith('0x')) {
+      console.error('[upload-dataset] Invalid network root format from SDK:', networkRoot)
+      throw new Error('0G SDK returned invalid network root hash format')
     }
     
-    const indexer = new Indexer(indexerRpc)
+    console.log(`[upload-dataset] Calculated network root: ${networkRoot}`)
     
-    // Upload with retry logic
+    // Step 2: Check if file already exists on Turbo indexer
+    const turboCheckUrl = `${turboIndexerRpc}/${networkRoot}`
+    console.log(`[upload-dataset] Checking if file exists on Turbo: HEAD ${turboCheckUrl}`)
+    
+    try {
+      const headResponse = await fetch(turboCheckUrl, { 
+        method: 'HEAD',
+        signal: AbortSignal.timeout(10000)
+      })
+      
+      if (headResponse.ok) {
+        console.log('[upload-dataset] File already exists on Turbo indexer, returning existing root')
+        await zgFile.close()
+        await fs.unlink(tempFile).catch(() => {})
+        return {
+          rootHash: networkRoot, // Always return 0x format
+          size: data.length,
+          alreadyExists: true
+        }
+      } else {
+        console.log(`[upload-dataset] File not found on Turbo (${headResponse.status}), proceeding with upload`)
+      }
+    } catch (checkError: any) {
+      console.log(`[upload-dataset] Could not verify file existence on Turbo: ${checkError.message}`)
+      console.log('[upload-dataset] Proceeding with upload...')
+    }
+    
+    // Step 3: Upload to Turbo indexer with retry logic
+    const provider = new ethers.JsonRpcProvider(evmRpc)
+    const wallet = new ethers.Wallet(privateKey, provider)
+    
+    // Create Turbo indexer instance (no fallback to Standard per requirements)
+    const turboIndexer = new Indexer(turboIndexerRpc)
+    
+    console.log('[upload-dataset] Uploading to Turbo indexer with retry logic...')
+    
+    // Upload with retry logic for network resilience
     let lastError: any
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        console.log(`[upload-dataset] Upload attempt ${attempt}/3...`)
+        console.log(`[upload-dataset] Upload attempt ${attempt}/3 to Turbo...`)
         const feeData = await provider.getFeeData()
         const gasPrice = (feeData.gasPrice || ethers.parseUnits('1', 'gwei')) * BigInt(attempt)
         
-        const [txHash, error] = await indexer.upload(zgFile, evmRpc, wallet, undefined, undefined, { gasPrice })
+        const [txHash, error] = await turboIndexer.upload(zgFile, evmRpc, wallet, undefined, undefined, { gasPrice })
         
         if (!error) {
           const size = zgFile.size()
           await zgFile.close()
           await fs.unlink(tempFile).catch(() => {})
           
-          console.log(`[upload-dataset] Upload successful: tx=${txHash}, root=${networkRoot}`)
+          console.log(`[upload-dataset] Upload successful to Turbo: tx=${txHash}, root=${networkRoot}`)
+          
+          // Post-upload validation: ensure file is accessible on Turbo
+          console.log('[upload-dataset] Post-upload validation on Turbo indexer...')
+          const isAccessible = await validateTurboAccess(networkRoot)
+          if (!isAccessible) {
+            console.warn('[upload-dataset] Warning: File may not be immediately accessible via Turbo indexer')
+          }
+          
           return {
-            rootHash: networkRoot, // Always return the network root format
+            rootHash: networkRoot, // Always return 0x network root format
             txHash,
             size,
             segments: Math.ceil(size / 256 / 1024),
@@ -168,16 +200,23 @@ async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
         }
         
         lastError = error
-        console.warn(`[upload-dataset] Upload attempt ${attempt} failed:`, error)
+        console.warn(`[upload-dataset] Turbo upload attempt ${attempt} failed:`, error)
         
       } catch (uploadError) {
         lastError = uploadError
-        console.warn(`[upload-dataset] Upload attempt ${attempt} error:`, uploadError)
+        console.warn(`[upload-dataset] Turbo upload attempt ${attempt} error:`, uploadError)
+      }
+      
+      // Wait before retry (exponential backoff)
+      if (attempt < 3) {
+        const delayMs = Math.pow(2, attempt) * 1000 // 2s, 4s
+        console.log(`[upload-dataset] Waiting ${delayMs}ms before retry...`)
+        await new Promise(resolve => setTimeout(resolve, delayMs))
       }
     }
     
     await zgFile.close()
-    throw new Error(`Upload failed after 3 attempts: ${lastError}`)
+    throw new Error(`Upload to Turbo failed after 3 attempts: ${lastError}`)
     
   } finally {
     await fs.unlink(tempFile).catch(() => {})
@@ -185,30 +224,48 @@ async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
 }
 
 /**
- * Validate that uploaded file is accessible via 0G Storage indexer
- * Performs HEAD request to indexer as required
+ * Validate that uploaded file is accessible via Turbo indexer
+ * Performs HEAD request to Turbo indexer as required by specifications
  */
-async function validateNetworkAccess(rootHash: string): Promise<boolean> {
+async function validateTurboAccess(rootHash: string): Promise<boolean> {
   try {
-    const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
-    const cleanHash = rootHash.replace('0x', '')
+    // IMPORTANT: Only use Turbo indexer per requirements - no fallback to Standard
+    const turboIndexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_TURBO_URL || 
+                            process.env.NEXT_PUBLIC_0G_STORAGE_URL || 
+                            'https://indexer-storage-testnet-turbo.0g.ai'
     
-    // Perform HEAD request to indexer
-    const headUrl = `${indexerRpc}/${rootHash}`
-    console.log(`[upload-dataset] Validating access: HEAD ${headUrl}`)
+    // Perform HEAD request to Turbo indexer
+    const headUrl = `${turboIndexerRpc}/${rootHash}`
+    console.log(`[upload-dataset] Validating Turbo access: HEAD ${headUrl}`)
     
     const response = await fetch(headUrl, { 
       method: 'HEAD',
       signal: AbortSignal.timeout(10000) // 10 second timeout
     })
     
-    console.log(`[upload-dataset] HEAD response: ${response.status} ${response.statusText}`)
-    return response.ok
+    console.log(`[upload-dataset] Turbo HEAD response: ${response.status} ${response.statusText}`)
+    
+    if (response.ok) {
+      console.log('✅ Dataset confirmed accessible on Turbo indexer')
+      return true
+    } else {
+      console.warn(`⚠️  Dataset may not be immediately accessible on Turbo: HTTP ${response.status}`)
+      console.warn(`⚠️  URL: ${headUrl}`)
+      console.warn(`⚠️  This may cause providers to fail with "file not found"`)
+      return false
+    }
     
   } catch (error: any) {
-    console.warn(`[upload-dataset] Network validation failed: ${error.message}`)
+    console.warn(`⚠️  Turbo validation failed: ${error.message}`)
     return false
   }
+}
+
+/**
+ * Enhanced network validation using only Turbo indexer
+ */
+async function validateNetworkAccess(rootHash: string): Promise<boolean> {
+  return validateTurboAccess(rootHash)
 }
 
 /**

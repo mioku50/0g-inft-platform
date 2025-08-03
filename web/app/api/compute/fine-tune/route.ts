@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { getBroker } from '@/lib/compute/broker.server'
-import { validateComputeEnvironment, shouldAttestOnChain } from '@/lib/server/compute-env'
+import { validateComputeEnvironment, shouldAttestOnChain, parseBoolEnv } from '@/lib/server/compute-env'
 import AgentModelRegistryService, { calculateTrainingParamsHash } from '@/lib/contracts/agent-model-registry'
 import { db, addDeliveredModel } from '@/database/connection'
 
@@ -130,9 +130,17 @@ export async function POST(request: NextRequest) {
       providerAddress: body.providerAddress 
     })
     
-    // Log on-chain attestation status at the start
+    // Enhanced logging with both environment variable checks as per requirements
     const shouldAttest = shouldAttestOnChain()
+    const rawAttestEnv = process.env.FT_ATTEST_ONCHAIN || process.env.NEXT_PUBLIC_FT_ATTEST_ONCHAIN || 'undefined'
+    console.log(`[fine-tune] FT_ATTEST_ONCHAIN="${rawAttestEnv}" -> ${shouldAttest}`)
     console.log(`[fine-tune] On-chain attestation enabled: ${shouldAttest}`)
+    
+    // Additional debug logging for environment variable parsing
+    if (rawAttestEnv !== 'undefined') {
+      const cleanValue = rawAttestEnv.split('#')[0].trim().toLowerCase()
+      console.log(`[fine-tune] Parsed environment value: "${rawAttestEnv}" -> clean: "${cleanValue}" -> boolean: ${shouldAttest}`)
+    }
 
     const {
       agentId,
@@ -200,28 +208,37 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Validate that dataset is accessible via network storage as per requirements
-    console.log('🔍 Ensuring dataset accessibility on 0G Storage network...')
-    const indexerUrl = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
-    const datasetUrl = `${indexerUrl}/${normalizedDatasetHash}`
+    // Enhanced validation with comprehensive logging as per requirements
+    console.log('🔍 Ensuring dataset accessibility on 0G Storage Turbo network...')
+    
+    // IMPORTANT: Only use Turbo indexer per requirements - no fallback to Standard
+    const turboUrl = process.env.NEXT_PUBLIC_0G_STORAGE_TURBO_URL || 
+                     process.env.NEXT_PUBLIC_0G_STORAGE_URL || 
+                     'https://indexer-storage-testnet-turbo.0g.ai'
+    const datasetUrl = `${turboUrl}/${normalizedDatasetHash}`
+    
+    console.log(`📊 Turbo indexer URL: ${turboUrl}`)
+    console.log(`📊 Dataset validation URL: ${datasetUrl}`)
     
     try {
       const headResponse = await fetch(datasetUrl, { 
         method: 'HEAD',
         signal: AbortSignal.timeout(5000) // 5 second timeout
       })
-      console.log(`📊 Dataset accessibility check: ${headResponse.status} ${headResponse.statusText}`)
+      console.log(`📊 Turbo accessibility check: ${headResponse.status} ${headResponse.statusText}`)
       if (!headResponse.ok) {
-        console.warn(`⚠️  Dataset may not be immediately accessible: HTTP ${headResponse.status}`)
+        console.warn(`⚠️  Dataset may not be immediately accessible on Turbo: HTTP ${headResponse.status}`)
         console.warn(`⚠️  URL: ${datasetUrl}`)
         console.warn(`⚠️  This may cause providers to fail with "file not found"`)
+        console.warn(`⚠️  Providers will access dataset via: ${normalizedDatasetHash}`)
       } else {
-        console.log('✅ Dataset confirmed accessible on 0G Storage network')
+        console.log('✅ Dataset confirmed accessible on 0G Storage Turbo network')
       }
     } catch (accessError: any) {
-      console.warn(`⚠️  Dataset accessibility check failed: ${accessError.message}`)
+      console.warn(`⚠️  Turbo accessibility check failed: ${accessError.message}`)
       console.warn(`⚠️  URL: ${datasetUrl}`)
       console.warn(`⚠️  Providers may encounter "file not found" errors`)
+      console.warn(`⚠️  This is critical: providers need network-accessible datasets`)
     }
 
     // Initialize broker with detailed error logging

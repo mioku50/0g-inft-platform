@@ -86,6 +86,8 @@ export async function POST(req: Request) {
 
 /**
  * Upload file to 0G Storage Turbo network and always return network root hash
+ * CRITICAL FIX: Always returns 0x network format, never local:// format
+ * This prevents "file not found" errors from providers
  * IMPORTANT: Only uses Turbo indexer - no fallback to Standard per requirements
  * Never returns local:// format as per requirements
  */
@@ -128,9 +130,9 @@ async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
       throw new Error('0G SDK returned invalid network root hash format')
     }
     
-    console.log(`[upload-dataset] Calculated network root: ${networkRoot}`)
+    console.log(`[upload-dataset] ✅ Calculated network root: ${networkRoot}`)
     
-    // Step 2: Check if file already exists on Turbo indexer
+    // Step 2: Check if file already exists on Turbo indexer before upload
     const turboCheckUrl = `${turboIndexerRpc}/${networkRoot}`
     console.log(`[upload-dataset] Checking if file exists on Turbo: HEAD ${turboCheckUrl}`)
     
@@ -141,9 +143,11 @@ async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
       })
       
       if (headResponse.ok) {
-        console.log('[upload-dataset] File already exists on Turbo indexer, returning existing root')
+        console.log('[upload-dataset] ✅ File already exists on Turbo indexer, returning existing root')
         await zgFile.close()
         await fs.unlink(tempFile).catch(() => {})
+        
+        // CRITICAL: Always return 0x format - never local://
         return {
           rootHash: networkRoot, // Always return 0x format
           size: data.length,
@@ -181,17 +185,20 @@ async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
           await zgFile.close()
           await fs.unlink(tempFile).catch(() => {})
           
-          console.log(`[upload-dataset] Upload successful to Turbo: tx=${txHash}, root=${networkRoot}`)
+          console.log(`[upload-dataset] ✅ Upload successful to Turbo: tx=${txHash}, root=${networkRoot}`)
           
           // Post-upload validation: ensure file is accessible on Turbo
           console.log('[upload-dataset] Post-upload validation on Turbo indexer...')
           const isAccessible = await validateTurboAccess(networkRoot)
           if (!isAccessible) {
-            console.warn('[upload-dataset] Warning: File may not be immediately accessible via Turbo indexer')
+            console.warn('[upload-dataset] ⚠️ Warning: File may not be immediately accessible via Turbo indexer')
+          } else {
+            console.log('[upload-dataset] ✅ Post-upload validation successful')
           }
           
+          // CRITICAL: Always return 0x network root format - never local://
           return {
-            rootHash: networkRoot, // Always return 0x network root format
+            rootHash: networkRoot, // Always return 0x format
             txHash,
             size,
             segments: Math.ceil(size / 256 / 1024),

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ethers } from 'ethers'
+import { ethers, formatEther } from 'ethers'
 import { getBroker } from '@/lib/compute/broker.server'
 import { validateComputeEnvironment, shouldAttestOnChain, parseBoolEnv } from '@/lib/server/compute-env'
 import AgentModelRegistryService, { calculateTrainingParamsHash } from '@/lib/contracts/agent-model-registry'
@@ -208,8 +208,8 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Enhanced validation with comprehensive logging as per requirements
-    console.log('🔍 Ensuring dataset accessibility on 0G Storage Turbo network...')
+    // STEP 2: DATASET AVAILABILITY CHECK VIA TURBO INDEXER ONLY (as per requirements)
+    console.log('🔍 Step 2: Dataset availability check via Turbo indexer only...')
     
     // IMPORTANT: Only use Turbo indexer per requirements - no fallback to Standard
     const turboUrl = process.env.NEXT_PUBLIC_0G_STORAGE_TURBO_URL || 
@@ -220,29 +220,59 @@ export async function POST(request: NextRequest) {
     console.log(`📊 Turbo indexer URL: ${turboUrl}`)
     console.log(`📊 Dataset validation URL: ${datasetUrl}`)
     
-    try {
-      const headResponse = await fetch(datasetUrl, { 
-        method: 'HEAD',
-        signal: AbortSignal.timeout(5000) // 5 second timeout
-      })
-      console.log(`📊 Turbo accessibility check: ${headResponse.status} ${headResponse.statusText}`)
-      if (!headResponse.ok) {
-        console.warn(`⚠️  Dataset may not be immediately accessible on Turbo: HTTP ${headResponse.status}`)
-        console.warn(`⚠️  URL: ${datasetUrl}`)
-        console.warn(`⚠️  This may cause providers to fail with "file not found"`)
-        console.warn(`⚠️  Providers will access dataset via: ${normalizedDatasetHash}`)
-      } else {
-        console.log('✅ Dataset confirmed accessible on 0G Storage Turbo network')
+    // Enhanced backoff strategy as per requirements: 5s, 10s, 15s, 20s, 30s
+    const backoffDelays = [5000, 10000, 15000, 20000, 30000]
+    let datasetAccessible = false
+    
+    for (let attempt = 0; attempt < backoffDelays.length; attempt++) {
+      try {
+        console.log(`📊 Dataset accessibility check attempt ${attempt + 1}/${backoffDelays.length}...`)
+        const headResponse = await fetch(datasetUrl, { 
+          method: 'HEAD',
+          signal: AbortSignal.timeout(10000) // 10 second timeout per attempt
+        })
+        
+        console.log(`📊 Turbo indexer response: ${headResponse.status} ${headResponse.statusText}`)
+        
+        if (headResponse.ok) {
+          console.log('✅ Dataset confirmed accessible on Turbo indexer')
+          datasetAccessible = true
+          break
+        } else if (headResponse.status === 404) {
+          console.warn(`⚠️  Dataset not found on Turbo indexer (attempt ${attempt + 1}/${backoffDelays.length})`)
+          if (attempt < backoffDelays.length - 1) {
+            const delayMs = backoffDelays[attempt]
+            console.log(`⏳ Waiting ${delayMs}ms before next attempt...`)
+            await new Promise(resolve => setTimeout(resolve, delayMs))
+          }
+        } else {
+          console.warn(`⚠️  Unexpected response from Turbo indexer: ${headResponse.status}`)
+          break // Don't retry on non-404 errors
+        }
+      } catch (accessError: any) {
+        console.warn(`⚠️  Turbo accessibility check failed (attempt ${attempt + 1}): ${accessError.message}`)
+        if (attempt < backoffDelays.length - 1) {
+          const delayMs = backoffDelays[attempt]
+          console.log(`⏳ Waiting ${delayMs}ms before retry...`)
+          await new Promise(resolve => setTimeout(resolve, delayMs))
+        }
       }
-    } catch (accessError: any) {
-      console.warn(`⚠️  Turbo accessibility check failed: ${accessError.message}`)
-      console.warn(`⚠️  URL: ${datasetUrl}`)
-      console.warn(`⚠️  Providers may encounter "file not found" errors`)
-      console.warn(`⚠️  This is critical: providers need network-accessible datasets`)
+    }
+    
+    // If dataset is not accessible after all retries, return 425 TOO_EARLY_INDEXING
+    if (!datasetAccessible) {
+      console.error('❌ Dataset not accessible on Turbo indexer after all retries')
+      return NextResponse.json({
+        error: 'TOO_EARLY_INDEXING',
+        details: 'Dataset is not yet accessible via Turbo indexer. Please wait for indexing to complete.',
+        indexingStatus: 'pending',
+        helpfulMessage: 'The dataset is still being indexed. This usually takes 1-5 minutes. Please try again in a few minutes.',
+        retryAfter: 120 // Suggest retry after 2 minutes
+      }, { status: 425 })
     }
 
-    // Initialize broker with detailed error logging
-    console.log('🔧 Initializing 0G broker...')
+    // Initialize broker for preflight checks
+    console.log('🔧 Initializing 0G broker for preflight checks...')
     const broker = await getBroker()
     if (!broker) {
       console.error('❌ Failed to initialize 0G broker')
@@ -251,7 +281,71 @@ export async function POST(request: NextRequest) {
         details: 'Check OG_COMPUTE_PRIVATE_KEY and network configuration'
       }, { status: 500 })
     }
-    console.log('✅ 0G broker initialized successfully')
+
+    // Enhanced provider validation
+    const configProvider = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER || '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
+    let finalProvider = configProvider
+    
+    if (providerAddress && providerAddress !== configProvider) {
+      const allowedProviders = [
+        '0x960E74Fc0AF1a6fBcADA3eEFCBe3152fA5E87A5f',
+        '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
+        '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'
+      ]
+      
+      if (allowedProviders.includes(providerAddress)) {
+        finalProvider = providerAddress
+        console.log(`📋 Using user-selected provider: ${providerAddress}`)
+      } else {
+        console.warn(`⚠️  Invalid provider ${providerAddress}, using config default: ${configProvider}`)
+        finalProvider = configProvider
+      }
+    }
+    
+    const provider = finalProvider
+
+    // STEP 1: ACCOUNT PREFLIGHT CHECK (as per requirements)
+    console.log('🔍 Step 1: Account preflight check...')
+    try {
+      const accountExists = await broker.ledger.getLedger()
+      console.log('✅ Account exists check passed')
+      
+      // Check balance meets minimum requirement  
+      let balance = '0'
+      if (accountExists.ledgerInfo) {
+        balance = formatEther(accountExists.ledgerInfo[0])
+      } else if (Array.isArray(accountExists)) {
+        balance = formatEther(accountExists[0])
+      }
+      
+      const minBalance = parseFloat('0.001') // 0.001 OG minimum for fine-tuning
+      if (parseFloat(balance) < minBalance) {
+        console.warn(`❌ Insufficient balance: ${balance} OG < ${minBalance} OG required`)
+        return NextResponse.json({
+          error: 'NEEDS_TOPUP',
+          details: `Insufficient balance for fine-tuning. Current: ${balance} OG, Required minimum: ${minBalance} OG`,
+          currentBalance: balance,
+          requiredMinimum: minBalance.toString(),
+          needsTopUp: true
+        }, { status: 409 })
+      }
+      
+      console.log(`✅ Balance check passed: ${balance} OG >= ${minBalance} OG required`)
+      
+    } catch (accountError: any) {
+      console.error('❌ Account preflight check failed:', accountError.message)
+      if (accountError.message?.includes('account does not exist') || 
+          accountError.message?.includes('no account found') ||
+          accountError.message?.includes('AccountNotExists')) {
+        return NextResponse.json({
+          error: 'NEEDS_ACCOUNT',
+          details: 'Fine-tuning account does not exist. Please create an account first.',
+          helpfulMessage: 'Click "Create Account" to set up your fine-tuning account with a minimum deposit of 0.01 OG'
+        }, { status: 409 })
+      } else {
+        throw accountError // Re-throw unexpected errors
+      }
+    }
 
     // Create config for training parameters
     const config = {
@@ -274,32 +368,9 @@ export async function POST(request: NextRequest) {
       ...trainingParams
     }
 
-    // Unified provider address management - config as source of truth
-    const configProvider = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER || '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
-    let finalProvider = configProvider
-    
-    // If user provided a different provider, validate it against allowed list
-    if (providerAddress && providerAddress !== configProvider) {
-      const allowedProviders = [
-        '0x960E74Fc0AF1a6fBcADA3eEFCBe3152fA5E87A5f',
-        '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
-        '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'
-      ]
-      
-      if (allowedProviders.includes(providerAddress)) {
-        finalProvider = providerAddress
-        console.log(`📋 Using user-selected provider: ${providerAddress}`)
-      } else {
-        console.warn(`⚠️  Invalid provider ${providerAddress}, using config default: ${configProvider}`)
-        finalProvider = configProvider
-      }
-    }
-    
-    console.log(`🎯 Final provider selection: ${finalProvider}`)
-    console.log(`🌐 Provider endpoint: ${getProviderUrl(finalProvider)}`)
+    console.log(`🎯 Final provider selection: ${provider}`)
+    console.log(`🌐 Provider endpoint: ${getProviderUrl(provider)}`)
     console.log(`📊 Dataset hash: ${normalizedDatasetHash}`)
-    
-    const provider = finalProvider
     
     // Calculate hashes for on-chain attestation
     console.log('🧮 Calculating hashes for attestation...')

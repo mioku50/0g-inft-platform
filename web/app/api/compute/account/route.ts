@@ -35,7 +35,7 @@ function generateResponseDiagnostics(method: string, error?: any) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const envValidation = validateComputeEnvironment()
   if (!envValidation.isValid) {
     console.error('[compute/account][GET] Environment validation failed:', envValidation.errors)
@@ -48,41 +48,105 @@ export async function GET() {
   }
 
   try {
+    const { searchParams } = new URL(request.url)
+    const providerAddress = searchParams.get('provider')
+    
     const broker = await getBroker()
     
-    // Check ledger account using SDK
+    // Enhanced account checking with provider support as per requirements
     let exists = false
     let balance = '0'
     let locked = '0'
+    let explicitErrors: string[] = []
+    let needsTopUp = true
+    const minRequired = '0.001' // Minimum 0.001 OG required for fine-tuning
     
     try {
-      const ledgerInfo = await broker.ledger.getLedger()
-      exists = true
-      // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
-      if (ledgerInfo.ledgerInfo) {
-        balance = formatEther(ledgerInfo.ledgerInfo[0])
-        locked = formatEther(ledgerInfo.ledgerInfo[1])
-      } else {
-        balance = formatEther(ledgerInfo[0])
-        locked = formatEther(ledgerInfo[1])
+      if (providerAddress) {
+        console.log(`[compute/account][GET] Checking account for provider: ${providerAddress}`)
+        
+        // Check provider-specific account using serving contract
+        const serving = getServingContract(broker.signer)
+        try {
+          const accountExists = await serving.accountExists(broker.signer.address, providerAddress)
+          exists = accountExists
+          
+          if (exists) {
+            const accountInfo = await serving.getAccount(broker.signer.address, providerAddress)
+            balance = formatEther(accountInfo.balance)
+            console.log(`[compute/account][GET] Provider account found:`, { 
+              provider: providerAddress, 
+              balance, 
+              deliverables: accountInfo.deliverables?.length || 0 
+            })
+          } else {
+            console.log(`[compute/account][GET] No account found for provider: ${providerAddress}`)
+          }
+        } catch (providerError: any) {
+          console.warn(`[compute/account][GET] Provider account check failed:`, providerError.message)
+          explicitErrors.push(`Provider account check failed: ${providerError.message}`)
+          
+          // Fall back to ledger account check
+          console.log(`[compute/account][GET] Falling back to ledger account check`)
+        }
       }
-      console.log('[fine] Ledger account found:', { balance, locked })
-    } catch (error) {
-      console.log('[fine] No ledger account found')
+      
+      // If provider check failed or no provider specified, check ledger account
+      if (!exists && !providerAddress) {
+        try {
+          const ledgerInfo = await broker.ledger.getLedger()
+          exists = true
+          // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
+          if (ledgerInfo.ledgerInfo) {
+            balance = formatEther(ledgerInfo.ledgerInfo[0])
+            locked = formatEther(ledgerInfo.ledgerInfo[1] || 0)
+          } else if (Array.isArray(ledgerInfo)) {
+            balance = formatEther(ledgerInfo[0])
+            locked = formatEther(ledgerInfo[1] || 0)
+          }
+          console.log('[compute/account][GET] Ledger account found:', { balance, locked })
+        } catch (ledgerError: any) {
+          console.log('[compute/account][GET] No ledger account found:', ledgerError.message)
+          explicitErrors.push(`Ledger account check failed: ${ledgerError.message}`)
+        }
+      }
+      
+      // Calculate needsTopUp based on minimum required
+      needsTopUp = !exists || parseFloat(balance) < parseFloat(minRequired)
+      
+    } catch (accountError: any) {
+      console.error('[compute/account][GET] Account check error:', accountError.message)
+      explicitErrors.push(`Account validation failed: ${accountError.message}`)
     }
 
+    // Enhanced response format as per requirements
+    const response = {
+      exists,
+      balance,
+      balanceWei: exists ? undefined : '0',
+      locked: locked || '0',
+      pendingRefund: '0',
+      pendingRefundWei: undefined,
+      needsTopUp,
+      minRequired,
+      explicitErrors: explicitErrors.length > 0 ? explicitErrors : undefined,
+      deliverables: 0, // Fine-tune specific, handled separately
+      nonce: undefined,
+      provider: providerAddress || undefined
+    }
+
+    console.log(`[compute/account][GET] Response:`, {
+      exists, 
+      balance, 
+      needsTopUp, 
+      minRequired,
+      provider: providerAddress,
+      errorCount: explicitErrors.length
+    })
+
     return NextResponse.json({
-      result: {
-        exists,
-        balance,
-        balanceWei: exists ? undefined : '0',
-        locked,
-        pendingRefund: '0', // SDK ledger doesn't have separate pendingRefund
-        pendingRefundWei: undefined,
-        needsTopUp: !exists || parseFloat(balance) < 0.001,
-        deliverables: 0, // Fine-tune specific, handled separately
-        nonce: undefined
-      }
+      result: response,
+      diagnostics: generateResponseDiagnostics('GET')
     })
   } catch (error: any) {
     console.error('[compute/account][GET] Error:', error.message)
@@ -116,9 +180,9 @@ export async function POST(req: NextRequest) {
     }, { status: 400 })
   }
 
-  const { amount, action = 'create' } = requestData
+  const { amount, action = 'create', provider } = requestData
 
-  // Parameter validation
+  // Enhanced parameter validation
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return NextResponse.json({ 
       error: 'Invalid amount parameter',
@@ -139,7 +203,7 @@ export async function POST(req: NextRequest) {
     const ledger = getLedgerContract(broker.signer)
     const serving = getServingContract(broker.signer)
 
-    // Check ledger account status using SDK
+    // Check current account status using SDK
     let hasLedgerAccount = false
     let currentBalance = '0'
     
@@ -149,19 +213,19 @@ export async function POST(req: NextRequest) {
       // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
       if (ledgerInfo.ledgerInfo) {
         currentBalance = formatEther(ledgerInfo.ledgerInfo[0])
-        console.log('[fine] Existing ledger account found:', {
+        console.log('[compute/account][POST] Existing ledger account found:', {
           balance: currentBalance,
           locked: formatEther(ledgerInfo.ledgerInfo[1])
         })
       } else {
         currentBalance = formatEther(ledgerInfo[0])
-        console.log('[fine] Existing ledger account found:', {
+        console.log('[compute/account][POST] Existing ledger account found:', {
           balance: currentBalance,
           locked: formatEther(ledgerInfo[1])
         })
       }
     } catch (error) {
-      console.log('[fine] No ledger account found')
+      console.log('[compute/account][POST] No ledger account found')
     }
 
     // Validate action against account status
@@ -181,11 +245,12 @@ export async function POST(req: NextRequest) {
       }, { status: 409 })
     }
 
-    console.log(`[fine] ${action}Ledger:start`, { 
+    console.log(`[compute/account][POST] ${action}Ledger:start`, { 
       user: broker.signer.address, 
       amount: amount + ' OG',
       hasLedgerAccount,
-      currentBalance
+      currentBalance,
+      provider: provider || 'none'
     })
 
     // Execute transaction using SDK ledger methods
@@ -194,12 +259,18 @@ export async function POST(req: NextRequest) {
     
     if (action === 'create') {
       // Create new ledger account
-      console.log('[fine] Creating new ledger account...')
+      console.log('[compute/account][POST] Creating new ledger account...')
       await broker.ledger.addLedger(amountOG)
       result = { status: 'completed' }
+      
+      // If provider specified, acknowledge provider after account creation (with retry)
+      if (provider) {
+        console.log(`[compute/account][POST] Acknowledging provider after account creation: ${provider}`)
+        await acknowledgeProviderWithRetry(broker, provider, 3)
+      }
     } else {
       // Deposit to existing ledger account
-      console.log('[fine] Depositing to existing ledger account...')
+      console.log('[compute/account][POST] Depositing to existing ledger account...')
       await broker.ledger.depositFund(amountOG)
       result = { status: 'completed' }
     }
@@ -213,10 +284,11 @@ export async function POST(req: NextRequest) {
     } else {
       newBalance = formatEther(newLedgerInfo[0])
     }
-    console.log(`[fine] ${action}Ledger:success`, { 
+    console.log(`[compute/account][POST] ${action}Ledger:success`, { 
       newBalance,
       previousBalance: currentBalance,
-      increase: (parseFloat(newBalance) - parseFloat(currentBalance)).toFixed(6)
+      increase: (parseFloat(newBalance) - parseFloat(currentBalance)).toFixed(6),
+      provider: provider || 'none'
     })
 
     return NextResponse.json({
@@ -226,12 +298,13 @@ export async function POST(req: NextRequest) {
       newBalance,
       deposited: amount,
       status: 'completed',
+      provider: provider || undefined,
       diagnostics: generateResponseDiagnostics('POST')
     }, { status: 201 })
 
   } catch (e: any) {
     const msg = e.message || 'Transaction failed'
-    console.error(`[fine] ${action}Ledger:error`, { error: msg, stack: e.stack })
+    console.error(`[compute/account][POST] ${action}Ledger:error`, { error: msg, stack: e.stack })
     
     // Enhanced error categorization
     if (msg.includes('Ledger already exists')) {
@@ -265,6 +338,32 @@ export async function POST(req: NextRequest) {
       details: msg,
       diagnostics: generateResponseDiagnostics('POST', e)
     }, { status: 502 })
+  }
+}
+
+/**
+ * Acknowledge provider with retry logic (silent retry 3x as per requirements)
+ */
+async function acknowledgeProviderWithRetry(broker: any, provider: string, maxRetries: number = 3): Promise<void> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[compute/account] Acknowledging provider ${provider} (attempt ${attempt}/${maxRetries})`)
+      await broker.inference.acknowledgeProviderSigner(provider)
+      console.log(`[compute/account] Provider ${provider} acknowledged successfully`)
+      return
+    } catch (error: any) {
+      console.warn(`[compute/account] Provider acknowledgment attempt ${attempt}/${maxRetries} failed:`, error.message)
+      
+      if (attempt === maxRetries) {
+        console.error(`[compute/account] Failed to acknowledge provider ${provider} after ${maxRetries} attempts`)
+        // Don't throw - this is a "silent retry" as per requirements
+      } else {
+        // Wait before retry (exponential backoff)
+        const delayMs = Math.pow(2, attempt) * 1000 // 2s, 4s, 8s
+        console.log(`[compute/account] Waiting ${delayMs}ms before retry...`)
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+      }
+    }
   }
 }
 

@@ -3,6 +3,10 @@ import type { JsonRpcProvider } from 'ethers'
 
 /**
  * Parse boolean environment variables with comprehensive format support
+ * Supports: 1|true|yes|on|enable|enabled → true
+ * Supports: 0|false|no|off|disable|disabled → false
+ * Handles inline comments: "1 # enable attestation" → true
+ * Prevents infinite recursion with depth limits
  * @param name Environment variable name
  * @param defaultValue Default value if not set or invalid
  * @param depth Recursion depth to prevent infinite loops
@@ -11,40 +15,55 @@ import type { JsonRpcProvider } from 'ethers'
 export function parseBoolEnv(name: string, defaultValue = false, depth = 0): boolean {
   // Prevent infinite recursion
   if (depth > 3) {
-    console.warn(`[parseBoolEnv] Max recursion depth reached for ${name}, returning default: ${defaultValue}`)
+    console.error(`[parseBoolEnv] ERROR: Maximum recursion depth reached for ${name}, returning default: ${defaultValue}`)
     return defaultValue
   }
 
   try {
-    const value = process.env[name]
-    if (!value) {
+    const rawValue = process.env[name]
+    if (rawValue === undefined || rawValue === null) {
       return defaultValue
     }
 
-    // Remove inline comments (anything after #)
-    const cleanValue = value.split('#')[0].trim().toLowerCase()
+    // Remove inline comments (anything after #) and trim
+    const cleanValue = rawValue.split('#')[0].trim().toLowerCase()
     
     if (!cleanValue) {
       return defaultValue
     }
 
-    // Handle true values
-    if (['1', 'true', 'yes', 'on', 'enable', 'enabled'].includes(cleanValue)) {
+    // Enhanced logging for debugging
+    if (depth === 0) {
+      console.log(`[parseBoolEnv] Parsing ${name}="${rawValue}" -> clean: "${cleanValue}"`)
+    }
+
+    // Handle true values - comprehensive list
+    const trueValues = ['1', 'true', 'yes', 'on', 'enable', 'enabled', 'y', 't']
+    if (trueValues.includes(cleanValue)) {
+      if (depth === 0) {
+        console.log(`[parseBoolEnv] ${name}="${rawValue}" -> ${true}`)
+      }
       return true
     }
     
-    // Handle false values
-    if (['0', 'false', 'no', 'off', 'disable', 'disabled'].includes(cleanValue)) {
+    // Handle false values - comprehensive list
+    const falseValues = ['0', 'false', 'no', 'off', 'disable', 'disabled', 'n', 'f']
+    if (falseValues.includes(cleanValue)) {
+      if (depth === 0) {
+        console.log(`[parseBoolEnv] ${name}="${rawValue}" -> ${false}`)
+      }
       return false
     }
 
     // If value doesn't match expected patterns, log warning and use default
-    console.warn(`[parseBoolEnv] Invalid boolean value for ${name}: "${value}", using default: ${defaultValue}`)
+    console.warn(`[parseBoolEnv] WARNING: Invalid boolean value for ${name}: "${rawValue}" (cleaned: "${cleanValue}"), using default: ${defaultValue}`)
+    console.warn(`[parseBoolEnv] Valid values: ${[...trueValues, ...falseValues].join(', ')}`)
     return defaultValue
 
-  } catch (error) {
-    // Catch any errors and return default value
-    console.warn(`[parseBoolEnv] Error parsing ${name} at depth ${depth}: ${error}, using default: ${defaultValue}`)
+  } catch (error: any) {
+    // Catch any parsing errors and return default value with context
+    console.error(`[parseBoolEnv] ERROR: Failed to parse ${name} at depth ${depth}: ${error.message}`)
+    console.error(`[parseBoolEnv] Stack trace:`, error.stack)
     return defaultValue
   }
 }

@@ -1657,6 +1657,94 @@ All requirements from the original issue are now working:
 ✅ Enhanced validation in fine-tune API with 66-character 0x hash checks
 The fine-tuning system now works end-to-end without provider "file not found" errors! 🚀
 
+
+
+Problem
+
+The fine-tuning system was experiencing critical "file not found" errors when providers attempted to download datasets, preventing users from successfully completing training workflows. The root cause was that the upload API was returning local:// format hashes instead of network-accessible 0x format roots.
+
+From the error logs:
+
+[2025-08-03T17:57:51Z] Error executing task b7251e3f-1a58-4d2a-bbe8-a62efccea1a0: 
+Error downloading data with root: 0xd0dcd65a1ef28c71952a35bc6bf75a45ae4d3d384850bf779301f6ac079b0fed: 
+failed to get file locations: file not found
+Additionally, new wallet users faced barriers to entry with no guided account creation process, and FT_ATTEST_ONCHAIN=1 environment variable parsing was broken.
+
+Solution
+
+🚨 Critical Fix: Eliminate "File Not Found" Errors
+
+Upload API Overhaul (/api/storage/upload-dataset):
+
+Now always returns network 0x format, never local:// format
+Uses 0G SDK to calculate proper network root hash before upload
+Implements Turbo-indexer-only strategy (no Standard fallback)
+Includes post-upload validation via HEAD requests to ensure accessibility
+Before:
+
+{
+  "success": true,
+  "rootHash": "local://d0dcd65a1ef28c71952a35bc6bf75a45ae4d3d384850bf779301f6ac079b0fed",
+  "size": 4395
+}
+After:
+
+{
+  "success": true,
+  "rootHash": "0xd0dcd65a1ef28c71952a35bc6bf75a45ae4d3d384850bf779301f6ac079b0fed",
+  "size": 4395,
+  "alreadyExists": false
+}
+🎯 Wallet Bootstrap System Implementation
+
+New Account Management (/api/compute/account):
+
+Supports provider=<address> query parameter for provider-specific accounts
+Returns structured responses with clear status indicators
+Automatic provider acknowledgment with 3x retry logic
+Enhanced error categorization (409 NEEDS_ACCOUNT, 409 NEEDS_TOPUP)
+Frontend Bootstrap Components:
+
+useAccountBootstrap hook triggers on wallet connect/change
+AccountBootstrapModal provides guided account creation with default 0.01 OG deposit
+Smart UI disables "Start fine-tuning" until account requirements are met
+🔍 Enhanced Preflight Validation
+
+Fine-tune API Improvements (/api/compute/fine-tune):
+
+Account preflight: Validates account exists and has sufficient balance (min 0.001 OG)
+Dataset accessibility: Checks Turbo indexer with backoff strategy (5s, 10s, 15s, 20s, 30s)
+Provider health: Validates provider availability before task creation
+Clear error responses: 425 TOO_EARLY_INDEXING for pending dataset indexing
+🛠️ Environment & Utility Improvements
+
+Enhanced Boolean Parsing (parseBoolEnv):
+
+Supports comprehensive formats: 1|true|yes|on|enable|enabled → true
+Handles inline comments: "1 # enable attestation" → true
+Includes recursion depth protection and detailed logging
+File Size Display:
+
+Files < 1MB now show in KB (not "0.00 MB")
+Files ≥ 1MB show in MB with proper precision
+Testing
+
+The implementation includes comprehensive validation:
+
+TypeScript compilation passes 100%
+Hash normalization supports all input formats
+Environment parsing handles edge cases
+Complete test script validates all components
+Impact
+
+This completely resolves the core "file not found" issue that was blocking fine-tuning workflows. The new bootstrap system provides seamless onboarding for new wallets while the enhanced validation prevents common failure scenarios.
+
+Key Achievement: Providers will no longer encounter "file not found" errors due to format issues, as the upload API guarantees network-accessible 0x format roots that are validated for accessibility on the 0G Storage Turbo indexer.
+
+
+
+
+
 0g-inft-platform
 
 

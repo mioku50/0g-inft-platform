@@ -369,7 +369,21 @@ export class FineTuningService {
     datasetSize: number
     trainingParams?: Partial<TrainingParams>
     providerAddress?: string
-  }): Promise<{ taskId: string; txHashAttested: string; chainLink: string }> {
+  }): Promise<{ 
+    taskId: string; 
+    attestation: {
+      status: 'success' | 'skipped' | 'failed';
+      message: string;
+      txHash?: string;
+      chainLink?: string;
+      enabled: boolean;
+    };
+    monitoring: {
+      statusUrl: string;
+      logsUrl: string;
+    };
+    provider: string;
+  }> {
     await this.initialize()
     
     try {
@@ -397,6 +411,16 @@ export class FineTuningService {
       
       if (!response.ok) {
         const errorData = await response.json()
+        
+        // Enhanced error handling per requirements
+        if (response.status === 422) {
+          throw new Error(`Validation error: ${errorData.error || errorData.details || 'Invalid input parameters'}`)
+        }
+        
+        if (response.status === 503) {
+          throw new Error(`Provider unavailable: ${errorData.error || 'Provider not responding, please try again later'}`)
+        }
+        
         throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
       }
       
@@ -407,12 +431,20 @@ export class FineTuningService {
       
       console.log(`✅ Fine-tuning task created successfully`)
       console.log(`📄 Task ID: ${data.taskId}`)
-      console.log(`🔗 On-chain attestation: ${data.txHashAttested}`)
+      console.log(`🎯 Provider: ${data.provider}`)
+      console.log(`⛓️  Attestation Status: ${data.attestation.status}`)
+      console.log(`📝 Attestation Message: ${data.attestation.message}`)
+      if (data.attestation.txHash) {
+        console.log(`🔗 On-chain transaction: ${data.attestation.txHash}`)
+      }
+      console.log(`📊 Monitor Status: ${data.monitoring.statusUrl}`)
+      console.log(`📋 Monitor Logs: ${data.monitoring.logsUrl}`)
       
       return {
         taskId: data.taskId,
-        txHashAttested: data.txHashAttested,
-        chainLink: data.chainLink
+        attestation: data.attestation,
+        monitoring: data.monitoring,
+        provider: data.provider
       }
     } catch (error: any) {
       console.error('Failed to create Fine-tuning task:', error)

@@ -42,6 +42,7 @@ export interface TrainingTask {
   modelRootHash?: string;
   errorMessage?: string;
   txHashAttested?: string;
+  attestationStatus?: 'success' | 'skipped' | 'failed';
   createdAt: Date;
   updatedAt: Date;
   deliveredAt?: Date;

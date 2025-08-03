@@ -41,6 +41,12 @@ export function getComputeInferenceContract(): string {
   )
 }
 
+export function shouldAttestOnChain(): boolean {
+  // Allow environment flag to control on-chain attestation
+  // Defaults to false for testing safety as per requirements
+  return process.env.FT_ATTEST_ONCHAIN === '1' || process.env.FT_ATTEST_ONCHAIN === 'true'
+}
+
 export function validateComputeEnvironment(): { isValid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = []
   const warnings: string[] = []

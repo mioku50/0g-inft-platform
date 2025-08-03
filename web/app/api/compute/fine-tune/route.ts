@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { getBroker } from '@/lib/compute/broker.server'
-import { validateComputeEnvironment } from '@/lib/server/compute-env'
+import { validateComputeEnvironment, shouldAttestOnChain } from '@/lib/server/compute-env'
 import AgentModelRegistryService, { calculateTrainingParamsHash } from '@/lib/contracts/agent-model-registry'
 import { db, addDeliveredModel } from '@/database/connection'
 
@@ -544,41 +544,69 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Step 2: Attest task creation on-chain (platform pays gas)
-    let txHashAttested: string
-    try {
-      console.log('⛓️  Attesting task creation on-chain...')
-      txHashAttested = await AgentModelRegistryService.attestTask(
-        parseInt(agentId),
-        userAddress,
-        provider,
-        normalizedDatasetHash,
-        pretrainedHash,
-        trainingParamsHash,
-        taskId
-      )
-      console.log(`✅ Task attested on-chain: ${txHashAttested}`)
-    } catch (attestError: any) {
-      console.error('❌ Failed to attest task on-chain:', attestError)
+    // Step 2: Check provider registration and attest task creation on-chain if appropriate
+    let txHashAttested: string | undefined
+    let attestationStatus: 'success' | 'skipped' | 'failed' = 'skipped'
+    let attestationMessage: string = ''
+    
+    // Check if on-chain attestation is enabled
+    const shouldAttest = shouldAttestOnChain()
+    console.log(`🔧 On-chain attestation enabled: ${shouldAttest}`)
+    
+    let providerRegistered = false
+    
+    if (shouldAttest) {
+      // Check if provider is registered before attempting attestation
+      providerRegistered = await isProviderRegistered(broker, provider)
       
-      // Enhanced error handling for attestation failures
-      if (attestError.message?.includes('insufficient funds')) {
-        return NextResponse.json({
-          error: 'Platform account insufficient funds',
-          details: 'Platform needs more ETH for gas fees',
-          taskId,
-          step: 'On-chain attestation',
-          context: 'Platform gas account needs funding'
-        }, { status: 500 })
+      if (providerRegistered) {
+        try {
+          console.log('⛓️  Attesting task creation on-chain...')
+          txHashAttested = await AgentModelRegistryService.attestTask(
+            parseInt(agentId),
+            userAddress,
+            provider,
+            normalizedDatasetHash,
+            pretrainedHash,
+            trainingParamsHash,
+            taskId
+          )
+          console.log(`✅ Task attested on-chain: ${txHashAttested}`)
+          attestationStatus = 'success'
+          attestationMessage = 'Task successfully attested on-chain'
+        } catch (attestError: any) {
+          console.error('❌ Failed to attest task on-chain:', attestError)
+          attestationStatus = 'failed'
+          attestationMessage = `On-chain attestation failed: ${attestError.message}`
+          
+          // Enhanced error handling for attestation failures
+          if (attestError.message?.includes('insufficient funds')) {
+            return NextResponse.json({
+              error: 'Platform account insufficient funds',
+              details: 'Platform needs more ETH for gas fees',
+              taskId,
+              step: 'On-chain attestation',
+              context: 'Platform gas account needs funding'
+            }, { status: 500 })
+          }
+          
+          return NextResponse.json({
+            error: 'Failed to attest task on blockchain',
+            details: attestError.message,
+            taskId,
+            step: 'On-chain attestation',
+            context: 'Blockchain transaction failed'
+          }, { status: 500 })
+        }
+      } else {
+        console.log('ℹ️  Provider not registered in 0G registry, skipping on-chain attestation')
+        attestationStatus = 'skipped'
+        attestationMessage = 'On-chain attestation skipped (provider not registered in 0G registry)'
       }
-      
-      return NextResponse.json({
-        error: 'Failed to attest task on blockchain',
-        details: attestError.message,
-        taskId,
-        step: 'On-chain attestation',
-        context: 'Blockchain transaction failed'
-      }, { status: 500 })
+    } else {
+      console.log('ℹ️  On-chain attestation disabled by configuration (FT_ATTEST_ONCHAIN=0)')
+      attestationStatus = 'skipped'
+      attestationMessage = 'On-chain attestation disabled by configuration'
     }
 
     // Step 3: Save task to database
@@ -593,7 +621,8 @@ export async function POST(request: NextRequest) {
         datasetRootHash: normalizedDatasetHash,
         trainingParamsHash,
         status: 'Init',
-        txHashAttested
+        txHashAttested,
+        attestationStatus
       })
       console.log(`✅ Task saved to database`)
     } catch (dbError: any) {
@@ -604,23 +633,41 @@ export async function POST(request: NextRequest) {
 
     const result = {
       success: true,
+      message: 'Task created successfully',
       taskId,
-      txHashAttested,
-      chainLink: AgentModelRegistryService.getChainLink(txHashAttested),
-      message: 'Fine-tuning task created and attested successfully'
+      provider,
+      providerUrl: getProviderUrl(provider),
+      datasetHash: normalizedDatasetHash,
+      modelId,
+      attestation: {
+        status: attestationStatus,
+        message: attestationMessage,
+        txHash: txHashAttested,
+        chainLink: txHashAttested ? AgentModelRegistryService.getChainLink(txHashAttested) : undefined,
+        enabled: shouldAttestOnChain()
+      },
+      monitoring: {
+        statusUrl: `${getProviderUrl(provider)}/v1/user/${userAddress}/task/${taskId}`,
+        logsUrl: `${getProviderUrl(provider)}/v1/user/${userAddress}/task/${taskId}/log`
+      }
     }
 
     // Comprehensive logging as required
     console.log('📊 FINE-TUNING TASK CREATION COMPLETE')
-    console.log(`📋 Provider: ${provider}`)
+    console.log(`📋 Provider: ${provider} (${providerRegistered ? 'registered' : 'unregistered'})`)
     console.log(`🌐 Endpoint: ${getProviderUrl(provider)}/v1/user/${userAddress}/task`)
     console.log(`📊 DatasetHash: ${normalizedDatasetHash}`)
     console.log(`🤖 ModelId: ${modelId}`)
     console.log(`🎯 PreTrainedModelHash: ${pretrainedHash}`)
     console.log(`✅ HTTP Status: 200 (Task created successfully)`)
     console.log(`🎉 TaskId: ${taskId}`)
-    console.log(`⛓️  TxHash: ${txHashAttested}`)
-    console.log(`🔗 Chain Link: ${AgentModelRegistryService.getChainLink(txHashAttested)}`)
+    console.log(`⛓️  Attestation Status: ${attestationStatus}`)
+    console.log(`📝 Attestation Message: ${attestationMessage}`)
+    if (txHashAttested) {
+      console.log(`🔗 Chain Link: ${AgentModelRegistryService.getChainLink(txHashAttested)}`)
+    }
+    console.log(`📊 Monitor Status: ${result.monitoring.statusUrl}`)
+    console.log(`📋 Monitor Logs: ${result.monitoring.logsUrl}`)
 
     console.log('🎉 Fine-tuning task created successfully:', result)
     return NextResponse.json(result)
@@ -662,6 +709,36 @@ function getModelHash(modelId: string): string {
   }
   
   return modelHashes[modelId] || ethers.keccak256(ethers.toUtf8Bytes(modelId))
+}
+
+async function isProviderRegistered(broker: any, providerAddress: string): Promise<boolean> {
+  try {
+    console.log(`🔍 Checking if provider ${providerAddress} is registered...`)
+    
+    // Use broker.inference.getService to check if provider is registered
+    const service = await broker.inference.contract.getService(providerAddress)
+    
+    // If service exists and has a valid URL, provider is registered
+    const isRegistered = service && service.url && service.url.length > 0
+    
+    console.log(`📋 Provider ${providerAddress} registration status: ${isRegistered ? 'registered' : 'not registered'}`)
+    return isRegistered
+    
+  } catch (error: any) {
+    console.log(`ℹ️  Provider ${providerAddress} registration check failed: ${error.message}`)
+    
+    // If getService throws ServiceNotExist or similar, provider is not registered
+    if (error.message?.includes('ServiceNotExist') || 
+        error.message?.includes('Service not found') ||
+        error.message?.includes('execution reverted')) {
+      console.log(`📋 Provider ${providerAddress} confirmed as unregistered`)
+      return false
+    }
+    
+    // For any other errors, assume not registered to be safe
+    console.log(`⚠️  Assuming provider ${providerAddress} is not registered due to error`)
+    return false
+  }
 }
 
 async function handleModelDelivery(dbTask: any, modelRootHash: string) {

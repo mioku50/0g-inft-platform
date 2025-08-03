@@ -368,10 +368,27 @@ export async function POST(request: NextRequest) {
       }
       const providerUrl = providerUrls[provider] || 'http://50.145.48.68:30080'
       
-      // Get authentication headers using broker
-      const headers = await broker.inference.getRequestHeaders(provider, JSON.stringify(config))
+      // Try to get authentication headers using broker - handle ServiceNotExist gracefully
+      let authHeaders: Record<string, string> = {}
+      try {
+        console.log(`🔐 Attempting to get request headers for provider ${provider}...`)
+        authHeaders = await broker.inference.getRequestHeaders(provider, JSON.stringify(config))
+        console.log(`✅ Authentication headers obtained successfully`)
+      } catch (headerError: any) {
+        if (headerError.message?.includes('ServiceNotExist') || 
+            headerError.message?.includes('Service not found') ||
+            headerError.message?.includes('Provider not registered')) {
+          console.log(`ℹ️  Provider ${provider} not registered in registry, proceeding without authentication headers`)
+          console.log(`📋 ServiceNotExist error bypassed as specified - creating task directly via HTTP API`)
+          // Continue without auth headers - this is expected for unregistered providers
+        } else {
+          console.warn(`⚠️  Failed to get authentication headers: ${headerError.message}`)
+          console.warn(`⚠️  Continuing without authentication headers`)
+          // For any other header errors, log warning but continue
+        }
+      }
       
-      // Create task via direct HTTP call to provider API
+      // Create task via direct HTTP call to provider API (per 0G specification)
       const createTaskUrl = `${providerUrl}/v1/user/${userAddress}/task`
       
       const taskPayload = {
@@ -385,14 +402,21 @@ export async function POST(request: NextRequest) {
       }
       
       console.log(`🚀 Creating task via provider API: ${createTaskUrl}`)
-      console.log(`📦 Payload:`, taskPayload)
+      console.log(`📦 Payload:`, { 
+        userAddress, 
+        datasetHashPreview: normalizedDatasetHash.slice(0, 10) + '...', 
+        preTrainedModelHash: pretrainedHash,
+        modelId,
+        provider,
+        endpoint: createTaskUrl
+      })
       console.log(`🎯 Model details: modelId=${modelId}, preTrainedModelHash=${pretrainedHash}`)
       
       const response = await fetch(createTaskUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...headers
+          ...authHeaders
         },
         body: JSON.stringify(taskPayload)
       })
@@ -401,22 +425,38 @@ export async function POST(request: NextRequest) {
         const errorText = await response.text()
         console.error(`❌ Provider API error: ${response.status} ${response.statusText}`)
         console.error(`❌ Error details: ${errorText}`)
-        console.error(`❌ Raw provider response:`, errorText)
+        console.error(`❌ Provider: ${provider}, Endpoint: ${createTaskUrl}`)
+        console.error(`❌ DatasetHash: ${normalizedDatasetHash}, ModelId: ${modelId}, PreTrainedModelHash: ${pretrainedHash}`)
         
-        // Check for specific provider errors mentioned in problem statement
+        // Enhanced error handling per requirements
+        if (response.status === 422) {
+          // Validation errors - pass through provider's error message
+          console.error(`❌ Provider validation error (422): ${errorText}`)
+          if (errorText.includes('preTrainedModelHash') || errorText.includes('modelId')) {
+            throw new Error(`Provider rejected task: invalid preTrainedModelHash (modelId=${modelId})`)
+          }
+          throw new Error(`Provider rejected task: ${errorText}`)
+        }
+        
+        if (response.status >= 500) {
+          // Server errors - return 503 Provider unavailable
+          console.error(`❌ Provider server error (${response.status}): ${errorText}`)
+          throw new Error(`Provider unavailable: HTTP ${response.status}`)
+        }
+        
         if (response.status === 400 && errorText.includes('preTrainedModelHash')) {
           throw new Error(`Provider rejected task: invalid preTrainedModelHash for model ${modelId}`)
         }
+        
         if (response.status === 400 && errorText.includes('model')) {
           throw new Error(`Unsupported model ${modelId} for this provider`)
         }
         
+        // Other 4xx errors
         throw new Error(`Provider API error: ${response.status} ${response.statusText}: ${errorText}`)
       }
       
       // Handle response according to 0G specification
-      let taskId: string
-      
       if (response.status === 204) {
         // 204 No Content is the expected success response per 0G specification
         // No JSON body expected, generate a task ID based on the request
@@ -438,25 +478,33 @@ export async function POST(request: NextRequest) {
       }
     } catch (createError: any) {
       console.error('❌ Failed to create task with 0G provider:', createError)
+      console.error(`❌ Provider: ${provider}, ModelId: ${modelId}, PreTrainedModelHash: ${pretrainedHash}`)
+      console.error(`❌ DatasetHash: ${normalizedDatasetHash}, HTTP Status: ${createError.message}`)
       
-      // Enhanced error handling with specific status codes
-      if (createError.message?.includes('Provider unavailable') || 
+      // Enhanced error handling with proper status codes per requirements
+      if (createError.message?.includes('Provider unavailable: HTTP 5') ||
+          createError.message?.includes('Provider unavailable') || 
           createError.message?.includes('Provider not responding') ||
           createError.message?.includes('ECONNREFUSED') ||
-          createError.message?.includes('fetch failed')) {
+          createError.message?.includes('fetch failed') ||
+          createError.message?.includes('timeout')) {
         return NextResponse.json({
-          error: 'Provider unavailable, try later',
+          error: 'Provider unavailable',
           details: createError.message,
           provider,
+          endpoint: getProviderUrl(provider),
           step: 'Provider API call'
         }, { status: 503 })
       }
       
-      if (createError.message?.includes('invalid preTrainedModelHash')) {
+      if (createError.message?.includes('invalid preTrainedModelHash') ||
+          createError.message?.includes('Provider rejected task')) {
         return NextResponse.json({
-          error: 'Provider rejected task: invalid preTrainedModelHash',
-          details: `Model hash not recognized by provider. Model: ${modelId}, Hash: ${pretrainedHash}`,
+          error: createError.message,
+          details: `Model validation failed. Model: ${modelId}, Hash: ${pretrainedHash}`,
           provider,
+          modelId,
+          preTrainedModelHash: pretrainedHash,
           step: 'Model validation'
         }, { status: 422 })
       }
@@ -466,6 +514,7 @@ export async function POST(request: NextRequest) {
           error: `Unsupported model for this provider`,
           details: `Model ${modelId} is not supported by provider ${provider}`,
           provider,
+          modelId,
           step: 'Model compatibility check'
         }, { status: 422 })
       }
@@ -477,6 +526,8 @@ export async function POST(request: NextRequest) {
           error: 'Invalid request parameters',
           details: createError.message,
           provider,
+          modelId,
+          preTrainedModelHash: pretrainedHash,
           step: 'Parameter validation'
         }, { status: 422 })
       }
@@ -485,6 +536,9 @@ export async function POST(request: NextRequest) {
         error: 'Failed to create task with 0G provider',
         details: createError.message,
         provider,
+        modelId,
+        preTrainedModelHash: pretrainedHash,
+        datasetHash: normalizedDatasetHash,
         step: 'Provider API call',
         context: 'Task creation failed during provider communication'
       }, { status: 500 })
@@ -555,6 +609,18 @@ export async function POST(request: NextRequest) {
       chainLink: AgentModelRegistryService.getChainLink(txHashAttested),
       message: 'Fine-tuning task created and attested successfully'
     }
+
+    // Comprehensive logging as required
+    console.log('📊 FINE-TUNING TASK CREATION COMPLETE')
+    console.log(`📋 Provider: ${provider}`)
+    console.log(`🌐 Endpoint: ${getProviderUrl(provider)}/v1/user/${userAddress}/task`)
+    console.log(`📊 DatasetHash: ${normalizedDatasetHash}`)
+    console.log(`🤖 ModelId: ${modelId}`)
+    console.log(`🎯 PreTrainedModelHash: ${pretrainedHash}`)
+    console.log(`✅ HTTP Status: 200 (Task created successfully)`)
+    console.log(`🎉 TaskId: ${taskId}`)
+    console.log(`⛓️  TxHash: ${txHashAttested}`)
+    console.log(`🔗 Chain Link: ${AgentModelRegistryService.getChainLink(txHashAttested)}`)
 
     console.log('🎉 Fine-tuning task created successfully:', result)
     return NextResponse.json(result)

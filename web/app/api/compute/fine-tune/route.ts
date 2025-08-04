@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers, formatEther } from 'ethers'
 import { getBroker } from '@/lib/compute/broker.server'
-import { validateComputeEnvironment, shouldAttestOnChain, parseBoolEnv } from '@/lib/server/compute-env'
+import { validateComputeEnvironment, shouldAttestOnChain } from '@/lib/server/compute-env'
+import { parseBoolEnv } from '@/lib/utils/parse-bool-env'
 import AgentModelRegistryService, { calculateTrainingParamsHash } from '@/lib/contracts/agent-model-registry'
 import { db, addDeliveredModel } from '@/database/connection'
 
@@ -130,8 +131,8 @@ export async function POST(request: NextRequest) {
       providerAddress: body.providerAddress 
     })
     
-    // Enhanced logging with both environment variable checks as per requirements
-    const shouldAttest = shouldAttestOnChain()
+    // Enhanced logging with centralized parseBoolEnv function as per requirements
+    const shouldAttest = parseBoolEnv('FT_ATTEST_ONCHAIN', false)
     const rawAttestEnv = process.env.FT_ATTEST_ONCHAIN || process.env.NEXT_PUBLIC_FT_ATTEST_ONCHAIN || 'undefined'
     console.log(`[fine-tune] FT_ATTEST_ONCHAIN="${rawAttestEnv}" -> ${shouldAttest}`)
     console.log(`[fine-tune] On-chain attestation enabled: ${shouldAttest}`)

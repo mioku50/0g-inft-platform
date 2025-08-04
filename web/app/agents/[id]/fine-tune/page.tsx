@@ -44,7 +44,7 @@ import {
 // Hooks and utilities
 import { useFineTuning } from '@/hooks/useFineTuning'
 import { useAccountBootstrap } from '@/hooks/useAccountBootstrap'
-import { AccountBootstrapModal } from '@/components/AccountBootstrapModal'
+import { AccountBootstrapModal } from '@/components/modals/AccountBootstrapModal'
 import { toast } from '@/hooks/use-toast'
 import { 
   FINE_TUNING_MODELS, 
@@ -108,6 +108,7 @@ export default function FineTunePage() {
   const {
     account: bootstrapAccount,
     loading: bootstrapLoading,
+    error: bootstrapError,
     showCreateModal,
     showTopUpModal,
     createAccount,
@@ -1025,6 +1026,7 @@ export default function FineTunePage() {
           }}
           account={bootstrapAccount}
           loading={bootstrapLoading}
+          error={bootstrapError}
           onCreateAccount={createAccount}
           onDepositFunds={depositFunds}
         />

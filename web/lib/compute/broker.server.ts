@@ -199,6 +199,52 @@ export async function createUserWalletBroker(userSigner: ethers.Wallet | ethers.
 }
 
 /**
+ * Reset broker state for a specific user (wallet change handler)
+ * Implements proper cache isolation per requirements
+ */
+export function resetBrokerStateForUser(userAddress?: string) {
+  if (!userAddress) {
+    // Clear all caches if no specific user
+    console.log('[broker.server] Clearing all broker caches')
+    brokerCache.clear()
+    brokerCacheTime.clear()
+    return
+  }
+
+  // Clear caches for specific user across all possible chains
+  const keysToRemove: string[] = []
+  
+  for (const key of brokerCache.keys()) {
+    if (key.includes(userAddress.toLowerCase()) || key.includes(userAddress)) {
+      keysToRemove.push(key)
+    }
+  }
+  
+  keysToRemove.forEach(key => {
+    brokerCache.delete(key)
+    brokerCacheTime.delete(key)
+    console.log(`[broker.server] Cleared broker cache for key: ${key}`)
+  })
+  
+  console.log(`[broker.server] Reset broker state for user: ${userAddress}`)
+}
+
+/**
+ * Get cache statistics for monitoring
+ */
+export function getBrokerCacheStats() {
+  return {
+    size: brokerCache.size,
+    keys: Array.from(brokerCache.keys()),
+    cacheTime: Array.from(brokerCacheTime.entries()).map(([key, time]) => ({
+      key,
+      age: Date.now() - time,
+      expires: CACHE_DURATION - (Date.now() - time)
+    }))
+  }
+}
+
+/**
  * Валидация кошелька пользователя
  * ТОЛЬКО ДЛЯ СЕРВЕРНОГО ИСПОЛЬЗОВАНИЯ
  */
@@ -267,20 +313,6 @@ export async function clearBrokerCache(userAddress?: string) {
     brokerCacheTime.clear()
     console.log('[broker.server] All broker cache cleared')
   }
-}
-
-/**
- * Reset state on wallet change as per requirements
- * This should be called when user changes wallet address
- */
-export async function resetBrokerStateForUser(oldUserAddress: string, newUserAddress?: string) {
-  console.log(`[broker.server] Resetting broker state: ${oldUserAddress} -> ${newUserAddress || 'disconnected'}`)
-  
-  // Clear old user's cache
-  await clearBrokerCache(oldUserAddress)
-  
-  // Note: New user's broker will be created on next request
-  console.log('[broker.server] Broker state reset complete. New broker will be created on next request.')
 }
 
 /**

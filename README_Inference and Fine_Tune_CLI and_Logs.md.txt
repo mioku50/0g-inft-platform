@@ -301,6 +301,297 @@ for (const [model, provider] of Object.entries(OFFICIAL_PROVIDERS)) {
     continue; // Try next provider
   }
 }
+Response Processing
+This function is used to verify the response. If it is a verifiable service, it will return whether the response is valid.
+
+const valid = await broker.inference.processResponse(
+  providerAddress,
+  content,
+  chatID // Optional: Only for verifiable services
+);
+
+Fee Settlement
+Fee settlement by the broker service occurs at scheduled intervals.
+
+Account Management
+Check Balance
+const ledger = await broker.ledger.getLedger();
+console.log(`
+  Balance: ${ethers.formatEther(ledger.balance)} OG
+  Locked: ${ethers.formatEther(ledger.locked)} OG
+  Available: ${ethers.formatEther(ledger.balance - ledger.locked)} OG
+`);
+
+Add Funds
+// Add more funds
+await broker.ledger.depositFund(ethers.parseEther("0.5"));
+
+Request Refund
+// Withdraw unused funds
+const amount = ethers.parseEther("0.1");
+await broker.ledger.retrieveFund("inference", amount);
+
+Troubleshooting
+Common Issues
+Error: Insufficient balance
+Your account doesn't have enough funds. Add more:
+
+await broker.ledger.addLedger(ethers.parseEther("0.1"));
+
+Error: Headers already used
+Request headers are single-use. Generate new ones for each request:
+
+// ❌ Wrong
+const headers = await broker.inference.getRequestHeaders(provider, content);
+await makeRequest(headers);
+await makeRequest(headers); // Will fail!
+
+// ✅ Correct
+const headers1 = await broker.inference.getRequestHeaders(provider, content);
+await makeRequest(headers1);
+const headers2 = await broker.inference.getRequestHeaders(provider, content);
+await makeRequest(headers2);
+
+Error: Provider not responding
+The provider might be offline. Try another:
+
+// Try all official providers
+for (const [model, provider] of Object.entries(OFFICIAL_PROVIDERS)) {
+  try {
+    console.log(`Trying ${model}...`);
+    return await makeRequestToProvider(provider);
+  } catch (e) {
+    console.log(`${model} failed, trying next...`);
+    continue; // Try next provider
+  }
+}
+
+0G Serving Broker Documentation
+Overview
+This document provides an overview of the 0G Serving Broker, including setup and usage instructions.
+
+Setup and Usage
+To integrate the 0G Serving Broker into your project, follow these steps
+
+Step 1: Install the dependency
+To get started, you need to install the @0glabs/0g-serving-broker package:
+
+pnpm add @0glabs/0g-serving-broker @types/crypto-js@4.2.2 crypto-js@4.2.0
+Step 2: Initialize a Broker Instance
+The broker instance is initialized with a signer. This signer is an instance that implements the JsonRpcSigner or Wallet interface from the ethers package and is used to sign transactions for a specific Ethereum account. You can create this instance using your private key via the ethers library or use a wallet framework tool like wagmi to initialize the signer.
+
+import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
+
+/**
+ * 'createZGComputeNetworkBroker' is used to initialize ZGServingUserBroker
+ *
+ * @param {JsonRpcSigner | Wallet} signer - A signer that implements the 'JsonRpcSigner' or 'Wallet' interface from the ethers package.
+ * @param {string} contractAddress - 0G Serving contract address, use default address if not provided.
+ *
+ * @returns broker instance.
+ *
+ * @throws An error if the broker cannot be initialized.
+ */
+const broker = await createZGComputeNetworkBroker(signer)
+Step 3: List Available Services
+/**
+ * 'listService' retrieves a list of services from the contract.
+ *
+ * @returns {Promise<ServiceStructOutput[]>} A promise that resolves to an array of ServiceStructOutput objects.
+ * @throws An error if the service list cannot be retrieved.
+ *
+ * type ServiceStructOutput = {
+ *   provider: string;  // Address of the provider
+ *   serviceType: string;
+ *   url: string;
+ *   inputPrice: bigint;
+ *   outputPrice: bigint;
+ *   updatedAt: bigint;
+ *   model: string;
+ *   verifiability: string; // Indicates how the service's outputs can be verified. 'TeeML' means it runs with verification in a Trusted Execution Environment. An empty value means no verification.
+ *   additionalInfo: string // Provider-defined metadata, currently used to store the provider's encrypted key, but can be extended to include other custom information in future.
+ * };
+ */
+const services = await broker.listService()
+Step 4: Manage Accounts
+Before using the provider's services, you need to create an account specifically for the chosen provider. The provider checks the account balance before responding to requests. If the balance is insufficient, the request will be denied.
+
+4.1 Create an Account
+/**
+ * 'addAccount' creates a new account in the contract.
+ *
+ * @param {number} balance - The initial balance to be assigned to the new account. The unit is A0GI.
+ *
+ * @throws  An error if the account creation fails.
+ */
+await broker.ledger.addLedger(balance)
+4.2 Deposit Funds into the Account
+/**
+ * 'depositFund' deposits a specified amount of funds into an existing account.
+ *
+ * @param {number} amount - The amount of funds to be deposited. The unit is A0GI.
+ *
+ * @throws  An error if the deposit fails.
+ */
+await broker.ledger.depositFund(amount)
+Step 5: Use the Provider's Services
+5.1 Get Service metadata
+/**
+ * 'getServiceMetadata' returns metadata for the provider service.
+ * Includes:
+ * 1. Service endpoint of the provider service
+ * 2. Model information for the provider service
+ *
+ * @param {string} providerAddress - The address of the provider.
+ *
+ * @returns { endpoint, model } - Object containing endpoint and model.
+ *
+ * @throws An error if errors occur during the processing of the request.
+ */
+const { endpoint, model } = await broker.getServiceMetadata(providerAddress)
+5.2 Acknowledge Provider
+Before using a service provided by a provider, you must first acknowledge the provider on-chain by following API:
+
+/**
+ * Acknowledge the given provider address.
+ *
+ * @param {string} providerAddress - The address of the provider identifying the account.
+ * 
+ *  @throws Will throw an error if failed to acknowledge.
+ */
+await broker.inference.acknowledgeProviderSigner(providerAddress)
+5.3 Get Request Headers
+/**
+ * 'getRequestHeaders' generates billing-related headers for the request
+ * when the user uses the provider service.
+ *
+ * In the 0G Serving system, a request with valid billing headers
+ * is considered a settlement proof and will be used by the provider
+ * for settlement in contract.
+ *
+ * @param {string} providerAddress - The address of the provider.
+ * @param {string} content - The content being billed. For example, in a chatbot service, it is the text input by the user.
+ *
+ * @returns headers. Records information such as the request fee and user signature.
+ *
+ * @throws An error if errors occur during the processing of the request.
+ */
+const headers = await broker.inference.getRequestHeaders(
+    providerAddress,
+    content
+)
+5.4 Send Request
+After obtaining the endpoint, model, and headers, you can use client SDKs compatible with the OpenAI interface to make requests.
+
+Note: Fee settlement by the broker service occurs at scheduled intervals.
+
+Note: Generated headers are valid for a single use only and cannot be reused.
+
+/**
+ * Any SDK request methods that follow the OpenAI interface specifications can also be used.
+ *
+ * Here is an example using the OpenAI TS SDK.
+ */
+const openai = new OpenAI({
+    baseURL: endpoint,
+    apiKey: '',
+})
+const completion = await openai.chat.completions.create(
+    {
+        messages: [{ role: 'system', content }],
+        model: model,
+    },
+    {
+        headers: {
+            ...headers,
+        },
+    }
+)
+
+/**
+ * Alternatively, you can also use `fetch` to make the request.
+ */
+await fetch(`${endpoint}/chat/completions`, {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+    },
+    body: JSON.stringify({
+        messages: [{ role: 'system', content }],
+        model: model,
+    }),
+})
+5.5 Process Responses
+/**
+ * 'processResponse' is used after the user successfully obtains a response from the provider service.
+ *
+ * Additionally, if the service is verifiable,
+ * input the chat ID from the response and 'processResponse' will determine the validity of the
+ * returned content by checking the provider service's response and corresponding signature associated
+ * with the chat ID.
+ *
+ * @param {string} providerAddress - The address of the provider.
+ * @param {string} content - The main content returned by the service. For example, in the case of a chatbot service,
+ * it would be the response text.
+ * @param {string} chatID - Only for verifiable services. You can provide the chat ID obtained from the response to
+ * automatically download the response signature. The function will verify the reliability of the response
+ * using the service's signing address.
+ *
+ * @returns A boolean value. True indicates the returned content is valid, otherwise it is invalid.
+ *
+ * @throws An error if any issues occur during the processing of the response.
+ */
+const valid = await broker.inference.processResponse(
+    providerAddress,
+    content,
+    chatID
+)
+Interface
+<!DOCTYPE html><html class="default" lang="en" data-base="./"><head><meta charset="utf-8"/><meta http-equiv="x-ua-compatible" content="IE=edge"/><title>@0glabs/0g-serving-broker - v0.2.6</title><meta name="description" content="Documentation for @0glabs/0g-serving-broker"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="stylesheet" href="assets/style.css"/><link rel="stylesheet" href="assets/highlight.css"/><script defer src="assets/main.js"></script><script async src="assets/icons.js" id="tsd-icons-script"></script><script async src="assets/search.js" id="tsd-search-script"></script><script async src="assets/navigation.js" id="tsd-nav-script"></script></head><body><script>document.documentElement.dataset.theme = localStorage.getItem("tsd-theme") || "os";document.body.style.display="none";setTimeout(() => window.app?app.showPage():document.body.style.removeProperty("display"),500)</script><header class="tsd-page-toolbar"><div class="tsd-toolbar-contents container"><a href="index.html" class="title">@0glabs/0g-serving-broker - v0.2.6</a><div id="tsd-toolbar-links"></div><button id="tsd-search-trigger" class="tsd-widget" aria-label="Search"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-search"></use></svg></button><dialog id="tsd-search" aria-label="Search"><input role="combobox" id="tsd-search-input" aria-controls="tsd-search-results" aria-autocomplete="list" aria-expanded="true" autocapitalize="off" autocomplete="off" placeholder="Search the docs" maxLength="100"/><ul role="listbox" id="tsd-search-results"></ul><div id="tsd-search-status" aria-live="polite" aria-atomic="true"><div>Preparing search index...</div></div></dialog><a href="#" class="tsd-widget menu" id="tsd-toolbar-menu-trigger" data-toggle="menu" aria-label="Menu"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><use href="assets/icons.svg#icon-menu"></use></svg></a></div></header><div class="container container-main"><div class="col-content"><div class="tsd-page-title"><h1>@0glabs/0g-serving-broker - v0.2.6</h1></div><div class="tsd-panel tsd-typography"><h1 id="0g-serving-broker-documentation" class="tsd-anchor-link">0G Serving Broker Documentation<a href="#0g-serving-broker-documentation" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h1><h2 id="overview" class="tsd-anchor-link">Overview<a href="#overview" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p>This document provides an overview of the 0G Serving Broker, including setup and usage instructions.</p>
+<h2 id="setup-and-usage" class="tsd-anchor-link">Setup and Usage<a href="#setup-and-usage" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p>To integrate the 0G Serving Broker into your project, follow these steps</p>
+<h3 id="step-1-install-the-dependency" class="tsd-anchor-link">Step 1: Install the dependency<a href="#step-1-install-the-dependency" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>To get started, you need to install the <code>@0glabs/0g-serving-broker</code> package:</p>
+<pre><code class="bash"><span class="hl-0">pnpm</span><span class="hl-1"> </span><span class="hl-2">add</span><span class="hl-1"> </span><span class="hl-2">@0glabs/0g-serving-broker</span><span class="hl-1"> </span><span class="hl-2">@types/crypto-js@4.2.2</span><span class="hl-1"> </span><span class="hl-2">crypto-js@4.2.0</span>
+</code><button type="button">Copy</button></pre>
+
+<h3 id="step-2-initialize-a-broker-instance" class="tsd-anchor-link">Step 2: Initialize a Broker Instance<a href="#step-2-initialize-a-broker-instance" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>The broker instance is initialized with a <code>signer</code>. This signer is an instance that implements the <code>JsonRpcSigner</code> or <code>Wallet</code> interface from the ethers package and is used to sign transactions for a specific Ethereum account. You can create this instance using your private key via the ethers library or use a wallet framework tool like <a href="https://wagmi.sh/react/guides/ethers">wagmi</a> to initialize the signer.</p>
+<pre><code class="typescript"><span class="hl-3">import</span><span class="hl-1"> { </span><span class="hl-4">createZGComputeNetworkBroker</span><span class="hl-1"> } </span><span class="hl-3">from</span><span class="hl-1"> </span><span class="hl-2">&#39;@0glabs/0g-serving-broker&#39;</span><br/><br/><span class="hl-5">/**</span><br/><span class="hl-5"> * &#39;createZGComputeNetworkBroker&#39; is used to initialize ZGServingUserBroker</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{JsonRpcSigner | Wallet}</span><span class="hl-5"> </span><span class="hl-4">signer</span><span class="hl-5"> - A signer that implements the &#39;JsonRpcSigner&#39; or &#39;Wallet&#39; interface from the ethers package.</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{string}</span><span class="hl-5"> </span><span class="hl-4">contractAddress</span><span class="hl-5"> - 0G Serving contract address, use default address if not provided.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@returns</span><span class="hl-5"> broker instance.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@throws</span><span class="hl-5"> An error if the broker cannot be initialized.</span><br/><span class="hl-5"> */</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-8">broker</span><span class="hl-1"> = </span><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-0">createZGComputeNetworkBroker</span><span class="hl-1">(</span><span class="hl-4">signer</span><span class="hl-1">)</span>
+</code><button type="button">Copy</button></pre>
+
+<h3 id="step-3-list-available-services" class="tsd-anchor-link">Step 3: List Available Services<a href="#step-3-list-available-services" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><pre><code class="typescript"><span class="hl-5">/**</span><br/><span class="hl-5"> * &#39;listService&#39; retrieves a list of services from the contract.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@returns</span><span class="hl-5"> </span><span class="hl-7">{Promise&lt;ServiceStructOutput[]&gt;}</span><span class="hl-5"> A promise that resolves to an array of ServiceStructOutput objects.</span><br/><span class="hl-5"> * </span><span class="hl-6">@throws</span><span class="hl-5"> An error if the service list cannot be retrieved.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * type ServiceStructOutput = {</span><br/><span class="hl-5"> *   provider: string;  // Address of the provider</span><br/><span class="hl-5"> *   serviceType: string;</span><br/><span class="hl-5"> *   url: string;</span><br/><span class="hl-5"> *   inputPrice: bigint;</span><br/><span class="hl-5"> *   outputPrice: bigint;</span><br/><span class="hl-5"> *   updatedAt: bigint;</span><br/><span class="hl-5"> *   model: string;</span><br/><span class="hl-5"> *   verifiability: string; // Indicates how the service&#39;s outputs can be verified. &#39;TeeML&#39; means it runs with verification in a Trusted Execution Environment. An empty value means no verification.</span><br/><span class="hl-5"> *   additionalInfo: string // Provider-defined metadata, currently used to store the provider&#39;s encrypted key, but can be extended to include other custom information in future.</span><br/><span class="hl-5"> * };</span><br/><span class="hl-5"> */</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-8">services</span><span class="hl-1"> = </span><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">broker</span><span class="hl-1">.</span><span class="hl-0">listService</span><span class="hl-1">()</span>
+</code><button type="button">Copy</button></pre>
+
+<h3 id="step-4-manage-accounts" class="tsd-anchor-link">Step 4: Manage Accounts<a href="#step-4-manage-accounts" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>Before using the provider's services, you need to create an account specifically for the chosen provider. The provider checks the account balance before responding to requests. If the balance is insufficient, the request will be denied.</p>
+<h4 id="41-create-an-account" class="tsd-anchor-link">4.1 Create an Account<a href="#41-create-an-account" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h4><pre><code class="typescript"><span class="hl-5">/**</span><br/><span class="hl-5"> * &#39;addAccount&#39; creates a new account in the contract.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{number}</span><span class="hl-5"> </span><span class="hl-4">balance</span><span class="hl-5"> - The initial balance to be assigned to the new account. The unit is A0GI.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@throws</span><span class="hl-5">  An error if the account creation fails.</span><br/><span class="hl-5"> */</span><br/><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">broker</span><span class="hl-1">.</span><span class="hl-4">ledger</span><span class="hl-1">.</span><span class="hl-0">addLedger</span><span class="hl-1">(</span><span class="hl-4">balance</span><span class="hl-1">)</span>
+</code><button type="button">Copy</button></pre>
+
+<h4 id="42-deposit-funds-into-the-account" class="tsd-anchor-link">4.2 Deposit Funds into the Account<a href="#42-deposit-funds-into-the-account" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h4><pre><code class="typescript"><span class="hl-5">/**</span><br/><span class="hl-5"> * &#39;depositFund&#39; deposits a specified amount of funds into an existing account.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{number}</span><span class="hl-5"> </span><span class="hl-4">amount</span><span class="hl-5"> - The amount of funds to be deposited. The unit is A0GI.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@throws</span><span class="hl-5">  An error if the deposit fails.</span><br/><span class="hl-5"> */</span><br/><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">broker</span><span class="hl-1">.</span><span class="hl-4">ledger</span><span class="hl-1">.</span><span class="hl-0">depositFund</span><span class="hl-1">(</span><span class="hl-4">amount</span><span class="hl-1">)</span>
+</code><button type="button">Copy</button></pre>
+
+<h3 id="step-5-use-the-providers-services" class="tsd-anchor-link">Step 5: Use the Provider's Services<a href="#step-5-use-the-providers-services" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><h4 id="51-get-service-metadata" class="tsd-anchor-link">5.1 Get Service metadata<a href="#51-get-service-metadata" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h4><pre><code class="typescript"><span class="hl-5">/**</span><br/><span class="hl-5"> * &#39;getServiceMetadata&#39; returns metadata for the provider service.</span><br/><span class="hl-5"> * Includes:</span><br/><span class="hl-5"> * 1. Service endpoint of the provider service</span><br/><span class="hl-5"> * 2. Model information for the provider service</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{string}</span><span class="hl-5"> </span><span class="hl-4">providerAddress</span><span class="hl-5"> - The address of the provider.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@returns</span><span class="hl-5"> </span><span class="hl-7">{ endpoint, model }</span><span class="hl-5"> - Object containing endpoint and model.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@throws</span><span class="hl-5"> An error if errors occur during the processing of the request.</span><br/><span class="hl-5"> */</span><br/><span class="hl-6">const</span><span class="hl-1"> { </span><span class="hl-8">endpoint</span><span class="hl-1">, </span><span class="hl-8">model</span><span class="hl-1"> } = </span><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">broker</span><span class="hl-1">.</span><span class="hl-0">getServiceMetadata</span><span class="hl-1">(</span><span class="hl-4">providerAddress</span><span class="hl-1">)</span>
+</code><button type="button">Copy</button></pre>
+
+<h3 id="52-acknowledge-provider" class="tsd-anchor-link">5.2 Acknowledge Provider<a href="#52-acknowledge-provider" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>Before using a service provided by a provider, you must first acknowledge the provider on-chain by following API:</p>
+<pre><code class="typescript"><span class="hl-5">/**</span><br/><span class="hl-5"> * Acknowledge the given provider address.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{string}</span><span class="hl-5"> </span><span class="hl-4">providerAddress</span><span class="hl-5"> - The address of the provider identifying the account.</span><br/><span class="hl-5"> * </span><br/><span class="hl-5"> *  </span><span class="hl-6">@throws</span><span class="hl-5"> Will throw an error if failed to acknowledge.</span><br/><span class="hl-5"> */</span><br/><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">broker</span><span class="hl-1">.</span><span class="hl-4">inference</span><span class="hl-1">.</span><span class="hl-0">acknowledgeProviderSigner</span><span class="hl-1">(</span><span class="hl-4">providerAddress</span><span class="hl-1">)</span>
+</code><button type="button">Copy</button></pre>
+
+<h4 id="53-get-request-headers" class="tsd-anchor-link">5.3 Get Request Headers<a href="#53-get-request-headers" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h4><pre><code class="typescript"><span class="hl-5">/**</span><br/><span class="hl-5"> * &#39;getRequestHeaders&#39; generates billing-related headers for the request</span><br/><span class="hl-5"> * when the user uses the provider service.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * In the 0G Serving system, a request with valid billing headers</span><br/><span class="hl-5"> * is considered a settlement proof and will be used by the provider</span><br/><span class="hl-5"> * for settlement in contract.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{string}</span><span class="hl-5"> </span><span class="hl-4">providerAddress</span><span class="hl-5"> - The address of the provider.</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{string}</span><span class="hl-5"> </span><span class="hl-4">content</span><span class="hl-5"> - The content being billed. For example, in a chatbot service, it is the text input by the user.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@returns</span><span class="hl-5"> headers. Records information such as the request fee and user signature.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@throws</span><span class="hl-5"> An error if errors occur during the processing of the request.</span><br/><span class="hl-5"> */</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-8">headers</span><span class="hl-1"> = </span><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">broker</span><span class="hl-1">.</span><span class="hl-4">inference</span><span class="hl-1">.</span><span class="hl-0">getRequestHeaders</span><span class="hl-1">(</span><br/><span class="hl-1">    </span><span class="hl-4">providerAddress</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-4">content</span><br/><span class="hl-1">)</span>
+</code><button type="button">Copy</button></pre>
+
+<h4 id="54-send-request" class="tsd-anchor-link">5.4 Send Request<a href="#54-send-request" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h4><p>After obtaining the <code>endpoint</code>, <code>model</code>, and <code>headers</code>, you can use client SDKs
+compatible with the OpenAI interface to make requests.</p>
+<p><strong>Note</strong>: Fee settlement by the broker service occurs at scheduled intervals.</p>
+<p><strong>Note</strong>: Generated <code>headers</code> are valid for a single use only and cannot be reused.</p>
+<pre><code class="typescript"><span class="hl-5">/**</span><br/><span class="hl-5"> * Any SDK request methods that follow the OpenAI interface specifications can also be used.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * Here is an example using the OpenAI TS SDK.</span><br/><span class="hl-5"> */</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-8">openai</span><span class="hl-1"> = </span><span class="hl-6">new</span><span class="hl-1"> </span><span class="hl-0">OpenAI</span><span class="hl-1">({</span><br/><span class="hl-1">    </span><span class="hl-4">baseURL:</span><span class="hl-1"> </span><span class="hl-4">endpoint</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-4">apiKey:</span><span class="hl-1"> </span><span class="hl-2">&#39;&#39;</span><span class="hl-1">,</span><br/><span class="hl-1">})</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-8">completion</span><span class="hl-1"> = </span><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">openai</span><span class="hl-1">.</span><span class="hl-4">chat</span><span class="hl-1">.</span><span class="hl-4">completions</span><span class="hl-1">.</span><span class="hl-0">create</span><span class="hl-1">(</span><br/><span class="hl-1">    {</span><br/><span class="hl-1">        </span><span class="hl-4">messages:</span><span class="hl-1"> [{ </span><span class="hl-4">role:</span><span class="hl-1"> </span><span class="hl-2">&#39;system&#39;</span><span class="hl-1">, </span><span class="hl-4">content</span><span class="hl-1"> }],</span><br/><span class="hl-1">        </span><span class="hl-4">model:</span><span class="hl-1"> </span><span class="hl-4">model</span><span class="hl-1">,</span><br/><span class="hl-1">    },</span><br/><span class="hl-1">    {</span><br/><span class="hl-1">        </span><span class="hl-4">headers:</span><span class="hl-1"> {</span><br/><span class="hl-1">            ...</span><span class="hl-4">headers</span><span class="hl-1">,</span><br/><span class="hl-1">        },</span><br/><span class="hl-1">    }</span><br/><span class="hl-1">)</span><br/><br/><span class="hl-5">/**</span><br/><span class="hl-5"> * Alternatively, you can also use `fetch` to make the request.</span><br/><span class="hl-5"> */</span><br/><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-0">fetch</span><span class="hl-1">(</span><span class="hl-2">`</span><span class="hl-6">${</span><span class="hl-4">endpoint</span><span class="hl-6">}</span><span class="hl-2">/chat/completions`</span><span class="hl-1">, {</span><br/><span class="hl-1">    </span><span class="hl-4">method:</span><span class="hl-1"> </span><span class="hl-2">&#39;POST&#39;</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-4">headers:</span><span class="hl-1"> {</span><br/><span class="hl-1">        </span><span class="hl-2">&#39;Content-Type&#39;</span><span class="hl-4">:</span><span class="hl-1"> </span><span class="hl-2">&#39;application/json&#39;</span><span class="hl-1">,</span><br/><span class="hl-1">        ...</span><span class="hl-4">headers</span><span class="hl-1">,</span><br/><span class="hl-1">    },</span><br/><span class="hl-1">    </span><span class="hl-4">body:</span><span class="hl-1"> </span><span class="hl-8">JSON</span><span class="hl-1">.</span><span class="hl-0">stringify</span><span class="hl-1">({</span><br/><span class="hl-1">        </span><span class="hl-4">messages:</span><span class="hl-1"> [{ </span><span class="hl-4">role:</span><span class="hl-1"> </span><span class="hl-2">&#39;system&#39;</span><span class="hl-1">, </span><span class="hl-4">content</span><span class="hl-1"> }],</span><br/><span class="hl-1">        </span><span class="hl-4">model:</span><span class="hl-1"> </span><span class="hl-4">model</span><span class="hl-1">,</span><br/><span class="hl-1">    }),</span><br/><span class="hl-1">})</span>
+</code><button type="button">Copy</button></pre>
+
+<h4 id="55-process-responses" class="tsd-anchor-link">5.5 Process Responses<a href="#55-process-responses" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h4><pre><code class="typescript"><span class="hl-5">/**</span><br/><span class="hl-5"> * &#39;processResponse&#39; is used after the user successfully obtains a response from the provider service.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * Additionally, if the service is verifiable,</span><br/><span class="hl-5"> * input the chat ID from the response and &#39;processResponse&#39; will determine the validity of the</span><br/><span class="hl-5"> * returned content by checking the provider service&#39;s response and corresponding signature associated</span><br/><span class="hl-5"> * with the chat ID.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{string}</span><span class="hl-5"> </span><span class="hl-4">providerAddress</span><span class="hl-5"> - The address of the provider.</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{string}</span><span class="hl-5"> </span><span class="hl-4">content</span><span class="hl-5"> - The main content returned by the service. For example, in the case of a chatbot service,</span><br/><span class="hl-5"> * it would be the response text.</span><br/><span class="hl-5"> * </span><span class="hl-6">@param</span><span class="hl-5"> </span><span class="hl-7">{string}</span><span class="hl-5"> </span><span class="hl-4">chatID</span><span class="hl-5"> - Only for verifiable services. You can provide the chat ID obtained from the response to</span><br/><span class="hl-5"> * automatically download the response signature. The function will verify the reliability of the response</span><br/><span class="hl-5"> * using the service&#39;s signing address.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@returns</span><span class="hl-5"> A boolean value. True indicates the returned content is valid, otherwise it is invalid.</span><br/><span class="hl-5"> *</span><br/><span class="hl-5"> * </span><span class="hl-6">@throws</span><span class="hl-5"> An error if any issues occur during the processing of the response.</span><br/><span class="hl-5"> */</span><br/><span class="hl-6">const</span><span class="hl-1"> </span><span class="hl-8">valid</span><span class="hl-1"> = </span><span class="hl-3">await</span><span class="hl-1"> </span><span class="hl-4">broker</span><span class="hl-1">.</span><span class="hl-4">inference</span><span class="hl-1">.</span><span class="hl-0">processResponse</span><span class="hl-1">(</span><br/><span class="hl-1">    </span><span class="hl-4">providerAddress</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-4">content</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-4">chatID</span><br/><span class="hl-1">)</span>
+</code><button type="button">Copy</button></pre>
+
+<h2 id="interface" class="tsd-anchor-link">Interface<a href="#interface" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p>Access the more details of interfaces via cloning the repo and opening <a href="media/index.html">index.html</a> in browser.</p>
+</div></div><div class="col-sidebar"><div class="page-menu"><div class="tsd-navigation settings"><details cl
+
+
 
 Next Steps
 Fine-tuning CLI
@@ -1162,4 +1453,5 @@ endpoint http://50.145.48.68:30080/v1/user/0x432330379Af04Dd2770557C711d82f88072
 │ Progress                          │ Init                                                                                │
 └───────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────┘
 root@elite-mint:~#
+
 

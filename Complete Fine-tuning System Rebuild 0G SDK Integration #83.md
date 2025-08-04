@@ -1905,6 +1905,79 @@ The system is production-ready with comprehensive testing script (test-complete-
 
 End-to-End Workflow: Users can now connect wallet → create account → upload dataset → train model → monitor progress without encountering the previous blocking issues on Galileo Testnet v3.
 
+This PR resolves critical fine-tuning system failures where users experienced "file not found" errors when trying to start training immediately after dataset uploads. The issue occurred because datasets were uploaded successfully to 0G Storage but weren't immediately accessible via the Turbo indexer, causing providers to fail when attempting to download training data.
+
+Problem
+
+The existing system had several critical issues:
+
+📊 Dataset uploaded successfully. Root hash: 0x8d7b0993e5058a09ea40ede486ca4ea25ff52fdc0a0483ac62935ba4ef73a936
+❌ Dataset not accessible on Turbo indexer after all retries
+Users would upload datasets successfully but then encounter failures when starting fine-tuning because:
+
+Upload API returned success immediately without verifying Turbo indexer accessibility
+No background monitoring system to wait for indexing completion
+Providers failed with "file not found" errors when datasets weren't indexed yet
+Poor user experience with cryptic error messages and manual retry requirements
+Solution
+
+This PR implements a comprehensive background indexing watcher system with the following components:
+
+Backend Infrastructure
+
+Background Indexing Watcher (lib/storage/indexing-watcher.ts)
+
+Monitors dataset accessibility for up to 10 minutes with 30-45 second intervals
+Per-root deduplication to prevent multiple watchers for the same dataset
+Automatic cleanup and subscriber notification system
+Enhanced APIs
+
+Upload API now returns 202 Accepted for new uploads and starts background monitoring
+Fine-tune API returns 425 TOO_EARLY_INDEXING for pending datasets with helpful guidance
+New indexing status endpoint: GET /api/storage/indexing-status?root=0x...
+Multi-User Improvements
+
+Broker cache isolation using {chainId}:{userAddress} keys to prevent data bleeding
+Rate-limited RPC provider with 4 concurrent limit and exponential backoff (50ms→2000ms)
+Enhanced environment variable parsing supporting formats like "1 # enable attestation"
+Frontend Integration
+
+Seamless User Experience
+
+Account bootstrap modal for new wallets with guided 0.01 OG deposit setup
+Upload handling that gracefully manages indexing delays
+Smart error messages with automatic retry suggestions
+Service Enhancements
+
+Fine-tuning service now handles 202/425 responses and provides indexing status checking
+useFineTuning hook includes checkIndexingStatus() method for real-time monitoring
+User Experience Flow
+
+Upload Dataset → Returns 202 Accepted, background indexing watcher starts
+Start Training → If dataset pending, returns 425 with helpful message and auto-retry guidance
+Background Monitoring → System automatically checks Turbo indexer every 30-45 seconds
+Auto-Continue → Training starts automatically when dataset becomes accessible
+Account Bootstrap → New wallets get guided setup with default funding
+Technical Improvements
+
+Eliminates 404 Errors: Background monitoring ensures datasets are accessible before training
+Anti-Storm Protection: Per-root deduplication and rate limiting prevent API overload
+Production Grade: Comprehensive error handling with user-friendly messages
+Multi-User Safe: Proper cache isolation prevents data bleeding between wallets
+Environment Cleanup: Removed duplicate/conflicting variables from .env.local
+Validation
+
+✅ TypeScript compilation successful (0 errors)
+✅ Complete build successful (35.8kB fine-tune page)
+✅ All API routes properly configured
+✅ Frontend components integrated without errors
+✅ Comprehensive test suite covering all features
+This solution transforms the fine-tuning experience from a frustrating cycle of uploads and failures into a seamless, production-ready workflow that handles Turbo indexer delays gracefully while providing excellent user feedback.
+
+
+
+
+
 
 root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.git' -L 5
 .

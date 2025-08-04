@@ -1854,7 +1854,56 @@ The fine-tuning system is now production-ready with a seamless user experience f
 
 
 
+🚨 Critical Issues Resolved
+File Not Found Errors: The upload API was returning local:// format hashes instead of network-accessible 0x format roots, causing providers to fail with "file not found" errors. The system now always returns network roots and validates accessibility via Turbo indexer.
 
+Cache Bleeding Between Users: Broker instances were shared between users, causing incorrect balance displays when wallets switched. Implemented proper cache isolation using {chainId}:{userAddress} keys with automatic state reset on wallet changes.
+
+Missing Wallet Onboarding: New wallets had no guided path to create fine-tuning accounts. Added AccountBootstrapModal that auto-triggers on wallet connect with guided account creation and 0.01 OG default deposit.
+
+RPC Rate Limiting: Frequent -32005 request rate exceeded errors were disrupting operations. Implemented enhanced provider singleton with 4 concurrent request limit and exponential backoff (50ms→2000ms).
+
+🔧 Key Technical Improvements
+Turbo-Only Upload Strategy
+Always returns 0x network format: Eliminates provider accessibility issues
+Exponential backoff validation: 5s, 10s, 15s, 20s, 30s delays with HEAD requests to Turbo indexer
+425 TOO_EARLY_INDEXING response: Clear user guidance when datasets are still indexing
+Multi-User Broker Isolation
+// Before: Shared broker causing cache bleeding
+const broker = await getBroker()
+
+// After: Proper user isolation
+const broker = await getBroker(userAddress) // Cache key: {chainId}:{userAddress}
+Enhanced Environment Parsing
+// New parseBoolEnv utility supports comprehensive formats
+FT_ATTEST_ONCHAIN=1           // → true
+FT_ATTEST_ONCHAIN=true        // → true  
+FT_ATTEST_ONCHAIN=1 # comment // → true (comment handling)
+FT_ATTEST_ONCHAIN=disable     // → false
+Rate-Limited Provider
+// Enhanced provider with intelligent throttling
+const enhancedProvider = EnhancedProvider.getInstance()
+await enhancedProvider.callContract(() => contract.method(), 3) // Auto-retry with backoff
+🎯 User Experience Improvements
+Seamless Wallet Onboarding: AccountBootstrapModal automatically appears when users connect wallets without accounts, guiding them through account creation with clear explanations.
+
+Intelligent Error Handling:
+
+425 TOO_EARLY_INDEXING: "Dataset still indexing, please wait 2 minutes"
+409 NEEDS_ACCOUNT: Auto-opens guided account creation
+409 NEEDS_TOPUP: Clear balance requirements with funding guidance
+Multi-User Safety: Wallet switching now properly resets broker state, preventing users from seeing other users' balances or account information.
+
+📊 Production Impact
+Build Status: ✅ 0 TypeScript errors, successful production build
+Configuration: Cleaned .env.local removing duplicates and git conflicts
+Dependencies: Added p-limit for concurrency control
+File Size: 35.6kB fine-tune page with comprehensive features
+Test Coverage: 9/9 test categories passing in validation script
+🚀 Deployment Ready
+The system is production-ready with comprehensive testing script (test-complete-rebuild.sh) and deployment guide (DEPLOYMENT_GUIDE.md). All existing functionality is preserved while adding robust error handling and multi-user support.
+
+End-to-End Workflow: Users can now connect wallet → create account → upload dataset → train model → monitor progress without encountering the previous blocking issues on Galileo Testnet v3.
 
 
 root@elite-mint:~/0g-inft-platform/web# tree -I 'node_modules|.next|dist|out|.git' -L 5

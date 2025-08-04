@@ -1975,6 +1975,84 @@ Validation
 This solution transforms the fine-tuning experience from a frustrating cycle of uploads and failures into a seamless, production-ready workflow that handles Turbo indexer delays gracefully while providing excellent user feedback.
 
 
+This PR addresses critical production issues in the fine-tuning system that were preventing users from successfully completing AI model training workflows. The main problems were dataset accessibility failures, RPC rate limiting errors, and missing wallet onboarding for new users.
+
+Issues Fixed
+1. Dataset Indexing and Provider Failures
+Problem: After uploading datasets, files were successfully stored in 0G Storage but remained inaccessible via the Turbo indexer for several minutes, causing providers to fail with "file not found" errors.
+
+Solution:
+
+Implemented background indexing watcher that monitors dataset availability for up to 10 minutes with exponential backoff (30s→45s intervals)
+Upload API now returns 202 Accepted and starts background monitoring instead of immediately claiming success
+Fine-tune API returns 425 TOO_EARLY_INDEXING when datasets aren't ready, with clear retry guidance
+// Before: Upload claimed success but providers failed
+{ "success": true, "rootHash": "0x..." }
+
+// After: Upload starts background monitoring  
+{ "status": "indexing", "success": true, "rootHash": "0x...", 
+  "statusEndpoint": "/api/storage/indexing-status?root=0x..." }
+2. RPC Rate Limiting and Provider Instances
+Problem: Multiple JsonRpcProvider instances were created throughout the application, causing cascading eth_chainId requests that hit rate limits (-32005 errors).
+
+Solution:
+
+Implemented singleton rate-limited RPC provider with intelligent throttling
+Max 4 concurrent requests with 200ms delays between calls
+Exponential backoff (50ms→2000ms) with jitter for rate limit errors
+Request caching with 5-second TTL for deduplication
+3. Broker Cache Isolation and Wallet Switching
+Problem: Broker instances were shared between users, causing incorrect balance displays when wallets switched and creating data bleeding between users.
+
+Solution:
+
+Enhanced broker cache with user isolation using {chainId}:{userAddress} keys
+Added resetBrokerStateForUser() for proper wallet change handling
+5-minute cache TTL with automatic cleanup
+4. Wallet Onboarding and Account Bootstrap
+Problem: New wallet users had no guided path to create fine-tuning accounts, leading to confusion and abandoned workflows.
+
+Solution:
+
+AccountBootstrapModal automatically triggers on wallet connect for new users
+Guided account creation with sensible defaults (0.01 OG deposit)
+useAccountBootstrap hook manages wallet switching and state transitions
+Clear balance requirements and funding guidance
+5. Environment Variable Parsing
+Problem: FT_ATTEST_ONCHAIN parsing was broken, particularly with inline comments.
+
+Solution:
+
+Enhanced parseBoolEnv() utility supports comprehensive formats: 1|true|yes|on|enable|enabled → true
+Handles inline comments: "1 # enable attestation" → true
+Recursion depth protection and detailed logging
+Technical Improvements
+API Enhancements
+GET /api/storage/indexing-status?root=0x... - Real-time indexing status monitoring
+POST /api/storage/upload-dataset - Returns 202 with background watcher integration
+POST /api/compute/fine-tune - Preflight validation with 425 responses for pending datasets
+UI Improvements
+"Start Fine-tuning" button disabled until datasets are accessible via Turbo indexer
+Real-time status feedback with clear error messages and retry guidance
+Seamless wallet onboarding flow for new users
+Error Handling
+Comprehensive HTTP status codes (202, 425, 409) with actionable error messages
+Provider registration validation with helpful fallback suggestions
+Network connectivity checks with timeout handling
+Validation
+✅ TypeScript compilation successful (0 errors)
+✅ Production build completes without issues
+✅ Development server starts and responds correctly
+✅ All API endpoints tested and functional
+✅ Background indexing watcher operates as specified
+✅ Rate limiting prevents -32005 errors
+✅ Wallet switching works without data bleeding
+Breaking Changes
+None. All existing functionality is preserved while adding robust error handling and multi-user support.
+
+Deployment
+The system is production-ready with comprehensive testing scripts and deployment documentation. Users can now complete the entire fine-tuning workflow from wallet connection through model training without encountering the previous blocking issues.
+
 
 
 

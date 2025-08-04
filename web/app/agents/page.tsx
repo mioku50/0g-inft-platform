@@ -6,6 +6,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
 import {
   Button,
+  Card,
+  CardContent,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -17,7 +19,6 @@ import {
   Skeleton,
   ToastAction
 } from '@/components/ui'
-import { Card, CardContent } from '@/components/ui/card'
 import Link from 'next/link'
 import { INFT_ABI, AGENT_MARKETPLACE_ABI } from '@/lib/contracts/abis'
 import { toast } from '@/hooks/use-toast'
@@ -217,44 +218,13 @@ const AgentCard = React.memo(({
                 <ShoppingCart className="h-4 w-4 mr-1" />
                 List for Sale
               </Button>
-                </Button>
-                <Button 
-                  onClick={() => onTransfer(agent)}
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
-                >
-                  <Send className="h-4 w-4 mr-1" />
-                  Transfer
-                </Button>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-2">
-                <Button 
-                  onClick={() => onPrompt(agent)}
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
-                >
-                  <Settings className="h-4 w-4 mr-1" />
-                  Prompt
-                </Button>
-                <Button 
-                  onClick={() => onList(agent)}
-                  size="sm"
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                >
-                  <ShoppingCart className="h-4 w-4 mr-1" />
-                  List
-                </Button>
-              </div>
             </>
           )}
           
           {agent.status === 'listed' && (
             <>
               <Link href={`/agent/${agent.tokenId}/chat`} className="block">
-                <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                <Button variant="outline" size="sm" className="w-full border-white/30 text-white hover:bg-white/10">
                   <MessageCircle className="h-4 w-4 mr-2" />
                   Chat
                 </Button>
@@ -659,21 +629,6 @@ export default function AgentsPage() {
               <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white">
                 <Plus className="h-4 w-4 mr-2" />
                 Mint New Agent
-              </Button>
-            </Link>
-          </div>
-        </div> 
-              variant="outline"
-              disabled={refreshing}
-              className="bg-white/70 backdrop-blur border-purple-200 text-gray-700 hover:bg-white/90"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-            <Link href="/mint">
-              <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white">
-                <Plus className="h-4 w-4 mr-2" />
-                Create New Agent
               </Button>
             </Link>
           </div>

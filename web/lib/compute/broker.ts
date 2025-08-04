@@ -661,7 +661,7 @@ export async function getBrokerOrThrow(userAddress?: string) {
     brokerCacheTimestamps.set(cacheKey, Date.now())
     
     console.log('[fine] Broker initialized successfully', {
-      signerAddress: newBroker.signerAddress,
+      signerAddress: (newBroker as any).signerAddress,
       servingAddress: servingAddr,
       ledgerAddress: ledger,
       cacheKey,

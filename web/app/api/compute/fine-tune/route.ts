@@ -5,6 +5,7 @@ import { validateComputeEnvironment, shouldAttestOnChain } from '@/lib/server/co
 import { parseBoolEnv } from '@/lib/utils/parse-bool-env'
 import AgentModelRegistryService, { calculateTrainingParamsHash } from '@/lib/contracts/agent-model-registry'
 import { db, addDeliveredModel } from '@/database/connection'
+import { getIndexingStatus } from '@/lib/storage/indexing-watcher'
 
 export const runtime = 'nodejs'
 
@@ -209,66 +210,79 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // STEP 2: DATASET AVAILABILITY CHECK VIA TURBO INDEXER ONLY (as per requirements)
-    console.log('🔍 Step 2: Dataset availability check via Turbo indexer only...')
+    // STEP 2: DATASET AVAILABILITY CHECK WITH INDEXING WATCHER (as per requirements)
+    console.log('🔍 Step 2: Dataset availability check with indexing watcher integration...')
     
-    // IMPORTANT: Only use Turbo indexer per requirements - no fallback to Standard
+    // Check if dataset is already indexed or being watched
+    const indexingStatus = getIndexingStatus(normalizedDatasetHash)
+    
+    if (indexingStatus) {
+      if (!indexingStatus.indexed && indexingStatus.status === 'pending') {
+        // Dataset is still being indexed, return 425 TOO_EARLY_INDEXING
+        console.warn(`⚠️  Dataset ${normalizedDatasetHash.slice(0, 10)}... is still being indexed`)
+        console.warn(`⚠️  Current status: ${indexingStatus.status}, attempts: ${indexingStatus.attempts}`)
+        
+        return NextResponse.json({
+          error: 'TOO_EARLY_INDEXING',
+          details: 'Dataset is still being indexed by the Turbo indexer. Please wait for indexing to complete.',
+          indexingStatus: 'pending',
+          helpfulMessage: 'The dataset is being indexed in the background. This usually takes 1-5 minutes. We will automatically continue when ready.',
+          retryAfter: Math.max(30, Math.round(indexingStatus.nextRetryIn / 1000)), // At least 30 seconds
+          attempts: indexingStatus.attempts,
+          lastCheckAt: indexingStatus.lastCheckAt,
+          statusEndpoint: `/api/storage/indexing-status?root=${normalizedDatasetHash}`
+        }, { status: 425 })
+      }
+      
+      if (indexingStatus.status === 'failed') {
+        // Indexing failed after timeout
+        console.error(`❌ Dataset ${normalizedDatasetHash.slice(0, 10)}... indexing failed after timeout`)
+        return NextResponse.json({
+          error: 'INDEXING_FAILED',
+          details: 'Dataset indexing failed after 10 minutes of monitoring. Please re-upload the dataset.',
+          indexingStatus: 'failed',
+          helpfulMessage: 'The dataset could not be accessed via the Turbo indexer. Please try uploading again.',
+          attempts: indexingStatus.attempts
+        }, { status: 424 })
+      }
+    }
+    
+    // If no indexing status or already indexed, perform quick direct check
     const turboUrl = process.env.NEXT_PUBLIC_0G_STORAGE_TURBO_URL || 
                      process.env.NEXT_PUBLIC_0G_STORAGE_URL || 
                      'https://indexer-storage-testnet-turbo.0g.ai'
     const datasetUrl = `${turboUrl}/${normalizedDatasetHash}`
     
-    console.log(`📊 Turbo indexer URL: ${turboUrl}`)
-    console.log(`📊 Dataset validation URL: ${datasetUrl}`)
+    console.log(`📊 Quick dataset accessibility check: ${datasetUrl}`)
     
-    // Enhanced backoff strategy as per requirements: 5s, 10s, 15s, 20s, 30s
-    const backoffDelays = [5000, 10000, 15000, 20000, 30000]
-    let datasetAccessible = false
-    
-    for (let attempt = 0; attempt < backoffDelays.length; attempt++) {
-      try {
-        console.log(`📊 Dataset accessibility check attempt ${attempt + 1}/${backoffDelays.length}...`)
-        const headResponse = await fetch(datasetUrl, { 
-          method: 'HEAD',
-          signal: AbortSignal.timeout(10000) // 10 second timeout per attempt
-        })
-        
-        console.log(`📊 Turbo indexer response: ${headResponse.status} ${headResponse.statusText}`)
-        
-        if (headResponse.ok) {
-          console.log('✅ Dataset confirmed accessible on Turbo indexer')
-          datasetAccessible = true
-          break
-        } else if (headResponse.status === 404) {
-          console.warn(`⚠️  Dataset not found on Turbo indexer (attempt ${attempt + 1}/${backoffDelays.length})`)
-          if (attempt < backoffDelays.length - 1) {
-            const delayMs = backoffDelays[attempt]
-            console.log(`⏳ Waiting ${delayMs}ms before next attempt...`)
-            await new Promise(resolve => setTimeout(resolve, delayMs))
-          }
-        } else {
-          console.warn(`⚠️  Unexpected response from Turbo indexer: ${headResponse.status}`)
-          break // Don't retry on non-404 errors
-        }
-      } catch (accessError: any) {
-        console.warn(`⚠️  Turbo accessibility check failed (attempt ${attempt + 1}): ${accessError.message}`)
-        if (attempt < backoffDelays.length - 1) {
-          const delayMs = backoffDelays[attempt]
-          console.log(`⏳ Waiting ${delayMs}ms before retry...`)
-          await new Promise(resolve => setTimeout(resolve, delayMs))
-        }
+    try {
+      const headResponse = await fetch(datasetUrl, { 
+        method: 'HEAD',
+        signal: AbortSignal.timeout(5000) // Quick 5 second check
+      })
+      
+      if (!headResponse.ok) {
+        console.warn(`⚠️  Dataset not immediately accessible (${headResponse.status}), returning 425 TOO_EARLY_INDEXING`)
+        return NextResponse.json({
+          error: 'TOO_EARLY_INDEXING',
+          details: 'Dataset is not yet accessible via Turbo indexer. Please wait for indexing to complete.',
+          indexingStatus: 'pending',
+          helpfulMessage: 'The dataset needs time to be indexed. This usually takes 1-5 minutes. Please try again shortly.',
+          retryAfter: 120, // 2 minutes
+          statusEndpoint: `/api/storage/indexing-status?root=${normalizedDatasetHash}`
+        }, { status: 425 })
       }
-    }
-    
-    // If dataset is not accessible after all retries, return 425 TOO_EARLY_INDEXING
-    if (!datasetAccessible) {
-      console.error('❌ Dataset not accessible on Turbo indexer after all retries')
+      
+      console.log('✅ Dataset confirmed accessible on Turbo indexer')
+    } catch (accessError: any) {
+      console.warn(`⚠️  Dataset accessibility check failed: ${accessError.message}`)
       return NextResponse.json({
         error: 'TOO_EARLY_INDEXING',
-        details: 'Dataset is not yet accessible via Turbo indexer. Please wait for indexing to complete.',
+        details: 'Dataset accessibility check failed. Please wait for indexing to complete.',
         indexingStatus: 'pending',
-        helpfulMessage: 'The dataset is still being indexed. This usually takes 1-5 minutes. Please try again in a few minutes.',
-        retryAfter: 120 // Suggest retry after 2 minutes
+        helpfulMessage: 'Unable to verify dataset accessibility. Please wait a few minutes and try again.',
+        retryAfter: 120,
+        statusEndpoint: `/api/storage/indexing-status?root=${normalizedDatasetHash}`
       }, { status: 425 })
     }
 

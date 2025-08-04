@@ -199,6 +199,52 @@ export async function createUserWalletBroker(userSigner: ethers.Wallet | ethers.
 }
 
 /**
+ * Reset broker state for a specific user (wallet change handler)
+ * Implements proper cache isolation per requirements
+ */
+export function resetBrokerStateForUser(userAddress?: string) {
+  if (!userAddress) {
+    // Clear all caches if no specific user
+    console.log('[broker.server] Clearing all broker caches')
+    brokerCache.clear()
+    brokerCacheTime.clear()
+    return
+  }
+
+  // Clear caches for specific user across all possible chains
+  const keysToRemove: string[] = []
+  
+  for (const key of brokerCache.keys()) {
+    if (key.includes(userAddress.toLowerCase()) || key.includes(userAddress)) {
+      keysToRemove.push(key)
+    }
+  }
+  
+  keysToRemove.forEach(key => {
+    brokerCache.delete(key)
+    brokerCacheTime.delete(key)
+    console.log(`[broker.server] Cleared broker cache for key: ${key}`)
+  })
+  
+  console.log(`[broker.server] Reset broker state for user: ${userAddress}`)
+}
+
+/**
+ * Get cache statistics for monitoring
+ */
+export function getBrokerCacheStats() {
+  return {
+    size: brokerCache.size,
+    keys: Array.from(brokerCache.keys()),
+    cacheTime: Array.from(brokerCacheTime.entries()).map(([key, time]) => ({
+      key,
+      age: Date.now() - time,
+      expires: CACHE_DURATION - (Date.now() - time)
+    }))
+  }
+}
+
+/**
  * Валидация кошелька пользователя
  * ТОЛЬКО ДЛЯ СЕРВЕРНОГО ИСПОЛЬЗОВАНИЯ
  */

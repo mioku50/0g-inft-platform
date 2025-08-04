@@ -40,10 +40,12 @@ export async function POST(request: NextRequest) {
     console.log('Streaming:', isFeatureEnabled('STREAMING_ENABLED'))
 
     // Choose service based on feature flags
-    const useEnhancedService = isFeatureEnabled('ENHANCED_UI')
+    const USE_ENHANCED = process.env.ENHANCED_INFERENCE === '1' && process.env.ENHANCED_STABLE === '1'
+    // After fixes: re-enable enhanced inference with proper flags  
+    const useEnhanced = USE_ENHANCED  // <- enhanced inference now ready with readonly fix
     let result: any
 
-    if (useEnhancedService) {
+    if (useEnhanced && USE_ENHANCED) {
       console.log('Using Enhanced Inference Service')
       const enhancedService = new EnhancedInferenceService(getPrivateKey())
       result = await enhancedService.processChat({ 
@@ -69,7 +71,7 @@ export async function POST(request: NextRequest) {
     console.log('Is Real AI:', result.isRealAI)
     console.log('TTFB:', result.metadata.timing.totalTTFB + 'ms')
     
-    if (useEnhancedService) {
+    if (useEnhanced && USE_ENHANCED) {
       console.log('Verified:', result.metadata.isVerified)
       console.log('Est. Cost:', result.metadata.cost.estimatedCost, 'A0GI')
       console.log('Cache Hits:', result.metadata.timing.cacheHits)
@@ -85,7 +87,7 @@ export async function POST(request: NextRequest) {
         success: false, 
         error: 'Internal server error',
         details: error.message,
-        enhanced: isFeatureEnabled('ENHANCED_UI')
+        enhanced: useEnhanced && USE_ENHANCED
       },
       { status: 500 }
     )

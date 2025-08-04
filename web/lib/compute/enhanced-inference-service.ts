@@ -64,16 +64,35 @@ class EnhancedCache<T> {
   }
 }
 
-// Rate limiting with exponential backoff
+// Rate limiting with exponential backoff and circuit breaker
 class RateLimiter {
   private attempts = new Map<string, number[]>()
   private backoffDelay = new Map<string, number>()
+  private failures = new Map<string, number>()
+  private circuitBreakerStates = new Map<string, { state: 'closed' | 'open' | 'half-open', lastFailureTime: number }>()
   private maxRetries = 3
   private baseDelay = 1000 // 1 second
   private maxDelay = 30000 // 30 seconds
+  private circuitBreakerThreshold = 5 // failures before opening circuit
+  private circuitBreakerTimeout = 60000 // 60 seconds before trying half-open
 
   async checkRateLimit(key: string): Promise<void> {
     const now = Date.now()
+    
+    // Check circuit breaker
+    const circuitState = this.circuitBreakerStates.get(key)
+    if (circuitState) {
+      if (circuitState.state === 'open') {
+        if (now - circuitState.lastFailureTime > this.circuitBreakerTimeout) {
+          // Move to half-open
+          circuitState.state = 'half-open'
+          console.log(`Circuit breaker for ${key} moved to half-open`)
+        } else {
+          throw new Error(`Circuit breaker open for ${key}. Retry in ${Math.ceil((this.circuitBreakerTimeout - (now - circuitState.lastFailureTime)) / 1000)}s`)
+        }
+      }
+    }
+
     const attempts = this.attempts.get(key) || []
     
     // Clean old attempts (older than 1 minute)
@@ -104,9 +123,33 @@ class RateLimiter {
   }
 
   recordFailure(key: string): void {
+    const now = Date.now()
     const currentDelay = this.backoffDelay.get(key) || this.baseDelay
     const newDelay = Math.min(currentDelay * 2, this.maxDelay)
     this.backoffDelay.set(key, newDelay)
+    
+    // Update failure count
+    const failureCount = (this.failures.get(key) || 0) + 1
+    this.failures.set(key, failureCount)
+    
+    // Check if we should open circuit breaker
+    if (failureCount >= this.circuitBreakerThreshold) {
+      this.circuitBreakerStates.set(key, { state: 'open', lastFailureTime: now })
+      console.log(`Circuit breaker opened for ${key} after ${failureCount} failures`)
+    }
+  }
+
+  recordSuccess(key: string): void {
+    // Reset failure count on success
+    this.failures.delete(key)
+    this.backoffDelay.delete(key)
+    
+    // Close circuit breaker if it was half-open
+    const circuitState = this.circuitBreakerStates.get(key)
+    if (circuitState && circuitState.state === 'half-open') {
+      circuitState.state = 'closed'
+      console.log(`Circuit breaker closed for ${key}`)
+    }
   }
 
   recordSuccess(key: string): void {
@@ -367,8 +410,11 @@ export class EnhancedInferenceService {
     }
 
     try {
-      const allServices = await broker.inference.listService()
-      console.log(`Discovered ${allServices.length} services`)
+      const rawServices = await broker.inference.listService()
+      console.log(`Discovered ${rawServices.length} services`)
+      
+      // ALWAYS work with COPIES to avoid readonly array mutations
+      const allServices = [...rawServices].map(s => ({ ...s }))
       
       // Filter and prioritize official providers
       const officialAddresses = this.OFFICIAL_PROVIDERS.map(p => p.address.toLowerCase())

@@ -109,7 +109,13 @@ export default function RootLayout({
         <meta name="description" content="Create and manage AI agents as NFTs" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
-      <body className={`${fontClassName} bg-gray-950`}>
+      <body 
+        className={`${fontClassName} bg-gray-950`}
+        style={{
+          background: 'linear-gradient(135deg, #581c87 0%, #1e3a8a 50%, #312e81 100%)',
+          minHeight: '100vh'
+        }}
+      >
         <Providers>
           <Navigation />
           <main className="min-h-screen">

@@ -316,20 +316,6 @@ export async function clearBrokerCache(userAddress?: string) {
 }
 
 /**
- * Reset state on wallet change as per requirements
- * This should be called when user changes wallet address
- */
-export async function resetBrokerStateForUser(oldUserAddress: string, newUserAddress?: string) {
-  console.log(`[broker.server] Resetting broker state: ${oldUserAddress} -> ${newUserAddress || 'disconnected'}`)
-  
-  // Clear old user's cache
-  await clearBrokerCache(oldUserAddress)
-  
-  // Note: New user's broker will be created on next request
-  console.log('[broker.server] Broker state reset complete. New broker will be created on next request.')
-}
-
-/**
  * Получить контракт Serving
  */
 export function getServingContract(signer: ethers.Wallet | ethers.JsonRpcSigner) {

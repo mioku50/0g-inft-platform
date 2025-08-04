@@ -195,9 +195,15 @@ export class FineTuningService {
   }
 
   /**
-   * Upload dataset via existing storage API
+   * Upload dataset via existing storage API with indexing awareness
    */
-  async uploadDataset(file: File): Promise<{ rootHash: string; size: number }> {
+  async uploadDataset(file: File): Promise<{ 
+    rootHash: string; 
+    size: number; 
+    indexingStatus?: 'indexed' | 'pending'; 
+    statusEndpoint?: string;
+    retryAfterSec?: number;
+  }> {
     await this.initialize()
     
     try {
@@ -212,11 +218,24 @@ export class FineTuningService {
         body: formData
       })
       
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`)
+      const data = await response.json()
+      
+      if (response.status === 202) {
+        // 202 Accepted - file uploaded and being indexed in background
+        console.log(`Dataset uploaded and being indexed: ${data.rootHash}`)
+        return {
+          rootHash: data.rootHash,
+          size: data.size || file.size,
+          indexingStatus: 'pending',
+          statusEndpoint: data.statusEndpoint,
+          retryAfterSec: data.retryAfterSec || 30
+        }
       }
       
-      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || `Upload failed: ${response.statusText}`)
+      }
+      
       if (!data.success) {
         throw new Error(data.error || 'Upload failed')
       }
@@ -229,10 +248,50 @@ export class FineTuningService {
       
       return {
         rootHash: data.rootHash,
-        size: data.size || file.size
+        size: data.size || file.size,
+        indexingStatus: data.indexingStatus || 'indexed'
       }
     } catch (error: any) {
       console.error('Failed to upload dataset:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Check indexing status for a dataset root hash
+   */
+  async checkIndexingStatus(rootHash: string): Promise<{
+    indexed: boolean;
+    lastCheckAt: number;
+    nextRetryIn: number;
+    attempts: number;
+    status: 'pending' | 'indexed' | 'failed' | 'unknown';
+    message: string;
+  }> {
+    try {
+      const response = await fetch(`/api/storage/indexing-status?root=${rootHash}`)
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errorData.error || `HTTP ${response.status}`)
+      }
+      
+      const data = await response.json()
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to check indexing status')
+      }
+      
+      return {
+        indexed: data.indexed,
+        lastCheckAt: data.lastCheckAt,
+        nextRetryIn: data.nextRetryIn,
+        attempts: data.attempts,
+        status: data.status,
+        message: data.message
+      }
+    } catch (error: any) {
+      console.error('Failed to check indexing status:', error)
       throw error
     }
   }
@@ -413,6 +472,30 @@ export class FineTuningService {
         const errorData = await response.json()
         
         // Enhanced error handling per requirements
+        if (response.status === 425) {
+          // TOO_EARLY_INDEXING - dataset is still being indexed
+          const indexingError = new Error(`Dataset is still being indexed: ${errorData.helpfulMessage || 'Please wait for indexing to complete'}`)
+          ;(indexingError as any).code = 'TOO_EARLY_INDEXING'
+          ;(indexingError as any).retryAfter = errorData.retryAfter || 120
+          ;(indexingError as any).statusEndpoint = errorData.statusEndpoint
+          ;(indexingError as any).indexingStatus = errorData.indexingStatus
+          throw indexingError
+        }
+        
+        if (response.status === 424) {
+          // INDEXING_FAILED - indexing failed after timeout
+          throw new Error(`Dataset indexing failed: ${errorData.helpfulMessage || 'Please re-upload the dataset'}`)
+        }
+        
+        if (response.status === 409) {
+          // NEEDS_ACCOUNT or NEEDS_TOPUP
+          const accountError = new Error(errorData.details || errorData.helpfulMessage || 'Account setup required')
+          ;(accountError as any).code = errorData.error
+          ;(accountError as any).needsAccount = errorData.error === 'NEEDS_ACCOUNT'
+          ;(accountError as any).needsTopUp = errorData.error === 'NEEDS_TOPUP'
+          throw accountError
+        }
+        
         if (response.status === 422) {
           throw new Error(`Validation error: ${errorData.error || errorData.details || 'Invalid input parameters'}`)
         }

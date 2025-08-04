@@ -33,8 +33,22 @@ interface UseFineTuningActions {
   deposit: (amount: number) => Promise<void>
   
   // Dataset operations
-  uploadDataset: (file: File) => Promise<{ rootHash: string; size: number } | null>
+  uploadDataset: (file: File) => Promise<{ 
+    rootHash: string; 
+    size: number; 
+    indexingStatus?: 'indexed' | 'pending'; 
+    statusEndpoint?: string;
+    retryAfterSec?: number;
+  } | null>
   validateDataset: (file: File) => Promise<DatasetValidation | null>
+  checkIndexingStatus: (rootHash: string) => Promise<{
+    indexed: boolean;
+    lastCheckAt: number;
+    nextRetryIn: number;
+    attempts: number;
+    status: 'pending' | 'indexed' | 'failed' | 'unknown';
+    message: string;
+  } | null>
   
   // Task management
   createTask: (params: {
@@ -200,7 +214,7 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
     }, 'Failed to deposit funds')
   }, [getService, withLoading, refreshAccount])
 
-  // Dataset operations
+  // Dataset operations  
   const uploadDataset = useCallback(async (file: File) => {
     return await withLoading(async () => {
       // For test mode without wallet, use direct API call
@@ -213,11 +227,28 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
           body: formData
         })
         
-        if (!response.ok) {
-          throw new Error(`Upload failed: ${response.statusText}`)
+        const data = await response.json()
+        
+        if (response.status === 202) {
+          // Dataset uploaded and being indexed
+          toast({
+            title: 'Dataset Uploaded',
+            description: `Dataset uploaded and being indexed in background. Root hash: ${data.rootHash.slice(0, 10)}...`
+          })
+          
+          return {
+            rootHash: data.rootHash,
+            size: data.size || file.size,
+            indexingStatus: 'pending' as const,
+            statusEndpoint: data.statusEndpoint,
+            retryAfterSec: data.retryAfterSec
+          }
         }
         
-        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || `Upload failed: ${response.statusText}`)
+        }
+        
         if (!data.success) {
           throw new Error(data.error || 'Upload failed')
         }
@@ -229,7 +260,8 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
         
         return {
           rootHash: data.rootHash,
-          size: data.size || file.size
+          size: data.size || file.size,
+          indexingStatus: (data.indexingStatus as 'indexed' | 'pending') || 'indexed'
         }
       }
       
@@ -237,14 +269,25 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
       const service = await getService()
       const result = await service.uploadDataset(file)
       
+      const isIndexing = result.indexingStatus === 'pending'
+      
       toast({
-        title: 'Dataset Uploaded',
-        description: `Dataset uploaded successfully. Root hash: ${result.rootHash.slice(0, 10)}...`
+        title: isIndexing ? 'Dataset Uploaded (Indexing)' : 'Dataset Uploaded',
+        description: isIndexing 
+          ? `Dataset uploaded and being indexed. Root hash: ${result.rootHash.slice(0, 10)}...`
+          : `Dataset uploaded successfully. Root hash: ${result.rootHash.slice(0, 10)}...`
       })
       
       return result
     }, 'Failed to upload dataset')
   }, [getService, withLoading, walletClient])
+
+  const checkIndexingStatus = useCallback(async (rootHash: string) => {
+    return await withLoading(async () => {
+      const service = await getService()
+      return await service.checkIndexingStatus(rootHash)
+    }, 'Failed to check indexing status')
+  }, [getService, withLoading])
 
   const validateDataset = useCallback(async (file: File) => {
     return await withLoading(async () => {
@@ -413,6 +456,7 @@ export function useFineTuning(): UseFineTuningState & UseFineTuningActions {
     deposit,
     uploadDataset,
     validateDataset,
+    checkIndexingStatus,
     createTask,
     getTask,
     getTaskLogs,

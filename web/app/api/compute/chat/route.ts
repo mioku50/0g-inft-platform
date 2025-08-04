@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
 
     // Choose service based on feature flags
     const USE_ENHANCED = process.env.ENHANCED_INFERENCE === '1' && process.env.ENHANCED_STABLE === '1'
-    // временно: форсируем legacy до фиксов
-    const useEnhanced = false  // <- force legacy until fixes
+    // After fixes: re-enable enhanced inference with proper flags  
+    const useEnhanced = USE_ENHANCED  // <- enhanced inference now ready with readonly fix
     let result: any
 
     if (useEnhanced && USE_ENHANCED) {

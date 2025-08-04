@@ -43,6 +43,8 @@ import {
 
 // Hooks and utilities
 import { useFineTuning } from '@/hooks/useFineTuning'
+import { useAccountBootstrap } from '@/hooks/useAccountBootstrap'
+import { AccountBootstrapModal } from '@/components/AccountBootstrapModal'
 import { toast } from '@/hooks/use-toast'
 import { 
   FINE_TUNING_MODELS, 
@@ -101,6 +103,19 @@ export default function FineTunePage() {
     clearError,
     activateModel
   } = useFineTuning()
+
+  // Account bootstrap hook for wallet onboarding (per requirements)
+  const {
+    account: bootstrapAccount,
+    loading: bootstrapLoading,
+    showCreateModal,
+    showTopUpModal,
+    createAccount,
+    depositFunds,
+    setShowCreateModal,
+    setShowTopUpModal,
+    refreshAccount: refreshBootstrapAccount
+  } = useAccountBootstrap()
 
   // Local state for workflow
   const [currentStep, setCurrentStep] = useState(1)
@@ -1000,6 +1015,19 @@ export default function FineTunePage() {
             </Card>
           </div>
         </div>
+
+        {/* Account Bootstrap Modal for new wallet onboarding (per requirements) */}
+        <AccountBootstrapModal
+          isOpen={showCreateModal || showTopUpModal}
+          onClose={() => {
+            setShowCreateModal(false)
+            setShowTopUpModal(false)
+          }}
+          account={bootstrapAccount}
+          loading={bootstrapLoading}
+          onCreateAccount={createAccount}
+          onDepositFunds={depositFunds}
+        />
       </div>
     </div>
   )

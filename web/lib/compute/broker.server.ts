@@ -56,30 +56,46 @@ export const LEDGER_ABI = [
   'event TaskCreated(address indexed user, address indexed provider, bytes32 indexed taskId)',
 ] as const
 
-// Кэш для брокеров
+// Multi-user broker cache with proper isolation per requirements
 let brokerCache: Map<string, any> = new Map()
 let brokerCacheTime: Map<string, number> = new Map()
 const CACHE_DURATION = 5 * 60 * 1000 // 5 минут
 
 /**
- * Получить или создать брокер с кэшированием
- * ТОЛЬКО ДЛЯ СЕРВЕРНОГО ИСПОЛЬЗОВАНИЯ
+ * Get or create broker with proper user isolation
+ * Cache keyed by {chainId}:{userAddress} as per requirements
+ * ONLY FOR SERVER-SIDE USE
  */
-export async function getBroker() {
+export async function getBroker(userAddress?: string) {
   try {
-    const cacheKey = 'default-broker'
+    // Generate cache key with chainId and userAddress for proper isolation
+    const chainId = process.env.NEXT_PUBLIC_0G_CHAIN_ID || '16601'
+    const cacheKey = userAddress ? `${chainId}:${userAddress}` : 'platform-default'
     const now = Date.now()
     
-    // Проверяем кэш
+    // Check cache with user isolation
     if (brokerCache.has(cacheKey) && brokerCacheTime.has(cacheKey)) {
       const cacheTime = brokerCacheTime.get(cacheKey)!
       if (now - cacheTime < CACHE_DURATION) {
-        console.log('[broker.server] Using cached broker')
+        if (userAddress) {
+          console.log(`[broker.server] Using cached broker for user: ${userAddress}`)
+        } else {
+          console.log('[broker.server] Using cached platform broker')
+        }
         return brokerCache.get(cacheKey)
+      } else {
+        // Remove expired cache entry
+        brokerCache.delete(cacheKey)
+        brokerCacheTime.delete(cacheKey)
+        console.log(`[broker.server] Cache expired for key: ${cacheKey}`)
       }
     }
 
-    console.log('[broker.server] Creating new broker...')
+    if (userAddress) {
+      console.log(`[broker.server] Creating new broker for user: ${userAddress}`)
+    } else {
+      console.log('[broker.server] Creating new platform broker...')
+    }
     logEnvironmentStatus()
 
     const rpcUrl = getRpcUrl()
@@ -92,7 +108,13 @@ export async function getBroker() {
     // Use rate-limited provider to prevent -32005 errors
     const signer = createRateLimitedWallet(privateKey)
     
-    console.log('[broker.server] Signer address:', await signer.getAddress())
+    const signerAddress = await signer.getAddress()
+    console.log('[broker.server] Signer address:', signerAddress)
+    
+    // If userAddress provided, validate it's different from platform signer
+    if (userAddress && userAddress.toLowerCase() === signerAddress.toLowerCase()) {
+      console.warn(`[broker.server] Warning: User address matches platform signer: ${userAddress}`)
+    }
     
     const broker = await createZGComputeNetworkBroker(
       signer,
@@ -104,11 +126,15 @@ export async function getBroker() {
       undefined  // step
     )
 
-    // Сохраняем в кэш
+    // Save to cache with proper isolation key
     brokerCache.set(cacheKey, broker)
     brokerCacheTime.set(cacheKey, now)
     
-    console.log('[broker.server] Broker created successfully')
+    if (userAddress) {
+      console.log(`[broker.server] Broker created successfully for user: ${userAddress}`)
+    } else {
+      console.log('[broker.server] Platform broker created successfully')
+    }
     return broker
   } catch (error) {
     console.error('[broker.server] Failed to create broker:', error)
@@ -223,12 +249,37 @@ export async function validateUserWallet(userSigner: ethers.Wallet | ethers.Json
 }
 
 /**
- * Очистить кэш брокеров
+ * Clear broker cache for specific user or all users
+ * Supports proper cache isolation per requirements
  */
-export function clearBrokerCache() {
-  brokerCache.clear()
-  brokerCacheTime.clear()
-  console.log('[broker.server] Broker cache cleared')
+export function clearBrokerCache(userAddress?: string) {
+  if (userAddress) {
+    // Clear cache for specific user
+    const chainId = process.env.NEXT_PUBLIC_0G_CHAIN_ID || '16601'
+    const cacheKey = `${chainId}:${userAddress}`
+    brokerCache.delete(cacheKey)
+    brokerCacheTime.delete(cacheKey)
+    console.log(`[broker.server] Broker cache cleared for user: ${userAddress}`)
+  } else {
+    // Clear all cache
+    brokerCache.clear()
+    brokerCacheTime.clear()
+    console.log('[broker.server] All broker cache cleared')
+  }
+}
+
+/**
+ * Reset state on wallet change as per requirements
+ * This should be called when user changes wallet address
+ */
+export function resetBrokerStateForUser(oldUserAddress: string, newUserAddress?: string) {
+  console.log(`[broker.server] Resetting broker state: ${oldUserAddress} -> ${newUserAddress || 'disconnected'}`)
+  
+  // Clear old user's cache
+  clearBrokerCache(oldUserAddress)
+  
+  // Note: New user's broker will be created on next request
+  console.log('[broker.server] Broker state reset complete. New broker will be created on next request.')
 }
 
 /**

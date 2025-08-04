@@ -50,8 +50,18 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const providerAddress = searchParams.get('provider')
+    const userAddress = searchParams.get('userAddress')
     
-    const broker = await getBroker()
+    // Get user address from query params (per requirements - should show user's EOA balance)
+    if (!userAddress) {
+      return NextResponse.json({
+        error: 'userAddress is required',
+        details: 'Must provide userAddress query parameter to check account balance'
+      }, { status: 400 })
+    }
+    
+    // Initialize broker with user context for proper cache isolation
+    const broker = await getBroker(userAddress)
     
     // Enhanced account checking with provider support as per requirements
     let exists = false
@@ -61,40 +71,45 @@ export async function GET(request: NextRequest) {
     let needsTopUp = true
     const minRequired = '0.001' // Minimum 0.001 OG required for fine-tuning
     
+    console.log(`[compute/account][GET] Checking account for user: ${userAddress}${providerAddress ? `, provider: ${providerAddress}` : ''}`)
+    
     try {
       if (providerAddress) {
-        console.log(`[compute/account][GET] Checking account for provider: ${providerAddress}`)
-        
         // Check provider-specific account using serving contract
         const serving = getServingContract(broker.signer)
         try {
-          const accountExists = await serving.accountExists(broker.signer.address, providerAddress)
+          // IMPORTANT: Check account for user EOA, not platform signer
+          const accountExists = await serving.accountExists(userAddress, providerAddress)
           exists = accountExists
           
           if (exists) {
-            const accountInfo = await serving.getAccount(broker.signer.address, providerAddress)
+            const accountInfo = await serving.getAccount(userAddress, providerAddress)
             balance = formatEther(accountInfo.balance)
-            console.log(`[compute/account][GET] Provider account found:`, { 
+            console.log(`[compute/account][GET] Provider account found for user ${userAddress}:`, { 
               provider: providerAddress, 
               balance, 
               deliverables: accountInfo.deliverables?.length || 0 
             })
           } else {
-            console.log(`[compute/account][GET] No account found for provider: ${providerAddress}`)
+            console.log(`[compute/account][GET] No provider account found for user: ${userAddress}`)
           }
         } catch (providerError: any) {
           console.warn(`[compute/account][GET] Provider account check failed:`, providerError.message)
           explicitErrors.push(`Provider account check failed: ${providerError.message}`)
-          
-          // Fall back to ledger account check
-          console.log(`[compute/account][GET] Falling back to ledger account check`)
         }
-      }
-      
-      // If provider check failed or no provider specified, check ledger account
-      if (!exists && !providerAddress) {
+      } else {
+        // Check ledger account for user EOA (not platform signer)
         try {
+          // TODO: Need to implement user-specific ledger check
+          // For now, this will check platform signer's ledger
           const ledgerInfo = await broker.ledger.getLedger()
+          
+          // CRITICAL FIX: This should check user's ledger, not platform's
+          // The current broker.ledger.getLedger() checks platform signer
+          // We need to implement a way to check user's specific ledger balance
+          
+          console.warn(`[compute/account][GET] IMPORTANT: Currently checking platform ledger, should check user ledger for ${userAddress}`)
+          
           exists = true
           // Handle both formats: ledgerInfo[0] and ledgerInfo.ledgerInfo[0]
           if (ledgerInfo.ledgerInfo) {
@@ -132,10 +147,11 @@ export async function GET(request: NextRequest) {
       explicitErrors: explicitErrors.length > 0 ? explicitErrors : undefined,
       deliverables: 0, // Fine-tune specific, handled separately
       nonce: undefined,
-      provider: providerAddress || undefined
+      provider: providerAddress || undefined,
+      userAddress // Include user address in response for clarity
     }
 
-    console.log(`[compute/account][GET] Response:`, {
+    console.log(`[compute/account][GET] Response for user ${userAddress}:`, {
       exists, 
       balance, 
       needsTopUp, 

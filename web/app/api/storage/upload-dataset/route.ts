@@ -56,15 +56,56 @@ export async function POST(req: Request) {
       alreadyExists: result.alreadyExists 
     })
     
-    // Add validation step as required
+    // Post-upload validation with proper TOO_EARLY_INDEXING handling (as per requirements)
     const networkOnly = new URL(req.url).searchParams.get('networkOnly') === '1'
-    if (networkOnly || true) { // Always validate for now
-      console.log('[upload-dataset] Validating network accessibility...')
-      const isAccessible = await validateNetworkAccess(result.rootHash)
-      console.log(`[upload-dataset] Network validation: ${isAccessible ? 'PASS' : 'FAIL'}`)
+    if (networkOnly || true) { // Always validate for now per requirements
+      console.log('[upload-dataset] Post-upload: Validating network accessibility with exponential backoff...')
       
+      // Implement exponential backoff strategy as per requirements: 5s, 10s, 15s, 20s, 30s
+      const backoffDelays = [5000, 10000, 15000, 20000, 30000]
+      let isAccessible = false
+      
+      for (let attempt = 0; attempt < backoffDelays.length; attempt++) {
+        console.log(`[upload-dataset] Accessibility check attempt ${attempt + 1}/${backoffDelays.length}...`)
+        
+        try {
+          isAccessible = await validateNetworkAccess(result.rootHash)
+          
+          if (isAccessible) {
+            console.log(`✅ Dataset confirmed accessible on Turbo indexer (attempt ${attempt + 1})`)
+            break
+          } else {
+            console.warn(`⚠️  Dataset not yet accessible via Turbo indexer (attempt ${attempt + 1}/${backoffDelays.length})`)
+            
+            if (attempt < backoffDelays.length - 1) {
+              const delayMs = backoffDelays[attempt]
+              console.log(`⏳ Waiting ${delayMs}ms before next accessibility check...`)
+              await new Promise(resolve => setTimeout(resolve, delayMs))
+            }
+          }
+        } catch (validationError: any) {
+          console.warn(`⚠️  Turbo validation error (attempt ${attempt + 1}): ${validationError.message}`)
+          
+          if (attempt < backoffDelays.length - 1) {
+            const delayMs = backoffDelays[attempt]
+            console.log(`⏳ Waiting ${delayMs}ms before retry...`)
+            await new Promise(resolve => setTimeout(resolve, delayMs))
+          }
+        }
+      }
+      
+      // If not accessible after all retries, return 425 TOO_EARLY_INDEXING as per requirements
       if (!isAccessible) {
-        console.warn('[upload-dataset] Warning: File may not be immediately accessible via indexer')
+        console.error('❌ Dataset not accessible on Turbo indexer after all retries')
+        return Response.json({
+          error: 'TOO_EARLY_INDEXING',
+          details: 'Dataset uploaded successfully but not yet accessible via Turbo indexer. Please wait for indexing to complete.',
+          rootHash: result.rootHash,
+          size: result.size,
+          indexingStatus: 'pending',
+          helpfulMessage: 'The dataset is being indexed by the Turbo indexer. This usually takes 1-5 minutes. Please try again shortly.',
+          retryAfterSec: 120 // Suggest retry after 2 minutes
+        }, { status: 425 })
       }
     }
     

@@ -271,9 +271,9 @@ export async function POST(request: NextRequest) {
       }, { status: 425 })
     }
 
-    // Initialize broker for preflight checks
-    console.log('🔧 Initializing 0G broker for preflight checks...')
-    const broker = await getBroker()
+    // Initialize broker with user context for proper cache isolation (per requirements)
+    console.log('🔧 Initializing 0G broker with user context for cache isolation...')
+    const broker = await getBroker(userAddress) // Pass userAddress for proper cache key
     if (!broker) {
       console.error('❌ Failed to initialize 0G broker')
       return NextResponse.json({ 
@@ -386,9 +386,82 @@ export async function POST(request: NextRequest) {
       configKeys: Object.keys(config)
     })
 
-    // Step 0: Preflight check - verify provider is available
+    // STEP 3: PROVIDER PREFLIGHT VALIDATION (as per requirements)
+    // Check if provider is registered in Fine-tuning contract before proceeding
+    console.log('🔍 Step 3: Provider registration preflight check...')
     try {
-      console.log('🔍 Running provider preflight check...')
+      console.log(`🔍 Checking if provider ${provider} is registered in Fine-tuning contract...`)
+      const providerService = await broker.inference.getService(provider)
+      
+      if (!providerService || !providerService.provider) {
+        console.error(`❌ Provider ${provider} not registered in Fine-tuning contract`)
+        return NextResponse.json({
+          error: 'PROVIDER_NOT_REGISTERED',
+          details: `Provider ${provider} is not registered in the Fine-tuning contract. Tasks cannot be created.`,
+          provider,
+          helpfulMessage: 'Only registered providers can accept fine-tuning tasks. Please select a different provider or contact support.',
+          registeredProviders: [
+            '0x960E74Fc0AF1a6fBcADA3eEFCBe3152fA5E87A5f',
+            '0xf07240Efa67755B5311bc75784a061eDB47165Dd', 
+            '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'
+          ]
+        }, { status: 422 })
+      }
+      
+      console.log(`✅ Provider ${provider} is registered in contract`)
+      console.log(`📊 Provider service details:`, {
+        provider: providerService.provider,
+        url: providerService.url,
+        occupied: providerService.occupied,
+        models: providerService.models?.length || 0
+      })
+      
+      // Check if provider is occupied (optional warning)
+      if (providerService.occupied) {
+        console.warn(`⚠️  Provider ${provider} is marked as occupied - task may be queued`)
+      }
+      
+      // Check if selected model is supported by provider
+      if (providerService.models && Array.isArray(providerService.models)) {
+        const supportedModels = providerService.models
+        if (supportedModels.length > 0 && !supportedModels.includes(modelId)) {
+          console.warn(`⚠️  Model ${modelId} may not be supported by provider ${provider}`)
+          console.warn(`⚠️  Supported models: ${supportedModels.join(', ')}`)
+          // Continue anyway - some providers may accept models not listed
+        } else {
+          console.log(`✅ Model ${modelId} is supported by provider`)
+        }
+      }
+      
+    } catch (serviceError: any) {
+      console.error(`❌ Failed to check provider registration: ${serviceError.message}`)
+      
+      // Check if it's a ServiceNotExist error
+      if (serviceError.message?.includes('ServiceNotExist') || 
+          serviceError.message?.includes('Service not found') ||
+          serviceError.message?.includes('Provider not registered')) {
+        return NextResponse.json({
+          error: 'PROVIDER_NOT_REGISTERED', 
+          details: `Provider ${provider} is not registered in the Fine-tuning contract. Tasks cannot be created.`,
+          provider,
+          step: 'provider registration check',
+          helpfulMessage: 'Only registered providers can accept fine-tuning tasks. Please select a different provider.'
+        }, { status: 422 })
+      } else {
+        // For other errors, log but continue if dev mode enabled
+        const allowUnregistered = process.env.FT_ALLOW_UNREGISTERED_PROVIDER === '1'
+        if (allowUnregistered) {
+          console.warn(`⚠️  Provider registration check failed but FT_ALLOW_UNREGISTERED_PROVIDER=1, continuing...`)
+          console.warn(`⚠️  This should only be used in development mode`)
+        } else {
+          throw serviceError // Re-throw to fail the request
+        }
+      }
+    }
+
+    // Step 4: Network connectivity preflight check
+    try {
+      console.log('🔍 Step 4: Provider network connectivity check...')
       const providerUrl = getProviderUrl(provider)
       
       // First try primary endpoint: GET /v1/quote (as per 0G spec)

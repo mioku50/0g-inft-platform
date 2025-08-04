@@ -1,7 +1,7 @@
 // lib/utils/feature-flags.ts
 export const FEATURE_FLAGS = {
   // Fine-tuning feature flags
-  FT_DISABLED: process.env.FT_DISABLED === '1',
+  FT_DISABLED: process.env.NEXT_PUBLIC_FT_DISABLED === '1',
   FT_MOCK: process.env.FT_MOCK === '1',
   FT_ATTEST_ONCHAIN: process.env.FT_ATTEST_ONCHAIN === '1',
   

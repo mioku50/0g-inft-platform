@@ -140,15 +140,15 @@ const AgentCard = React.memo(({
           />
         </div>
         
-        <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+        <p className="text-white/80 text-sm mb-4 line-clamp-2">
           {agent.metadata?.description || 'AI Assistant'}
         </p>
         
         {/* Listing info */}
         {agent.status === 'listed' && agent.listingInfo && (
-          <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
-            <p className="text-sm text-purple-900">
-              Listed for: <span className="font-bold">{formatEther(agent.listingInfo.price)} OG</span>
+          <div className="mb-4 p-3 bg-white/10 rounded-lg border border-white/20">
+            <p className="text-sm text-white">
+              Listed for: <span className="font-bold text-purple-300">{formatEther(agent.listingInfo.price)} OG</span>
             </p>
           </div>
         )}

@@ -313,17 +313,10 @@ export const ledgerSafe = {
       const minBalanceWei = BigInt(Math.floor(minBalanceOG * 1e18))
       
       if (balance < minBalanceWei) {
-        console.log(`Low balance (${fromWei(balance)} OG), adding funds...`)
-        
-        try {
-          const addAmount = BigInt(Math.floor(Math.max(minBalanceOG * 2, 0.05) * 1e18))
-          await br.ledger.addLedger(addAmount)
-          console.log(`Added ${fromWei(addAmount)} OG to ledger`)
-          return true
-        } catch (addError: any) {
-          console.log('Failed to add funds:', addError.message)
-          return false
-        }
+        console.log(`Low balance (${fromWei(balance)} OG), but account already exists`)
+        console.log('Balance check complete - not attempting auto-deposit for existing accounts')
+        // DON'T auto-deposit - user should explicitly add funds
+        return false
       }
       
       console.log('Balance sufficient')

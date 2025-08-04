@@ -367,8 +367,11 @@ export class EnhancedInferenceService {
     }
 
     try {
-      const allServices = await broker.inference.listService()
-      console.log(`Discovered ${allServices.length} services`)
+      const rawServices = await broker.inference.listService()
+      console.log(`Discovered ${rawServices.length} services`)
+      
+      // ALWAYS work with COPIES to avoid readonly array mutations
+      const allServices = [...rawServices].map(s => ({ ...s }))
       
       // Filter and prioritize official providers
       const officialAddresses = this.OFFICIAL_PROVIDERS.map(p => p.address.toLowerCase())

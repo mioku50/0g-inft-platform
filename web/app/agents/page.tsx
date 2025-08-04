@@ -7,6 +7,7 @@ import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
 import {
   Button,
   Card,
+  CardContent,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -16,7 +17,6 @@ import {
   Label,
   Badge,
   Skeleton,
-  useToast,
   ToastAction
 } from '@/components/ui'
 import Link from 'next/link'
@@ -36,7 +36,8 @@ import {
   Ban,
   Sparkles,
   Bot,
-  ImageOff
+  ImageOff,
+  Clock
 } from 'lucide-react'
 import { TransferModal } from '@/components/agents/TransferModal'
 import { CloneModal } from '@/components/agents/CloneModal'
@@ -44,6 +45,7 @@ import { PromptManager } from '@/components/agents/PromptManager'
 import AgentAvatar from '@/components/agents/AgentAvatar'
 import { ModelStatusBadge } from '@/components/agents/ModelStatusBadge'
 import { getCachedMetadata } from '@/lib/cache/local-metadata'
+import { isFeatureEnabled } from '@/lib/utils/feature-flags'
 
 const metadataCache = new Map<string, any>()
 
@@ -76,11 +78,11 @@ const AgentCard = React.memo(({
 }) => {
   return (
     <Card 
-      className="bg-white/80 backdrop-blur border-purple-200 hover:shadow-xl transition-all duration-300 overflow-hidden"
+      className="bg-white/10 backdrop-blur-sm border-white/20 hover:bg-white/20 transition-all duration-300 overflow-hidden group"
     >
       <div className="p-6">
         {/* Agent Image */}
-        <div className="h-48 bg-gradient-to-br from-purple-100 to-pink-100 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
+        <div className="h-48 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden border border-white/20">
           <AgentAvatar agent={agent} size="large" />
           
           {agent.status === 'listed' && (
@@ -92,15 +94,15 @@ const AgentCard = React.memo(({
         </div>
         
         {/* Agent Info */}
-        <h3 className="text-xl font-bold text-gray-900 mb-1">
+        <h3 className="text-xl font-bold text-white mb-1 group-hover:text-purple-300 transition-colors">
           {agent.metadata?.name || `Agent #${agent.tokenId}`}
         </h3>
         
         <div className="flex gap-2 mb-3">
-          <Badge variant="outline" className="border-purple-300 text-purple-700">
+          <Badge variant="outline" className="border-white/30 text-white">
             #{agent.tokenId}
           </Badge>
-          <Badge className="bg-purple-100 text-purple-700 border-0">
+          <Badge className="bg-purple-600 text-white border-0">
             {agent.metadata?.model || 'Unknown'}
           </Badge>
         </div>
@@ -115,15 +117,17 @@ const AgentCard = React.memo(({
                 // For now, just show a toast - full implementation would need activation logic
                 toast({
                   title: 'Model Activation',
-                  description: `Navigate to agent ${agentId} fine-tune page to activate the candidate model`,
-                  action: (
+                  description: isFeatureEnabled('FT_DISABLED') 
+                    ? `Fine-tuning is currently coming soon. Feature will be available in the next update!`
+                    : `Navigate to agent ${agentId} fine-tune page to activate the candidate model`,
+                  action: !isFeatureEnabled('FT_DISABLED') ? (
                     <ToastAction 
                       altText="Go to Fine-tune"
                       onClick={() => window.open(`/agents/${agentId}/fine-tune`, '_blank')}
                     >
                       Go to Fine-tune
                     </ToastAction>
-                  )
+                  ) : undefined
                 })
               } catch (error) {
                 toast({
@@ -155,17 +159,34 @@ const AgentCard = React.memo(({
             <>
               <div className="grid grid-cols-2 gap-2">
                 <Link href={`/agent/${agent.tokenId}/chat`}>
-                  <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                  <Button variant="outline" size="sm" className="w-full border-white/30 text-white hover:bg-white/10">
                     <MessageCircle className="h-4 w-4 mr-1" />
                     Chat
                   </Button>
                 </Link>
-                <Link href={`/agents/${agent.tokenId}/fine-tune`}>
-                  <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                {/* Fine-Tune button with feature flag check */}
+                {isFeatureEnabled('FT_DISABLED') ? (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full border-white/20 bg-white/5 text-white/60 cursor-not-allowed"
+                    disabled
+                  >
                     <Brain className="h-4 w-4 mr-1" />
                     Fine-tune
+                    <Badge className="ml-2 bg-yellow-500 text-white text-xs px-1 py-0">
+                      <Clock className="w-3 h-3 mr-1" />
+                      Soon
+                    </Badge>
                   </Button>
-                </Link>
+                ) : (
+                  <Link href={`/agents/${agent.tokenId}/fine-tune`}>
+                    <Button variant="outline" size="sm" className="w-full border-white/30 text-white hover:bg-white/10">
+                      <Brain className="h-4 w-4 mr-1" />
+                      Fine-tune
+                    </Button>
+                  </Link>
+                )}
               </div>
               
               <div className="grid grid-cols-2 gap-2">
@@ -173,7 +194,7 @@ const AgentCard = React.memo(({
                   onClick={() => onClone(agent)}
                   variant="outline"
                   size="sm"
-                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
+                  className="w-full border-white/30 text-white hover:bg-white/10"
                 >
                   <Copy className="h-4 w-4 mr-1" />
                   Clone
@@ -182,39 +203,28 @@ const AgentCard = React.memo(({
                   onClick={() => onTransfer(agent)}
                   variant="outline"
                   size="sm"
-                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
+                  className="w-full border-white/30 text-white hover:bg-white/10"
                 >
                   <Send className="h-4 w-4 mr-1" />
                   Transfer
                 </Button>
               </div>
-              
-              <div className="grid grid-cols-2 gap-2">
-                <Button 
-                  onClick={() => onPrompt(agent)}
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
-                >
-                  <Settings className="h-4 w-4 mr-1" />
-                  Prompt
-                </Button>
-                <Button 
-                  onClick={() => onList(agent)}
-                  size="sm"
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                >
-                  <ShoppingCart className="h-4 w-4 mr-1" />
-                  List
-                </Button>
-              </div>
+
+              <Button 
+                onClick={() => onList(agent)}
+                size="sm"
+                className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+              >
+                <ShoppingCart className="h-4 w-4 mr-1" />
+                List for Sale
+              </Button>
             </>
           )}
           
           {agent.status === 'listed' && (
             <>
               <Link href={`/agent/${agent.tokenId}/chat`} className="block">
-                <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                <Button variant="outline" size="sm" className="w-full border-white/30 text-white hover:bg-white/10">
                   <MessageCircle className="h-4 w-4 mr-2" />
                   Chat
                 </Button>
@@ -554,43 +564,54 @@ export default function AgentsPage() {
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100 flex items-center justify-center">
-        <div className="text-center">
-          <div className="p-6 bg-white/70 backdrop-blur rounded-full inline-block mb-6">
-            <Bot className="w-24 h-24 text-purple-600" />
-          </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Connect Your Wallet</h1>
-          <p className="text-gray-600">Please connect your wallet to explore your AI agents</p>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+        <Card className="bg-white/10 border-white/20 backdrop-blur-sm">
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
+              <Bot className="h-8 w-8 text-white" />
+            </div>
+            <h2 className="text-xl font-semibold mb-2 text-white">Connect Your Wallet</h2>
+            <p className="text-purple-200 text-center mb-6">
+              Please connect your wallet to explore your AI agents
+            </p>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   if (loading && agents.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-16 w-16 animate-spin text-purple-600 mx-auto mb-4" />
-          <p className="text-gray-700">Loading your AI agents...</p>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+        <Card className="bg-white/10 border-white/20 backdrop-blur-sm">
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-white" />
+            </div>
+            <h2 className="text-xl font-semibold mb-2 text-white">Loading Your Agents</h2>
+            <p className="text-purple-200 text-center">
+              Please wait while we load your AI agents...
+            </p>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
       <div className="container mx-auto py-10 px-4">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-white/70 backdrop-blur rounded-xl">
-              <Bot className="h-10 w-10 text-purple-600" />
+            <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
+              <Bot className="h-8 w-8 text-white" />
             </div>
             <div>
-              <h1 className="text-4xl font-bold text-gray-900">
+              <h1 className="text-4xl font-bold text-white">
                 My Agent Collection
               </h1>
-              <p className="text-gray-600 mt-1">Manage and interact with your AI agents</p>
+              <p className="text-purple-200 mt-1">Manage and interact with your AI agents</p>
             </div>
           </div>
           
@@ -598,16 +619,16 @@ export default function AgentsPage() {
             <Button 
               onClick={handleRefresh} 
               variant="outline"
-              disabled={refreshing}
-              className="bg-white/70 backdrop-blur border-purple-200 text-gray-700 hover:bg-white/90"
+              disabled={loading}
+              className="border-white/30 text-white hover:bg-white/10"
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
             <Link href="/mint">
               <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white">
                 <Plus className="h-4 w-4 mr-2" />
-                Create New Agent
+                Mint New Agent
               </Button>
             </Link>
           </div>

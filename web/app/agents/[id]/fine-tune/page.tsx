@@ -6,6 +6,10 @@ import Link from 'next/link'
 import { useAccount } from 'wagmi'
 import { useDropzone } from 'react-dropzone'
 
+// Feature flags
+import { isFeatureEnabled } from '@/lib/utils/feature-flags'
+import { ComingSoonPage } from '@/components/ComingSoonPage'
+
 // UI Components
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -61,6 +65,11 @@ export default function FineTunePage() {
   const router = useRouter()
   const agentId = params.id as string
   const { address, isConnected } = useAccount()
+
+  // Check if Fine-Tuning is disabled
+  if (isFeatureEnabled('FT_DISABLED')) {
+    return <ComingSoonPage agentId={agentId} />
+  }
 
   // Load cached dataset from localStorage
   useEffect(() => {

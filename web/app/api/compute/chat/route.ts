@@ -8,15 +8,17 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { ChatService } from '@/lib/compute/chat-service'
+import { EnhancedInferenceService } from '@/lib/compute/enhanced-inference-service'
 import { getPrivateKey } from '@/lib/server/compute-env'
+import { isFeatureEnabled } from '@/lib/utils/feature-flags'
 
 export async function POST(request: NextRequest) {
   try {
-    // Парсим тело запроса
+    // Parse request body
     const body = await request.json()
-    const { message, agentMetadata } = body
+    const { message, agentMetadata, options } = body
 
-    // Валидация
+    // Validation
     if (!message || typeof message !== 'string') {
       return NextResponse.json(
         { success: false, error: 'Message is required and must be a string' },
@@ -31,30 +33,59 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('\n=== 0G Compute Chat Request ===')
+    console.log('\n=== Enhanced 0G Compute Chat Request ===')
     console.log('Message:', message)
     console.log('Agent:', agentMetadata.name)
+    console.log('Enhanced UI:', isFeatureEnabled('ENHANCED_UI'))
+    console.log('Streaming:', isFeatureEnabled('STREAMING_ENABLED'))
 
-    // Создаем ChatService и обрабатываем запрос
-    const chatService = new ChatService(getPrivateKey())
-    const result = await chatService.processChat({ message, agentMetadata })
+    // Choose service based on feature flags
+    const useEnhancedService = isFeatureEnabled('ENHANCED_UI')
+    let result: any
 
-    console.log('=== Chat Response ===')
+    if (useEnhancedService) {
+      console.log('Using Enhanced Inference Service')
+      const enhancedService = new EnhancedInferenceService(getPrivateKey())
+      result = await enhancedService.processChat({ 
+        message, 
+        agentMetadata,
+        options: {
+          stream: isFeatureEnabled('STREAMING_ENABLED') && options?.stream,
+          temperature: options?.temperature,
+          maxTokens: options?.maxTokens,
+          preferredProvider: options?.preferredProvider
+        }
+      })
+    } else {
+      console.log('Using Legacy Chat Service')
+      const chatService = new ChatService(getPrivateKey())
+      result = await chatService.processChat({ message, agentMetadata })
+    }
+
+    console.log('=== Enhanced Chat Response ===')
     console.log('Success:', result.success)
     console.log('Model:', result.model)
     console.log('Provider:', result.provider)
     console.log('Is Real AI:', result.isRealAI)
     console.log('TTFB:', result.metadata.timing.totalTTFB + 'ms')
+    
+    if (useEnhancedService) {
+      console.log('Verified:', result.metadata.isVerified)
+      console.log('Est. Cost:', result.metadata.cost.estimatedCost, 'A0GI')
+      console.log('Cache Hits:', result.metadata.timing.cacheHits)
+      console.log('Rate Limit Hits:', result.metadata.timing.rateLimitHits)
+    }
 
     return NextResponse.json(result)
 
   } catch (error: any) {
-    console.error('Route error:', error)
+    console.error('Enhanced chat route error:', error)
     return NextResponse.json(
       { 
         success: false, 
         error: 'Internal server error',
-        details: error.message 
+        details: error.message,
+        enhanced: isFeatureEnabled('ENHANCED_UI')
       },
       { status: 500 }
     )

@@ -3,14 +3,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAccount, useContractRead } from 'wagmi'
-import { Card } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { useToast } from '@/components/ui/use-toast'
+import { useToast } from '@/hooks/use-toast'
 import { 
   Send, 
   Bot, 
@@ -22,7 +22,8 @@ import {
   Brain,
   Zap,
   Copy,
-  ExternalLink
+  ExternalLink,
+  ArrowLeft
 } from 'lucide-react'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import { computeClient } from '@/lib/compute/client'
@@ -138,41 +139,68 @@ export default function ChatPage() {
     setIsStreaming(true)
 
     try {
-      // Call 0G Compute API
-      const response = await (computeClient as any).chat({
-        tokenId,
-        messages: [...messages, userMessage].map(m => ({
-          role: m.role,
-          content: m.content,
-        })),
-        stream: true,
+      // Call Enhanced 0G Compute API
+      const response = await fetch('/api/compute/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: input,
+          agentMetadata: {
+            name: agentMetadata?.name || `Agent #${tokenId}`,
+            description: agentMetadata?.description || 'An intelligent AI assistant powered by 0G Network'
+          },
+          options: {
+            stream: true,
+            temperature: 0.7,
+            maxTokens: 2000
+          }
+        })
       })
 
-      // Handle streaming response
-      const assistantMessage: Message = {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+
+      if (result.success && result.response) {
+        // Create assistant message
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: result.response,
+          timestamp: new Date(),
+        }
+
+        setMessages(prev => [...prev, assistantMessage])
+
+        // Show success toast with metadata
+        if (result.metadata) {
+          toast({
+            title: `Response from ${result.model || 'AI'}`,
+            description: `✅ Verified: ${result.metadata.isVerified ? 'Yes' : 'No'} | ⚡ ${result.metadata.timing.totalTTFB}ms`,
+          })
+        }
+      } else {
+        throw new Error(result.error || 'Failed to get response')
+      }
+    } catch (error: any) {
+      console.error('Enhanced chat error:', error)
+      
+      // Create error message
+      const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: '',
+        content: `I apologize, but I'm having trouble connecting to the 0G Compute Network right now. Error: ${error.message}`,
         timestamp: new Date(),
       }
 
-      setMessages(prev => [...prev, assistantMessage])
+      setMessages(prev => [...prev, errorMessage])
 
-      // Simulate streaming (in production, use actual stream)
-      const fullResponse = response.content
-      for (let i = 0; i < fullResponse.length; i += 5) {
-        await new Promise(resolve => setTimeout(resolve, 50))
-        setMessages(prev => {
-          const newMessages = [...prev]
-          const lastMessage = newMessages[newMessages.length - 1]
-          lastMessage.content = fullResponse.slice(0, i + 5)
-          return newMessages
-        })
-      }
-    } catch (error) {
-      console.error('Chat error:', error)
       toast({
-        title: 'Error',
+        title: 'Connection Error',
         description: 'Failed to get response from agent',
         variant: 'destructive',
       })
@@ -189,6 +217,11 @@ export default function ChatPage() {
     }
   }
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    handleSend()
+  }
+
   const copyTokenId = () => {
     navigator.clipboard.writeText(tokenId)
     toast({
@@ -199,196 +232,215 @@ export default function ChatPage() {
 
   if (!isConnected) {
     return (
-      <div className="max-w-4xl mx-auto px-4 py-20 text-center">
-        <h1 className="text-3xl font-bold text-white mb-4">Connect Your Wallet</h1>
-        <p className="text-gray-400">Please connect your wallet to chat with this agent</p>
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+        <Card className="bg-white/10 border-white/20 backdrop-blur-sm">
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
+              <Bot className="h-8 w-8 text-white" />
+            </div>
+            <h2 className="text-xl font-semibold mb-2 text-white">Connect Your Wallet</h2>
+            <p className="text-purple-200 text-center mb-6">
+              Please connect your wallet to chat with your AI agents
+            </p>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
-      {/* Sidebar */}
-      <div className="w-80 border-r border-gray-800 bg-gray-900/50 p-6">
-        <div className="space-y-6">
-          {/* Agent Info */}
-          <div className="text-center">
-            <Avatar className="w-24 h-24 mx-auto mb-4">
-              <AvatarImage src={agentMetadata?.image} />
-              <AvatarFallback>
-                <Bot className="w-12 h-12" />
-              </AvatarFallback>
-            </Avatar>
-            <h2 className="text-xl font-bold text-white mb-1">
-              {agentMetadata?.name || `Agent #${tokenId}`}
-            </h2>
-            <div className="flex items-center justify-center gap-2 mb-4">
-              <Badge variant="secondary" className="text-xs">
-                {agentMetadata?.model || 'Loading...'}
-              </Badge>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={copyTokenId}
-                className="h-6 px-2"
-              >
-                <Copy className="w-3 h-3 mr-1" />
-                #{tokenId}
-              </Button>
-            </div>
-            <p className="text-sm text-gray-400 mb-4">
-              {agentMetadata?.description}
-            </p>
-          </div>
-
-          <Separator className="bg-gray-800" />
-
-          {/* Capabilities */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
-              <Zap className="w-4 h-4" />
-              Capabilities
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {agentMetadata?.capabilities.map((cap, i) => (
-                <Badge key={i} variant="outline" className="text-xs">
-                  {cap}
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
+      <div className="flex h-screen">
+        {/* Sidebar */}
+        <div className="w-80 bg-white/10 backdrop-blur-sm border-r border-white/20 p-6">
+          <div className="space-y-6">
+            {/* Agent Info */}
+            <div className="text-center">
+              <Avatar className="w-24 h-24 mx-auto mb-4 bg-gradient-to-br from-purple-400 to-pink-400">
+                <AvatarImage src={agentMetadata?.image} />
+                <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white">
+                  <Bot className="w-12 h-12" />
+                </AvatarFallback>
+              </Avatar>
+              <h2 className="text-xl font-bold text-white mb-1">
+                {agentMetadata?.name || `Agent #${tokenId}`}
+              </h2>
+              <div className="flex items-center justify-center gap-2 mb-4">
+                <Badge className="bg-purple-600 text-white text-xs">
+                  <Brain className="w-3 h-3 mr-1" />
+                  {agentMetadata?.model || 'Loading...'}
                 </Badge>
-              ))}
-            </div>
-          </div>
-
-          <Separator className="bg-gray-800" />
-
-          {/* Actions */}
-          <div className="space-y-2">
-            {isOwner ? (
-              <>
                 <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => setShowTransferModal(true)}
+                  variant="ghost"
+                  size="sm"
+                  onClick={copyTokenId}
+                  className="h-6 px-2 text-white/80 hover:text-white hover:bg-white/10"
                 >
-                  <Share2 className="w-4 h-4 mr-2" />
-                  Transfer Agent
+                  <Copy className="w-3 h-3 mr-1" />
+                  #{tokenId}
                 </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => setShowListingModal(true)}
-                >
-                  <ShoppingCart className="w-4 h-4 mr-2" />
-                  List on Marketplace
-                </Button>
-              </>
-            ) : (
-              <div className="text-sm text-gray-400 text-center">
-                Owned by: {owner?.slice(0, 6)}...{owner?.slice(-4)}
               </div>
-            )}
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => window.open(`https://explorer-testnet.0g.ai/token/${process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS}/instance/${tokenId}`, '_blank')}
-            >
-              <ExternalLink className="w-4 h-4 mr-2" />
-              View on Explorer
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Chat Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Chat Messages */}
-        <ScrollArea className="flex-1 p-6" ref={scrollAreaRef}>
-          {messages.length === 0 ? (
-            <div className="text-center py-20">
-              <Brain className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-gray-300 mb-2">
-                Start a conversation
-              </h3>
-              <p className="text-gray-500">
-                Ask your AI agent anything or give it a task
+              <p className="text-sm text-purple-200 mb-4">
+                {agentMetadata?.description}
               </p>
             </div>
-          ) : (
-            <div className="space-y-4 max-w-3xl mx-auto">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex gap-3 ${
-                    message.role === 'user' ? 'justify-end' : 'justify-start'
-                  }`}
-                >
-                  {message.role === 'assistant' && (
-                    <Avatar className="w-8 h-8">
+
+            <Separator className="bg-white/20" />
+
+            {/* Capabilities */}
+            <div>
+              <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                <Zap className="w-4 h-4" />
+                Capabilities
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {agentMetadata?.capabilities?.map((cap, i) => (
+                  <Badge key={i} variant="outline" className="text-xs border-white/30 text-white">
+                    {cap}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <Separator className="bg-white/20" />
+
+            {/* Actions */}
+            <div className="space-y-2">
+              {isOwner ? (
+                <>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start border-white/30 text-white hover:bg-white/10"
+                    onClick={() => setShowTransferModal(true)}
+                  >
+                    <Share2 className="w-4 w-4 mr-2" />
+                    Transfer Agent
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start border-white/30 text-white hover:bg-white/10"
+                    onClick={() => setShowListingModal(true)}
+                  >
+                    <ShoppingCart className="w-4 h-4 mr-2" />
+                    List on Marketplace
+                  </Button>
+                </>
+              ) : (
+                <div className="text-sm text-purple-200 text-center p-2 bg-white/5 rounded-lg">
+                  Owned by: {owner?.slice(0, 6)}...{owner?.slice(-4)}
+                </div>
+              )}
+              <Button
+                variant="outline"
+                className="w-full justify-start border-white/30 text-white hover:bg-white/10"
+                onClick={() => window.open(`https://explorer-testnet.0g.ai/token/${process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS}/instance/${tokenId}`, '_blank')}
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />
+                View on Explorer
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Chat Area */}
+        <div className="flex-1 flex flex-col">
+          {/* Chat Messages */}
+          <ScrollArea className="flex-1 p-6" ref={scrollAreaRef}>
+            {messages.length === 0 ? (
+              <div className="text-center py-20">
+                <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
+                  <Brain className="w-8 w-8 text-white" />
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Start a conversation
+                </h3>
+                <p className="text-purple-200">
+                  Ask your AI agent anything or give it a task
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4 max-w-3xl mx-auto">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex gap-3 ${
+                      message.role === 'user' ? 'justify-end' : 'justify-start'
+                    }`}
+                  >
+                    {message.role === 'assistant' && (
+                      <Avatar className="w-8 h-8 bg-gradient-to-br from-purple-400 to-pink-400">
+                        <AvatarImage src={agentMetadata?.image} />
+                        <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white">
+                          <Bot className="w-4 h-4" />
+                        </AvatarFallback>
+                      </Avatar>
+                    )}
+                    <div
+                      className={`max-w-[70%] rounded-lg px-4 py-2 ${
+                        message.role === 'user'
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-white/20 text-white border border-white/20 backdrop-blur-sm'
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      <p className="text-xs opacity-70 mt-1">
+                        {new Date(message.timestamp).toLocaleTimeString()}
+                      </p>
+                    </div>
+                    {message.role === 'user' && (
+                      <Avatar className="w-8 h-8 bg-gradient-to-br from-blue-400 to-cyan-400">
+                        <AvatarFallback className="bg-gradient-to-br from-blue-400 to-cyan-400 text-white">
+                          <User className="w-4 h-4" />
+                        </AvatarFallback>
+                      </Avatar>
+                    )}
+                  </div>
+                ))}
+                {isStreaming && (
+                  <div className="flex gap-3 justify-start">
+                    <Avatar className="w-8 h-8 bg-gradient-to-br from-purple-400 to-pink-400">
                       <AvatarImage src={agentMetadata?.image} />
-                      <AvatarFallback>
+                      <AvatarFallback className="bg-gradient-to-br from-purple-400 to-pink-400 text-white">
                         <Bot className="w-4 h-4" />
                       </AvatarFallback>
                     </Avatar>
-                  )}
-                  <div
-                    className={`max-w-[70%] rounded-lg px-4 py-2 ${
-                      message.role === 'user'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-800 text-gray-100'
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                    <p className="text-xs opacity-70 mt-1">
-                      {new Date(message.timestamp).toLocaleTimeString()}
-                    </p>
+                    <div className="bg-white/20 border border-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin text-purple-300" />
+                        <span className="text-purple-200 text-sm">
+                          {agentMetadata?.name} is thinking...
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  {message.role === 'user' && (
-                    <Avatar className="w-8 h-8">
-                      <AvatarFallback>
-                        <User className="w-4 h-4" />
-                      </AvatarFallback>
-                    </Avatar>
-                  )}
-                </div>
-              ))}
-              {isStreaming && (
-                <div className="flex gap-3 justify-start">
-                  <Avatar className="w-8 h-8">
-                    <AvatarImage src={agentMetadata?.image} />
-                    <AvatarFallback>
-                      <Bot className="w-4 h-4" />
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="bg-gray-800 rounded-lg px-4 py-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </ScrollArea>
+                )}
+              </div>
+            )}
+          </ScrollArea>
 
-        {/* Input Area */}
-        <div className="border-t border-gray-800 p-4">
-          <div className="max-w-3xl mx-auto flex gap-2">
-            <Input
-              placeholder="Type your message..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
-              disabled={isLoading}
-              className="bg-gray-900/50 border-gray-700"
-            />
-            <Button
-              onClick={handleSend}
-              disabled={isLoading || !input.trim()}
-              className="bg-purple-600 hover:bg-purple-700"
-            >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4" />
-              )}
-            </Button>
+          {/* Input Area */}
+          <div className="border-t border-white/20 p-4 bg-white/5 backdrop-blur-sm">
+            <div className="max-w-3xl mx-auto flex gap-2">
+              <Input
+                placeholder="Type your message..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                disabled={isLoading}
+                className="bg-white/10 border-white/30 text-white placeholder:text-purple-300 focus:border-purple-400"
+              />
+              <Button
+                onClick={handleSend}
+                disabled={isLoading || !input.trim()}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </div>

@@ -130,6 +130,7 @@ export async function POST(req: Request) {
  * CRITICAL FIX: Always returns 0x network format, never local:// format
  * This prevents "file not found" errors from providers
  * IMPORTANT: Only uses Turbo indexer - no fallback to Standard per requirements
+ * Turbo indexer only strategy ensures consistent dataset accessibility
  * Never returns local:// format as per requirements
  */
 async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
@@ -143,13 +144,14 @@ async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
     throw new Error('OG_STORAGE_PRIVATE_KEY not configured')
   }
   
-  // IMPORTANT: Only use Turbo indexer per requirements
+  // IMPORTANT: Only use Turbo indexer per requirements - no fallback to Standard
   const turboIndexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_TURBO_URL || 
                           process.env.NEXT_PUBLIC_0G_STORAGE_URL || 
                           'https://indexer-storage-testnet-turbo.0g.ai'
+  const TURBO_URL = turboIndexerRpc // Turbo indexer only per requirements
   const evmRpc = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
   
-  console.log(`[upload-dataset] Using Turbo indexer: ${turboIndexerRpc}`)
+  console.log(`[upload-dataset] Using Turbo indexer only: ${TURBO_URL}`)
   console.log(`[upload-dataset] Using EVM RPC: ${evmRpc}`)
   
   // Create temporary file for 0G SDK to calculate proper network root

@@ -12,6 +12,7 @@ import {
   logEnvironmentStatus
 } from '@/lib/server/compute-env'
 import { getRateLimitedProvider, createRateLimitedWallet } from '@/lib/server/rate-limited-provider'
+import enhancedProvider from '@/lib/chain/provider'
 
 export const SERVING_ABI = [
   'function accountExists(address user, address provider) view returns (bool)',
@@ -69,7 +70,7 @@ const CACHE_DURATION = 5 * 60 * 1000 // 5 минут
 export async function getBroker(userAddress?: string) {
   try {
     // Generate cache key with chainId and userAddress for proper isolation
-    const chainId = process.env.NEXT_PUBLIC_0G_CHAIN_ID || '16601'
+    const chainId = await enhancedProvider.getChainId() // Use enhanced provider with fallback
     const cacheKey = userAddress ? `${chainId}:${userAddress}` : 'platform-default'
     const now = Date.now()
     
@@ -252,10 +253,10 @@ export async function validateUserWallet(userSigner: ethers.Wallet | ethers.Json
  * Clear broker cache for specific user or all users
  * Supports proper cache isolation per requirements
  */
-export function clearBrokerCache(userAddress?: string) {
+export async function clearBrokerCache(userAddress?: string) {
   if (userAddress) {
     // Clear cache for specific user
-    const chainId = process.env.NEXT_PUBLIC_0G_CHAIN_ID || '16601'
+    const chainId = await enhancedProvider.getChainId()
     const cacheKey = `${chainId}:${userAddress}`
     brokerCache.delete(cacheKey)
     brokerCacheTime.delete(cacheKey)
@@ -272,11 +273,11 @@ export function clearBrokerCache(userAddress?: string) {
  * Reset state on wallet change as per requirements
  * This should be called when user changes wallet address
  */
-export function resetBrokerStateForUser(oldUserAddress: string, newUserAddress?: string) {
+export async function resetBrokerStateForUser(oldUserAddress: string, newUserAddress?: string) {
   console.log(`[broker.server] Resetting broker state: ${oldUserAddress} -> ${newUserAddress || 'disconnected'}`)
   
   // Clear old user's cache
-  clearBrokerCache(oldUserAddress)
+  await clearBrokerCache(oldUserAddress)
   
   // Note: New user's broker will be created on next request
   console.log('[broker.server] Broker state reset complete. New broker will be created on next request.')

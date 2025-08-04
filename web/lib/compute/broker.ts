@@ -9,7 +9,7 @@ import {
   getComputeInferenceContract,
   logEnvironmentStatus
 } from '@/lib/server/compute-env'
-import { create0GProvider } from '@/lib/server/provider'
+import { getRateLimitedProvider, createRateLimitedWallet } from '@/lib/server/rate-limited-provider'
 
 export const SERVING_ABI = [
   'function accountExists(address user, address provider) view returns (bool)',
@@ -243,6 +243,49 @@ function toWeiSafe(v?: any) {
   } catch {
     return 0n
   }
+}
+
+// Enhanced broker cache with user isolation as per requirements
+// Cache key format: {chainId}:{userAddress} for proper multi-user support  
+const brokerCache = new Map<string, any>()
+const BROKER_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const brokerCacheTimestamps = new Map<string, number>()
+
+/**
+ * Generate broker cache key with user isolation
+ */
+function getBrokerCacheKey(userAddress?: string): string {
+  const chainId = process.env.NEXT_PUBLIC_0G_CHAIN_ID || '16601'
+  const user = userAddress || 'platform'
+  return `${chainId}:${user}`
+}
+
+/**
+ * Clear broker cache for specific user (for wallet changes)
+ */
+export function resetBrokerStateForUser(userAddress: string) {
+  const cacheKey = getBrokerCacheKey(userAddress)
+  brokerCache.delete(cacheKey)
+  brokerCacheTimestamps.delete(cacheKey)
+  console.log(`🗑️ Cleared broker cache for user: ${userAddress}`)
+}
+
+/**
+ * Check if cached broker is still valid
+ */
+function isBrokerCacheValid(cacheKey: string): boolean {
+  const timestamp = brokerCacheTimestamps.get(cacheKey)
+  if (!timestamp) return false
+  
+  const now = Date.now()
+  const isValid = (now - timestamp) < BROKER_CACHE_TTL
+  
+  if (!isValid) {
+    brokerCache.delete(cacheKey)
+    brokerCacheTimestamps.delete(cacheKey)
+  }
+  
+  return isValid
 }
 
 let broker: any | null = null
@@ -568,8 +611,15 @@ export async function deposit(
   })
 }
 
-export async function getBrokerOrThrow() {
-  if (broker) return broker
+export async function getBrokerOrThrow(userAddress?: string) {
+  const cacheKey = getBrokerCacheKey(userAddress)
+  
+  // Check cache first with user isolation
+  const cachedBroker = brokerCache.get(cacheKey)
+  if (cachedBroker && isBrokerCacheValid(cacheKey)) {
+    console.log(`♻️ Using cached broker for ${userAddress || 'platform'}`)
+    return cachedBroker
+  }
 
   // Log environment status on first initialization
   logEnvironmentStatus()
@@ -581,8 +631,9 @@ export async function getBrokerOrThrow() {
   const pk = getPrivateKey()
   if (!pk) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
 
-  const provider = create0GProvider()
-  const signer = new Wallet(pk, provider)
+  // Use rate-limited provider as per requirements
+  const provider = getRateLimitedProvider()
+  const signer = createRateLimitedWallet(pk)
 
   // Verify contracts are deployed
   await assertContractDeployed(provider, servingAddr)
@@ -590,48 +641,37 @@ export async function getBrokerOrThrow() {
   await assertContractDeployed(provider, inference)
 
   try {
-    broker = await createZGComputeNetworkBroker(
+    const newBroker = await createZGComputeNetworkBroker(
       signer,
       ledger,
       inference,
       servingAddr
     )
+    
+    ;(newBroker as any).signer = signer
+    ;(newBroker as any).signerAddress = signer.address
+    
+    // Добавляем безопасные методы к broker
+    ;(newBroker as any).ledgerSafe = ledgerSafe
+
+    await addFineTuningSupport(newBroker, signer)
+
+    // Cache broker with user isolation 
+    brokerCache.set(cacheKey, newBroker)
+    brokerCacheTimestamps.set(cacheKey, Date.now())
+    
+    console.log('[fine] Broker initialized successfully', {
+      signerAddress: newBroker.signerAddress,
+      servingAddress: servingAddr,
+      ledgerAddress: ledger,
+      cacheKey,
+      userAddress: userAddress || 'platform'
+    })
+
+    return newBroker
   } catch (e: any) {
     throw new Error(`Failed to start 0G SDK: ${e.message}`)
   }
-
-  broker.signer = signer
-  broker.signerAddress = signer.address
-  
-  // Добавляем безопасные методы к broker
-  broker.ledgerSafe = ledgerSafe
-
-  await addFineTuningSupport(broker, signer)
-
-  // Ensure ledger contract is properly attached
-  // NOTE: We should NOT override SDK methods! The SDK has its own implementation
-  // that handles ledger operations differently than direct contract calls.
-  // Removing this override to fix the depositFund conflict.
-  /*
-  if (!broker.ledger || typeof broker.ledger.addAccount !== 'function') {
-    console.log('[fine] Adding manual ledger contract methods')
-    const ledgerContract = getLedgerContract(signer)
-    broker.ledger = {
-      ...(broker.ledger || {}),
-      addAccount: ledgerContract.addAccount.bind(ledgerContract),
-      depositFund: ledgerContract.depositFund.bind(ledgerContract),
-      requestRefundAll: ledgerContract.requestRefundAll.bind(ledgerContract)
-    }
-  }
-  */
-
-  console.log('[fine] Broker initialized successfully', {
-    signerAddress: broker.signerAddress,
-    servingAddress: servingAddr,
-    ledgerAddress: ledger
-  })
-
-  return broker
 }
 
 async function addFineTuningSupport(broker: any, signer: Wallet) {
@@ -928,6 +968,6 @@ function getProviderUrl(providerAddress: string): string {
   return providerUrls[providerAddress] || 'http://50.145.48.68:30080'
 }
 
-export async function getBroker() {
-  return getBrokerOrThrow()
+export async function getBroker(userAddress?: string) {
+  return getBrokerOrThrow(userAddress)
 }

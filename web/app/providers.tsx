@@ -6,10 +6,11 @@ import { RainbowKitProvider, getDefaultWallets } from '@rainbow-me/rainbowkit'
 import { jsonRpcProvider } from 'wagmi/providers/jsonRpc'
 import '@rainbow-me/rainbowkit/styles.css'
 import { useEffect, useState } from 'react'
+import { ComputeProvider } from '@/lib/compute/ComputeProvider'
 
 // Определяем 0G Network
 const ogNetwork = {
-  id: 16601,
+  id: parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '16601'),
   name: '0G-Galileo-Testnet',
   network: '0g-testnet',
   nativeCurrency: {
@@ -19,10 +20,10 @@ const ogNetwork = {
   },
   rpcUrls: {
     default: {
-      http: ['https://evmrpc-testnet.0g.ai'],
+      http: [process.env.NEXT_PUBLIC_RPC_URL || 'https://evmrpc-testnet.0g.ai'],
     },
     public: {
-      http: ['https://evmrpc-testnet.0g.ai'],
+      http: [process.env.NEXT_PUBLIC_RPC_URL || 'https://evmrpc-testnet.0g.ai'],
     },
   },
   blockExplorers: {
@@ -71,7 +72,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <WagmiConfig config={wagmiConfig}>
       <RainbowKitProvider chains={chains}>
-        {children}
+        <ComputeProvider>
+          {children}
+        </ComputeProvider>
       </RainbowKitProvider>
     </WagmiConfig>
   )

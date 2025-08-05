@@ -1,95 +1,101 @@
-// 🛠  Patch adm‑zip bug (Next.js ties process.versions to {})
-if (!(process as any).versions?.node) {
-  (process as any).versions ??= {};
-  (process as any).versions.node = '20.11.0';   // любая строка X.Y.Z
-}
+/**
+ * Chat API Route - Non-Custodial Proxy
+ * 
+ * This route now serves as a minimal proxy for rate-limiting and CORS.
+ * Actual 0G Compute calls are made directly from the client to provider endpoints.
+ */
 
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { ChatService } from '@/lib/compute/chat-service'
-import { EnhancedInferenceService } from '@/lib/compute/enhanced-inference-service'
-import { getPrivateKey } from '@/lib/server/compute-env'
-import { isFeatureEnabled } from '@/lib/utils/feature-flags'
 
 export async function POST(request: NextRequest) {
   try {
-    // Parse request body
+    // Parse request for validation and rate limiting
     const body = await request.json()
-    const { message, agentMetadata, options } = body
+    const { providerUrl, headers, payload } = body
 
-    // Validation
-    if (!message || typeof message !== 'string') {
+    // Basic validation
+    if (!providerUrl || !headers || !payload) {
       return NextResponse.json(
-        { success: false, error: 'Message is required and must be a string' },
+        { success: false, error: 'Missing required fields: providerUrl, headers, payload' },
         { status: 400 }
       )
     }
 
-    if (!agentMetadata || !agentMetadata.name || !agentMetadata.description) {
+    // Validate provider URL (security check)
+    if (!isValidProviderUrl(providerUrl)) {
       return NextResponse.json(
-        { success: false, error: 'Agent metadata with name and description is required' },
+        { success: false, error: 'Invalid provider URL' },
         { status: 400 }
       )
     }
 
-    console.log('\n=== Enhanced 0G Compute Chat Request ===')
-    console.log('Message:', message)
-    console.log('Agent:', agentMetadata.name)
-    console.log('Enhanced UI:', isFeatureEnabled('ENHANCED_UI'))
-    console.log('Streaming:', isFeatureEnabled('STREAMING_ENABLED'))
+    console.log('\n=== Non-Custodial Chat Proxy ===')
+    console.log('Provider:', providerUrl)
+    console.log('Headers present:', Object.keys(headers).length)
 
-    // Choose service based on feature flags
-    const USE_ENHANCED = process.env.ENHANCED_INFERENCE === '1' && process.env.ENHANCED_STABLE === '1'
-    // After fixes: re-enable enhanced inference with proper flags  
-    const useEnhanced = USE_ENHANCED  // <- enhanced inference now ready with readonly fix
-    let result: any
+    // Rate limiting could go here
+    // await rateLimiter.check(request)
 
-    if (useEnhanced && USE_ENHANCED) {
-      console.log('Using Enhanced Inference Service')
-      const enhancedService = new EnhancedInferenceService(getPrivateKey())
-      result = await enhancedService.processChat({ 
-        message, 
-        agentMetadata,
-        options: {
-          stream: isFeatureEnabled('STREAMING_ENABLED') && options?.stream,
-          temperature: options?.temperature,
-          maxTokens: options?.maxTokens,
-          preferredProvider: options?.preferredProvider
-        }
-      })
-    } else {
-      console.log('Using Legacy Chat Service')
-      const chatService = new ChatService(getPrivateKey())
-      result = await chatService.processChat({ message, agentMetadata })
+    // Proxy the request to the provider
+    const response = await fetch(`${providerUrl}/v1/chat/completions`, {
+      method: 'POST',  
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers // Client-generated headers from clientBroker
+      },
+      body: JSON.stringify(payload)
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Provider error:', response.status, errorText)
+      return NextResponse.json(
+        { success: false, error: `Provider error: ${response.status}`, details: errorText },
+        { status: response.status }
+      )
     }
 
-    console.log('=== Enhanced Chat Response ===')
-    console.log('Success:', result.success)
-    console.log('Model:', result.model)
-    console.log('Provider:', result.provider)
-    console.log('Is Real AI:', result.isRealAI)
-    console.log('TTFB:', result.metadata.timing.totalTTFB + 'ms')
+    const result = await response.json()
     
-    if (useEnhanced && USE_ENHANCED) {
-      console.log('Verified:', result.metadata.isVerified)
-      console.log('Est. Cost:', result.metadata.cost.estimatedCost, 'A0GI')
-      console.log('Cache Hits:', result.metadata.timing.cacheHits)
-      console.log('Rate Limit Hits:', result.metadata.timing.rateLimitHits)
-    }
-
-    return NextResponse.json(result)
+    // Pass through the provider response
+    return NextResponse.json({
+      success: true,
+      ...result
+    })
 
   } catch (error: any) {
-    console.error('Enhanced chat route error:', error)
+    console.error('Chat proxy error:', error)
     return NextResponse.json(
       { 
         success: false, 
-        error: 'Internal server error',
-        details: error.message,
-        enhanced: useEnhanced && USE_ENHANCED
+        error: 'Proxy error',
+        details: error.message
       },
       { status: 500 }
     )
+  }
+}
+
+/**
+ * Validate that the provider URL is from a trusted 0G provider
+ */
+function isValidProviderUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    
+    // Allow official 0G provider addresses
+    const allowedHosts = [
+      'testnet-rpc.0g.ai',
+      'evmrpc-testnet.0g.ai',
+      // Add more trusted provider endpoints as needed
+    ]
+    
+    // For now, allow any HTTPS URL (providers run on different domains)
+    // In production, maintain a whitelist of approved provider URLs
+    return parsed.protocol === 'https:' && parsed.hostname.length > 0
+  } catch {
+    return false
   }
 }

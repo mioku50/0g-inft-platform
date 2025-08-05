@@ -1,4 +1,39 @@
 
+# 🚀 0G INFT Platform - Non-Custodial Compute Architecture
+
+**Status:** ✅ Compute Non-Custodial / Storage Custodial Architecture
+
+## 🏗️ **Architecture Overview**
+
+The 0G INFT Platform now uses a **hybrid architecture** optimized for security and user experience:
+
+### **🔓 Non-Custodial Compute**
+- **User Control:** All AI inference operations use your connected wallet (MetaMask, WalletConnect)
+- **No Server Keys:** Platform does not store compute private keys
+- **Direct Provider Access:** Client communicates directly with 0G providers
+- **Wallet Required:** Users must connect a wallet and create a ledger account
+
+### **🔐 Custodial Storage** 
+- **Platform Managed:** Storage operations use server-side private keys for UX
+- **Seamless Upload:** No wallet transactions needed for data uploads
+- **Optimized Performance:** Fast metadata and dataset operations
+
+---
+
+## ✅ **Current Features Status**
+
+| Feature | Status | Mode | Description |
+|---------|--------|------|-------------|
+| 🎭 **Mint Agents** | ✅ Working | Custodial Storage | Create new AI agents with encrypted metadata |
+| 🔄 **Clone Agents** | ✅ Working | Non-Custodial | Copy agents using wallet signature |
+| 💸 **Transfer Agents** | ✅ Working | Non-Custodial | Transfer ownership via wallet |
+| 💬 **Chat with Agents** | ✅ Working | Non-Custodial | Direct 0G provider communication |
+| 📊 **Upload Datasets** | ✅ Working | Custodial Storage | Platform-managed storage uploads |
+| 🤖 **Fine-Tuning** | 🚧 Coming Soon | Non-Custodial | Currently disabled during migration |
+| 🛒 **Marketplace** | 💤 Sleep Mode | N/A | Temporarily disabled |
+
+---
+
 root@elite-mint:~/0g-inft-platform#
 
 

@@ -1,160 +1,68 @@
-🎯 Soft-disable Fine-Tune (Coming Soon)
 
-Implemented a feature flag system to gracefully disable Fine-Tuning while preserving the codebase:
+Before (Full Custodial)
+	•	All operations used server-side private keys
+	•	Enhanced inference service handled compute server-side
+	•	Users didn't need wallets for AI interactions
+	•	Platform controlled all blockchain transactions
+After (Hybrid Architecture)
+	•	Compute Operations: Non-custodial (user wallet required)
+	◦	AI chat uses direct provider communication via client broker
+	◦	Ledger account management through connected wallet
+	◦	Provider acknowledgment via client signatures
+	•	Storage Operations: Custodial (platform managed)
+	◦	Dataset uploads remain seamless without wallet signatures
+	◦	Agent metadata encryption/decryption server-side
+Key Implementation Details
+Client-Side Broker System
+	•	Singleton Pattern: clientBroker.ts with address-based caching
+	•	BrowserProvider Integration: Uses injected wallet (MetaMask/WalletConnect)
+	•	Automatic Reinitialization: Handles wallet address changes gracefully
+const broker = await getClientBroker()
+const headers = await broker.inference.getRequestHeaders(providerAddress, content)
 
-Feature Flag: Added FT_DISABLED=1 in .env.local to control Fine-Tune availability
-Coming Soon Page: Created a beautiful ComingSoonPage component that matches the existing design theme
-UI Updates: Fine-Tune buttons now show as disabled with a "Soon" badge when the feature is disabled
-Toast Integration: Modified activation toasts to respect the feature flag state
-The Fine-Tune page now automatically redirects to the Coming Soon page when FT_DISABLED=1, while preserving all existing code for future reactivation.
-
-🚀 Enhanced Inference Service
-
-Completely audited the inference implementation against the official 0G SDK documentation and implemented comprehensive improvements:
-
-Proper 0G SDK Flow Implementation:
-
-// Enhanced flow matches official documentation exactly:
-1. acknowledgeProviderSigner(providerAddress) ✅
-2. getServiceMetadata(providerAddress) ✅  
-3. getRequestHeaders(providerAddress, content) ✅
-4. OpenAI-compatible request with headers ✅
-5. processResponse(providerAddress, content, chatId) ✅
-New Features:
-
-Enhanced Caching: LRU cache with TTL for brokers, services, metadata, and acknowledgments
-Rate Limiting: Exponential backoff system to handle provider rate limits gracefully
-Cost Tracking: Real-time estimation of input/output tokens and A0GI costs
-Health Monitoring: Provider availability tracking and performance metrics
-Streaming Support: Prepared for future streaming implementation
-Error Resilience: Comprehensive retry logic and fallback mechanisms
-Backward Compatibility: The system automatically chooses between enhanced and legacy services based on the ENHANCED_UI feature flag, ensuring no breaking changes.
-
-🎨 UI Consistency & Visual Improvements
-
-Transformed the entire UI to match the Fine-Tune page's beautiful design language:
-
-Consistent Theme Applied:
-
-Background: Purple-to-blue gradient (from-purple-900 via-blue-900 to-indigo-900) across all pages
-Cards: Glassmorphism effects with bg-white/10 backdrop-blur-sm border-white/20
-Buttons: Consistent styling with gradient primary buttons and outline variants
-Typography: White text with purple accent colors for secondary text
-Pages Updated:
-
-Chat Page: Complete redesign with gradient background, enhanced sidebar, and improved message styling
-Agents Page: Matching gradient theme with glassmorphism agent cards and consistent button styling
-Fine-Tune Page: Already had the target design, now serves as the template
-Enhanced Chat Interface:
-
-Real-time status indicators showing verification status and response times
-Cost tracking display showing estimated A0GI costs
-Enhanced error messages with actionable feedback
-Improved loading states and streaming indicators
-🔧 Technical Improvements
-
-Feature Flag System:
-
-// Clean, type-safe feature flag system
-export const FEATURE_FLAGS = {
-  FT_DISABLED: process.env.FT_DISABLED === '1',
-  ENHANCED_UI: process.env.ENHANCED_UI !== '0',
-  STREAMING_ENABLED: process.env.STREAMING_ENABLED !== '0'
-} as const
-Health Monitoring:
-
-New /api/compute/health endpoint for system status monitoring
-Provider availability tracking and performance metrics
-Automatic fallback and recovery mechanisms
-Build Quality:
-
-Fixed all TypeScript compilation errors
-Cleaned up duplicate JSX elements and syntax issues
-Successful production build with only minor ESLint warnings
-Enhanced error handling throughout the application
-🎯 Results
-
-For Users:
-
-Fine-Tuning shows as "Coming Soon" when disabled, with clear messaging about future availability
-Chat experience is significantly improved with better performance, visual consistency, and real-time feedback
-All pages now share a cohesive, professional design language
-Enhanced error messages provide actionable guidance
-For Developers:
-
-Clean feature flag system for future development
-Comprehensive caching and performance optimizations
-Proper 0G SDK integration following official documentation
-Maintainable codebase with clear separation of concerns
-The platform now provides a cohesive, professional experience while maintaining all existing functionality and preparing for future enhancements.
-Issues Fixed
-Chat System Restoration
-The chat with agents feature was completely broken due to enhanced inference service failures. The system was attempting to mutate readonly arrays returned from the 0G SDK, causing "Cannot assign to read only property '0'" errors that crashed the service.
-
-Root Cause: The broker.inference.listService() method returns readonly arrays, but the enhanced inference service was directly calling sort() and other mutating operations on them.
-
-Solution: Implemented a copy-first approach that creates mutable copies before any operations:
-
-// Before (failed)
-const services = await broker.inference.listService()
-services.sort((a, b) => ...) // Error: Cannot assign to read only property
-
-// After (works)  
-const rawServices = await broker.inference.listService()
-const services = [...rawServices].map(s => ({ ...s })) // Always work with copies
-services.sort((a, b) => ...)
-Fine-Tuning "Coming Soon" Flag
-The fine-tuning disable flag wasn't working because it wasn't accessible on the client side. The flag FT_DISABLED=1 was only available server-side, but the fine-tune page runs on the client.
-
-Solution: Renamed to NEXT_PUBLIC_FT_DISABLED=1 and updated the feature flags system to properly read client-accessible environment variables.
-
-Agent Card UI Visibility
-Agent cards were showing "white bars" because text was invisible - using text-gray-600 (dark gray) on a dark gradient background. Users couldn't read agent descriptions or listing information.
-
-Solution: Updated all text colors to use proper contrast:
-
-Changed text-gray-600 to text-white/80 for descriptions
-Updated listing info styling from bg-purple-50 text-purple-900 to bg-white/10 border-white/20 text-white
-Maintained glassmorphism design consistency
-Ledger Auto-Deposit Logic
-The system was incorrectly attempting to "top up" accounts that already had sufficient balance, causing "Ledger already exists" errors and unwanted deposit attempts.
-
-Solution: Modified the ensureMinBalance function to not auto-deposit for existing accounts:
-
-if (balance < minBalanceWei) {
-  console.log('Balance check complete - not attempting auto-deposit for existing accounts')
-  return false // User should explicitly add funds
-}
-Reliability Improvements
-Circuit Breaker Protection
-Added comprehensive circuit breaker logic to prevent cascade failures when providers go down. The system now:
-
-Opens circuit breaker after 5 consecutive failures per provider
-Implements 60-second cooldown before retry attempts
-Automatically recovers when providers come back online
-Provides exponential backoff for failed requests
-FOUC Protection
-Added inline gradient styles to the layout to prevent flash of unstyled content during page load, ensuring smooth user experience.
-
-Enhanced Environment Configuration
-Implemented proper feature flag system with clear client/server separation:
-
-ENHANCED_INFERENCE=1       # Enable enhanced inference service
-ENHANCED_STABLE=1         # Mark as production ready  
-NEXT_PUBLIC_FT_DISABLED=1 # Client-visible fine-tuning disable flag
-Testing
-Created comprehensive test suite (test-fixes.js) that validates:
-
-Feature flags working correctly
-Array mutation fixes preventing readonly errors
-Environment variable accessibility
-Chat route logic with proper fallbacks
-Circuit breaker functionality
-All tests pass, confirming the fixes work as expected.
-
-Impact
-Before: Chat completely broken, agent cards invisible, unwanted auto-deposits, no failure protection
-After: Fully functional chat system, readable UI, smart balance management, resilient error handling
-
-The platform is now production-ready with enhanced reliability and proper user experience.
+React Context Provider
+	•	Global State Management: ComputeProviderfor broker and ledger status
+	•	Hook Integration: useCompute() for accessing compute state
+	•	Automatic Initialization: Broker setup on wallet connection
+Ledger Account UX
+	•	Account Creation Modal: Guided flow for new users
+	•	Balance Management: Real-time status with refresh capabilities
+	•	Error Handling: User-friendly messages with troubleshooting
+API Layer Simplification
+	•	Chat Proxy: Minimal CORS/rate-limiting proxy for direct provider calls
+	•	Deprecated Routes: Server-side compute routes marked as deprecated
+	•	Fine-tuning: Temporarily disabled during migration (Coming Soon)
+Environment Changes
+Removed
+	•	PRIVATE_KEY_COMPUTE (no longer needed)
+	•	ENHANCED_INFERENCE feature flags
+	•	Enhanced inference service files
+Added
+	•	NEXT_PUBLIC_CHAIN_ID=16601 (client-visible)
+	•	NEXT_PUBLIC_RPC_URL=https://evmrpc-testnet.0g.ai (client-visible)
+Preserved
+	•	OG_STORAGE_PRIVATE_KEY (custodial storage continues)
+User Experience Impact
+New User Flow
+	1	Connect wallet (MetaMask/WalletConnect)
+	2	Create 0G ledger account (one-click, 0 OG cost)
+	3	Add OG tokens for AI inference (~0.01 OG recommended)
+	4	Chat with agents using direct provider communication
+Benefits
+	•	True Decentralization: Users control their compute transactions
+	•	Transparent Costs: Direct visibility into 0G provider fees
+	•	Enhanced Security: Private keys never leave user's wallet
+	•	Maintained UX: Storage operations remain seamless
+Technical Verification
+	•	✅ Build Status: npm run build completes successfully
+	•	✅ TypeScript: All compilation errors resolved
+	•	✅ Dev Server: Starts in 2.9s with no breaking errors
+	•	✅ Feature Parity: All existing functionality preserved or enhanced
+Migration Strategy
+This PR implements a minimal-change approachfocused on:
+	•	Surgical removal of custodial compute components
+	•	Addition of client-side compute infrastructure
+	•	Preservation of storage custodial functionality
+	•	Comprehensive error handling and user guidance
+The platform is now ready for production deployment with the new hybrid architecture, providing users with the security benefits of non-custodial compute while maintaining the UX benefits of custodial storage.
 

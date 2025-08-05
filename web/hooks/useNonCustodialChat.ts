@@ -31,6 +31,8 @@ export function useNonCustodialChat() {
     setError(null)
 
     try {
+      console.log('[CHAT] start - Beginning non-custodial chat request')
+      
       // Check if wallet is available
       const walletAvailable = await isClientBrokerAvailable()
       if (!walletAvailable) {
@@ -38,7 +40,7 @@ export function useNonCustodialChat() {
       }
 
       // Ensure ledger exists for the user
-      console.log('[NonCustodialChat] Ensuring ledger...')
+      console.log('[CHAT] Ensuring ledger...')
       await ensureLedger()
 
       // Use default provider if none specified
@@ -62,12 +64,15 @@ export function useNonCustodialChat() {
         temperature: 0.7
       }
 
-      console.log('[NonCustodialChat] Preparing compute request...')
+      console.log('[CHAT] prepared - Preparing compute request...')
       
       // Prepare signed request
       const preparedRequest = await prepareComputeRequest(providerAddress, payload)
 
-      console.log('[NonCustodialChat] Sending to chat API...')
+      console.log('[CHAT] fetch - Sending to chat API...', {
+        endpoint: preparedRequest.endpoint,
+        hasHeaders: Object.keys(preparedRequest.headers).length > 0
+      })
 
       // Send to chat API with prepared request
       const response = await fetch('/api/compute/chat', {
@@ -126,7 +131,7 @@ export function useNonCustodialChat() {
       }
 
     } catch (err: any) {
-      console.error('[NonCustodialChat] Error:', err)
+      console.error('[CHAT] Error in non-custodial chat:', err)
       setError(err.message)
       throw err
     } finally {

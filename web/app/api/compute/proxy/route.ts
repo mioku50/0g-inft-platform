@@ -158,8 +158,8 @@ export async function POST(req: NextRequest) {
     // Filter headers for security
     const filteredHeaders = filterHeaders(headers)
 
-    console.log(`[Compute Proxy] ${method} ${endpoint}`)
-    console.log('[Compute Proxy] Filtered headers:', Object.keys(filteredHeaders))
+    console.log(`[PROXY] HIT - ${method} ${endpoint}`)
+    console.log('[PROXY] Filtered headers:', Object.keys(filteredHeaders))
     
     // Forward the request to the 0G compute provider with timeout
     const controller = new AbortController()

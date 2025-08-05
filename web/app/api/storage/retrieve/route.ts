@@ -50,9 +50,13 @@ export async function POST(request: NextRequest) {
           const path = require('path')
           const localDir = path.join(process.cwd(), 'data', 'metadata')
           const localPath = path.join(localDir, `${hash}.json`)
+          
+          // Check if file exists before trying to read
+          await fs.access(localPath)
           const localContent = await fs.readFile(localPath, 'utf-8')
           return NextResponse.json({ success: true, content: localContent, rootHash: cleanRootHash, local: true })
-        } catch {
+        } catch (fileError) {
+          console.log('[Storage Retrieve] Local file not found:', cleanRootHash)
           // continue to fallback
         }
       } else if (cleanRootHash) {
@@ -71,7 +75,8 @@ export async function POST(request: NextRequest) {
             rootHash: cleanRootHash,
             local: true,
           })
-        } catch {
+        } catch (fileError) {
+          console.log('[Storage Retrieve] Local metadata file not found:', cleanRootHash)
           // continue to fallback
         }
       }

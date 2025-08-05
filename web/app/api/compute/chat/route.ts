@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     // Check if using non-custodial mode (prepared request)
     if (prepared === true && prep) {
-      console.log('[Chat API] Using non-custodial mode - proxying prepared request')
+      console.log('[CHAT] HIT - Using non-custodial mode - proxying prepared request')
       
       // Forward to proxy endpoint
       const origin = new URL(request.url).origin

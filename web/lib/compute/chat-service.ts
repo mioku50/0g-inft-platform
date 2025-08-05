@@ -1,3 +1,5 @@
+export const runtime = 'nodejs'
+
 import { ethers } from 'ethers'
 const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
 import OpenAI from 'openai'

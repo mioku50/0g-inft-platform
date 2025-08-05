@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { message, agentMetadata, providerAddress } = body
+    const { message, agentMetadata, providerAddress, prepared, prep } = body
 
     // Enhanced validation
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -82,6 +82,44 @@ export async function POST(request: NextRequest) {
     console.log('Agent:', defaultMetadata.name)
     console.log('Provider preference:', providerAddress || 'auto-select')
     console.log('Client IP:', clientIP)
+    console.log('Mode:', prepared ? 'non-custodial' : 'custodial')
+
+    // Check if using non-custodial mode (prepared request)
+    if (prepared === true && prep) {
+      console.log('[Chat API] Using non-custodial mode - proxying prepared request')
+      
+      // Forward to proxy endpoint
+      const origin = new URL(request.url).origin
+      const proxyResponse = await fetch(`${origin}/api/compute/proxy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(prep)
+      })
+
+      const proxyResult = await proxyResponse.text()
+      
+      return new Response(proxyResult, {
+        status: proxyResponse.status,
+        headers: {
+          'Content-Type': proxyResponse.headers.get('content-type') || 'application/json'
+        }
+      })
+    }
+
+    // Fallback to custodial mode (dev/legacy)
+    const useNonCustodial = process.env.USE_NONCUSTODIAL_INFERENCE === 'true'
+    if (useNonCustodial && !process.env.OG_COMPUTE_PRIVATE_KEY) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'non_custodial_required',
+          message: 'Non-custodial mode is enabled but no prepared request provided. Please connect wallet and try again.'
+        },
+        { status: 400 }
+      )
+    }
 
     // Use ChatService with rate limiting and enhanced caching
     const chatService = new ChatService(process.env.OG_COMPUTE_PRIVATE_KEY)

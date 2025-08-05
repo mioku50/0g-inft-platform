@@ -1,5 +1,9 @@
-// Клиентский API для взаимодействия с 0G Compute
-// НЕ импортируем серверные библиотеки здесь!
+/**
+ * Non-Custodial Compute Client
+ * 
+ * This client now uses the client-side broker for direct provider communication.
+ * Legacy API routes are still available for backwards compatibility.
+ */
 
 export interface ChatResponse {
   success: boolean
@@ -7,6 +11,7 @@ export interface ChatResponse {
   model?: string
   provider?: string
   isRealAI?: boolean
+  verified?: boolean
 }
 
 export interface AnalysisResponse {
@@ -18,7 +23,13 @@ export interface AnalysisResponse {
 export class ComputeClient {
   private baseUrl = '/api/compute'
   
+  /**
+   * Legacy chat method - now redirects to proxy
+   * For new implementations, use useChat hook instead
+   */
   async chat(message: string, agentMetadata: any): Promise<ChatResponse> {
+    console.warn('[ComputeClient] Using legacy chat method. Consider using useChat hook for non-custodial mode.')
+    
     try {
       const response = await fetch(`${this.baseUrl}/chat`, {
         method: 'POST',
@@ -35,7 +46,7 @@ export class ComputeClient {
       console.error('Chat error:', error)
       return {
         success: false,
-        response: 'Failed to connect to AI service'
+        response: 'Failed to connect to AI service. Please ensure your wallet is connected and you have a ledger account.'
       }
     }
   }

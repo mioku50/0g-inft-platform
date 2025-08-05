@@ -317,3 +317,117 @@ Real AI responses: Chat returns isRealAI: true with actual 0G compute provider r
 User wallet control: Users manage their own compute payments via connected wallets
 Professional UI: Fine-tune sections show "Coming Soon" instead of broken functionality
 This implementation successfully transitions the platform to the desired hybrid architecture where users control their compute spending while the platform manages storage operations for optimal UX.
+
+🎯 Problem Statement
+The platform was experiencing several critical issues:
+
+Inference not working: No requests from UI to server, non-custodial mode not properly implemented
+Fine-tune contract spam: Continuous getActiveModel()/getCandidateModel() calls flooding logs with errors
+UI visibility issues: White artifacts and invisible text on dark theme
+Security concerns: Proxy lacked proper security measures
+🔧 Implementation
+Non-custodial Inference Architecture
+Implemented the desired hybrid architecture where users control compute payments while the platform manages storage:
+
+// Enhanced client broker with proper wallet integration
+export async function ensureLedger(userAddress?: string): Promise<boolean> {
+  const broker = await getClientBroker()
+  // Check if ledger exists, create with 0.01 ETH if needed
+  await broker.ledger.addLedger(initialBalance)
+}
+
+export async function prepareComputeRequest(providerAddress: string, payload: any) {
+  const broker = await getClientBroker()
+  await acknowledgeProviderIfNeeded(broker, providerAddress) // 30min cache
+  const headers = await broker.inference.getRequestHeaders(providerAddress, content)
+  // Return prepared request for proxy forwarding
+}
+Updated chat system to use non-custodial mode:
+
+Users pay from connected wallets (MetaMask, WalletConnect)
+Automatic ledger account creation on first use
+Provider acknowledgment caching to avoid repeated transactions
+Secure Proxy Implementation
+Enhanced /api/compute/proxy with enterprise-grade security:
+
+// Host allowlist for authorized 0G providers only
+const ALLOWED_HOSTS = [
+  'provider-1.0g.ai', 'provider-2.0g.ai', 'compute-testnet.0g.ai',
+  'inference-testnet.0g.ai', 'serving-testnet.0g.ai'
+]
+
+// Header filtering - only essential headers forwarded
+const ALLOWED_HEADERS = [
+  'authorization', 'x-signature', 'x-timestamp', 'x-payment-info'
+]
+
+// Rate limiting: 60 req/min per IP, 1MB body size limit, 30s timeout
+Fine-tune Contract Spam Elimination
+Implemented proper feature flag checks to completely disable contract calls:
+
+// Server-side protection
+static async getActiveModel(tokenId: number): Promise<string> {
+  if (process.env.ENABLE_FINE_TUNE !== 'true') {
+    console.log(`[Fine-tune] getActiveModel(${tokenId}) skipped - feature disabled`)
+    return '0x0000000000000000000000000000000000000000000000000000000000000000'
+  }
+  // Contract call only when enabled
+}
+When ENABLE_FINE_TUNE=false, the system now:
+
+Skips all contract method calls
+Returns default values immediately
+Eliminates CALL_EXCEPTION spam in logs
+Shows professional "Coming Soon" UI
+UI Visibility Fixes
+Updated components for proper dark theme contrast:
+
+// Badge component with proper visibility
+const badgeVariants = cva({
+  variants: {
+    variant: {
+      default: "bg-purple-600 text-white hover:bg-purple-700",
+      outline: "text-white border-white/30 hover:bg-white/10",
+    }
+  }
+})
+
+// Input fields already had good contrast
+"bg-gray-900/50 text-white placeholder:text-gray-400 focus-visible:ring-purple-500"
+🧪 Verification
+Environment configuration test results:
+
+✅ ENABLE_FINE_TUNE = "false" (eliminates contract spam)
+✅ NEXT_PUBLIC_FT_DISABLED = "1" (shows coming soon UI)  
+✅ USE_NONCUSTODIAL_INFERENCE = "true" (enables wallet payments)
+✅ NEXT_PUBLIC_USE_NONCUSTODIAL_INFERENCE = "true" (client-side enabled)
+Build verification:
+
+✅ Compiles successfully with no TypeScript errors
+✅ All routes functional, proper error handling
+✅ Bundle size impact: +1.7kB for non-custodial functionality (expected)
+📸 Visual Results
+Homepage - Clean UI Without Artifacts
+Homepage
+
+Fine-tune Sleep Mode - Professional Coming Soon Interface
+Fine-tune Coming Soon
+
+🎯 Impact
+For Users:
+
+Chat with agents now ready to provide real AI responses with isRealAI: true
+Complete control over compute payments through connected wallets
+Clean, professional interface without broken functionality
+Fast storage operations maintained through platform management
+For Operations:
+
+Eliminated contract call spam from logs completely
+Enhanced security with proxy allowlist and rate limiting
+Comprehensive monitoring with meaningful metrics (no PII)
+Proper error categorization and user-friendly messages
+Architecture:
+
+Non-custodial Compute: User wallet → ensureLedger() → prepareComputeRequest() → proxy → 0G provider
+Custodial Storage: Platform keys → 0G Storage SDK → fast metadata operations
+The platform now operates in the desired hybrid mode where users maintain control over their compute spending while benefiting from optimized storage performance.

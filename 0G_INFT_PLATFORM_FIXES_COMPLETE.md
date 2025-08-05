@@ -241,3 +241,79 @@ RPC_REQUEST_DELAY_MS=120
 PROVIDER_ACK_CACHE_TTL=1800000
 BROKER_CACHE_TTL=600000
 The platform now provides stable, fast, and reliable AI inference through the 0G Compute Network.
+
+
+Issues Fixed
+
+1. Fine-tune Contract Call Spam
+
+The platform was repeatedly calling getActiveModel() and getCandidateModel() contract methods, resulting in continuous CALL_EXCEPTION errors flooding the logs:
+
+getActiveModel(20) failed: execution reverted (no data present; likely require(false) occurred
+getCandidateModel(17) failed: execution reverted (no data present; likely require(false) occurred
+This spam was occurring because the useAgentModelInfo hook was being called for every agent displayed on the agents page, triggering API calls to /api/agents/[id]/activate which then called the fine-tune contract methods.
+
+2. Inference Using Custodial Mode Instead of Non-custodial
+
+The chat system was attempting to use server-side private keys (OG_COMPUTE_PRIVATE_KEY) for inference operations, but this key wasn't set, causing inference to fall back to local mode:
+
+ChatService error: Error: Failed to initialize broker: OG_COMPUTE_PRIVATE_KEY not set
+Chat processing result: { isRealAI: false, model: 'local-fallback' }
+Solutions Implemented
+
+Non-custodial Inference Architecture
+
+Created /api/compute/proxy route: A simple proxy that forwards prepared requests without server-side signing
+Enhanced client broker: Added ensureLedger() and prepareComputeRequest() methods for client-side payment preparation
+Hybrid chat API: Updated /api/compute/chat to support both custodial (dev) and non-custodial (production) modes
+Wallet-first chat: Chat page now attempts non-custodial mode when wallet is connected, with graceful fallback
+Fine-tune Spam Elimination
+
+Feature flag system: Added ENABLE_FINE_TUNE=false environment variable to disable all fine-tune contract calls
+Server-side protection: All contract methods (getActiveModel, getCandidateModel, etc.) now check the feature flag and return early
+Client-side optimization: Added feature flag check to useAgentModelInfo hook to prevent unnecessary API calls
+UI consistency: Fine-tune pages show "Coming Soon" when disabled via NEXT_PUBLIC_FT_DISABLED=1
+Technical Details
+
+The implementation follows the specified architecture:
+
+Non-custodial Compute: Users pay from their connected wallets (MetaMask, WalletConnect, etc.)
+Custodial Storage: Platform manages storage operations using server-side keys for UX
+Clean separation: Compute operations never use server-side private keys in production
+Flow for Non-custodial Inference:
+
+User connects wallet → ensureLedger() creates/verifies ledger account
+Chat message → prepareComputeRequest() generates signed request with billing headers
+Request sent to /api/compute/proxy → proxies to 0G compute provider
+Response returned directly to user
+Environment Configuration:
+
+# Non-custodial mode (default in production)
+USE_NONCUSTODIAL_INFERENCE=true
+NEXT_PUBLIC_USE_NONCUSTODIAL_INFERENCE=true
+
+# Fine-tune disabled (eliminates spam)  
+ENABLE_FINE_TUNE=false
+NEXT_PUBLIC_FT_DISABLED=1
+Testing
+
+Created comprehensive test script (test-feature-flags.js) that verifies:
+
+✅ Server-side fine-tune contract calls are disabled
+✅ Client-side fine-tune UI shows "Coming Soon"
+✅ Non-custodial inference mode is enabled
+✅ Environment variables are properly configured
+Backward Compatibility
+
+Custodial mode remains available for development by setting USE_NONCUSTODIAL_INFERENCE=false
+Fine-tune can be re-enabled by setting ENABLE_FINE_TUNE=true and NEXT_PUBLIC_FT_DISABLED=0
+Existing chat functionality is preserved with enhanced wallet integration
+Expected Results
+
+After deployment:
+
+Clean logs: No more getActiveModel/getCandidateModel spam
+Real AI responses: Chat returns isRealAI: true with actual 0G compute provider responses
+User wallet control: Users manage their own compute payments via connected wallets
+Professional UI: Fine-tune sections show "Coming Soon" instead of broken functionality
+This implementation successfully transitions the platform to the desired hybrid architecture where users control their compute spending while the platform manages storage operations for optimal UX.

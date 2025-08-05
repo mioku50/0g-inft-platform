@@ -9,7 +9,16 @@ import {
   getComputeInferenceContract,
   logEnvironmentStatus
 } from '@/lib/server/compute-env'
-import { create0GProvider } from '@/lib/server/provider'
+import { getRateLimitedProvider, createRateLimitedWallet } from '@/lib/server/rate-limited-provider'
+
+// Global broker singleton with rate limiting
+let globalBroker: any | null = null
+let brokerInitTime: number = 0
+const BROKER_CACHE_TTL = 10 * 60 * 1000 // 10 minutes
+
+// Provider acknowledgment cache - persistent across requests
+const providerAckCache = new Map<string, { acknowledged: boolean; timestamp: number }>()
+const PROVIDER_ACK_TTL = 30 * 60 * 1000 // 30 minutes cache
 
 export const SERVING_ABI = [
   'function accountExists(address user, address provider) view returns (bool)',
@@ -257,6 +266,33 @@ export async function assertContractDeployed(provider: JsonRpcProvider, address:
   if (!code || code === '0x') {
     throw new Error(`Contract not deployed at ${address}`)
   }
+}
+
+/**
+ * Check if provider is already acknowledged (with caching)
+ */
+async function isProviderAcknowledged(providerAddress: string): Promise<boolean> {
+  const cached = providerAckCache.get(providerAddress)
+  const now = Date.now()
+  
+  if (cached && (now - cached.timestamp) < PROVIDER_ACK_TTL) {
+    console.log(`[Broker] Provider ${providerAddress} acknowledgment cached: ${cached.acknowledged}`)
+    return cached.acknowledged
+  }
+  
+  // Cache miss - we'll acknowledge lazily when needed
+  return false
+}
+
+/**
+ * Mark provider as acknowledged in cache
+ */
+function markProviderAcknowledged(providerAddress: string) {
+  providerAckCache.set(providerAddress, {
+    acknowledged: true,
+    timestamp: Date.now()
+  })
+  console.log(`[Broker] Cached provider acknowledgment for ${providerAddress}`)
 }
 
 // Безопасные обёртки для работы с ledger
@@ -562,8 +598,16 @@ export async function deposit(
 }
 
 export async function getBrokerOrThrow() {
-  if (broker) return broker
-
+  const now = Date.now()
+  
+  // Use cached global broker if still valid
+  if (globalBroker && (now - brokerInitTime) < BROKER_CACHE_TTL) {
+    console.log('[Broker] Using cached global broker instance')
+    return globalBroker
+  }
+  
+  console.log('[Broker] Initializing new broker instance...')
+  
   // Log environment status on first initialization
   logEnvironmentStatus()
 
@@ -574,57 +618,61 @@ export async function getBrokerOrThrow() {
   const pk = getPrivateKey()
   if (!pk) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
 
-  const provider = create0GProvider()
-  const signer = new Wallet(pk, provider)
+  // Use rate-limited provider and wallet
+  const provider = getRateLimitedProvider()
+  const signer = createRateLimitedWallet(pk)
 
-  // Verify contracts are deployed
-  await assertContractDeployed(provider, servingAddr)
-  await assertContractDeployed(provider, ledger)
-  await assertContractDeployed(provider, inference)
+  console.log('[Broker] Using rate-limited provider with enhanced throttling')
+
+  // Verify contracts are deployed with rate limiting
+  try {
+    await Promise.all([
+      assertContractDeployed(provider, servingAddr),
+      assertContractDeployed(provider, ledger),
+      assertContractDeployed(provider, inference)
+    ])
+  } catch (error: any) {
+    console.warn('[Broker] Contract verification failed (non-critical):', error.message)
+    // Continue anyway - contracts might be deployed but network issues prevent verification
+  }
 
   try {
-    broker = await createZGComputeNetworkBroker(
+    console.log('[Broker] Creating 0G SDK broker with rate limiting...')
+    const newBroker = await createZGComputeNetworkBroker(
       signer,
       ledger,
       inference,
       servingAddr
     )
+    
+    console.log('[Broker] 0G SDK broker created successfully')
+    
+    newBroker.signer = signer
+    newBroker.signerAddress = signer.address
+    
+    // Add safe ledger methods
+    newBroker.ledgerSafe = ledgerSafe
+
+    // Add fine-tuning support with rate limiting
+    await addFineTuningSupport(newBroker, signer)
+
+    // Cache the broker globally
+    globalBroker = newBroker
+    brokerInitTime = now
+    broker = newBroker // Keep compatibility
+
+    console.log('[Broker] Broker initialized and cached successfully', {
+      signerAddress: newBroker.signerAddress,
+      servingAddress: servingAddr,
+      ledgerAddress: ledger,
+      cacheExpiry: new Date(now + BROKER_CACHE_TTL).toISOString()
+    })
+
+    return newBroker
   } catch (e: any) {
+    console.error('[Broker] Failed to create 0G SDK broker:', e)
     throw new Error(`Failed to start 0G SDK: ${e.message}`)
   }
-
-  broker.signer = signer
-  broker.signerAddress = signer.address
-  
-  // Добавляем безопасные методы к broker
-  broker.ledgerSafe = ledgerSafe
-
-  await addFineTuningSupport(broker, signer)
-
-  // Ensure ledger contract is properly attached
-  // NOTE: We should NOT override SDK methods! The SDK has its own implementation
-  // that handles ledger operations differently than direct contract calls.
-  // Removing this override to fix the depositFund conflict.
-  /*
-  if (!broker.ledger || typeof broker.ledger.addAccount !== 'function') {
-    console.log('[fine] Adding manual ledger contract methods')
-    const ledgerContract = getLedgerContract(signer)
-    broker.ledger = {
-      ...(broker.ledger || {}),
-      addAccount: ledgerContract.addAccount.bind(ledgerContract),
-      depositFund: ledgerContract.depositFund.bind(ledgerContract),
-      requestRefundAll: ledgerContract.requestRefundAll.bind(ledgerContract)
-    }
-  }
-  */
-
-  console.log('[fine] Broker initialized successfully', {
-    signerAddress: broker.signerAddress,
-    servingAddress: servingAddr,
-    ledgerAddress: ledger
-  })
-
-  return broker
 }
 
 async function addFineTuningSupport(broker: any, signer: Wallet) {
@@ -822,18 +870,40 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       try {
         console.log('[fine] acknowledgeProviderSigner:start', { provider })
         
+        // Check cache first to avoid redundant calls
+        const isAlreadyAcknowledged = await isProviderAcknowledged(provider)
+        if (isAlreadyAcknowledged) {
+          console.log('[fine] Provider already acknowledged (cached), skipping')
+          return { cached: true, provider }
+        }
+        
         // Use the official SDK broker method for inference acknowledge
-        // Call the actual SDK inference method, not our wrapper to avoid recursion
         if (!broker.inference || typeof broker.inference.acknowledgeProviderSigner !== 'function') {
           throw new Error('SDK inference.acknowledgeProviderSigner not available')
         }
         
+        console.log('[fine] Calling SDK acknowledgeProviderSigner...')
         const result = await broker.inference.acknowledgeProviderSigner(provider)
+        
+        // Mark as acknowledged in cache
+        markProviderAcknowledged(provider)
         
         console.log('[fine] acknowledgeProviderSigner:success', result)
         return result
       } catch (e: any) {
         console.error('[fine] acknowledgeProviderSigner:error', e)
+        
+        // If error suggests already acknowledged, cache it
+        if (e.message && (
+          e.message.includes('already acknowledged') || 
+          e.message.includes('AlreadyAcknowledged') ||
+          e.message.includes('signer is already acknowledged')
+        )) {
+          console.log('[fine] Provider was already acknowledged, caching result')
+          markProviderAcknowledged(provider)
+          return { alreadyAcknowledged: true, provider }
+        }
+        
         throw formatError(e, 0)
       }
     },

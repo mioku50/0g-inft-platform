@@ -1,101 +1,151 @@
 /**
- * Chat API Route - Non-Custodial Proxy
+ * Enhanced Chat API Route with Rate Limiting Support
  * 
- * This route now serves as a minimal proxy for rate-limiting and CORS.
- * Actual 0G Compute calls are made directly from the client to provider endpoints.
+ * This route uses the improved ChatService with:
+ * - Rate-limited RPC provider
+ * - Enhanced broker caching and singleton pattern
+ * - Provider acknowledgment caching
+ * - Better error handling and fallbacks
  */
 
 export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { ChatService } from '@/lib/compute/chat-service'
+
+// Rate limiting per IP (simple in-memory implementation)
+const requestCounts = new Map<string, { count: number; resetTime: number }>()
+const RATE_LIMIT = 30 // requests per minute
+const RATE_WINDOW = 60 * 1000 // 1 minute
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now()
+  const current = requestCounts.get(ip)
+  
+  if (!current || now > current.resetTime) {
+    requestCounts.set(ip, { count: 1, resetTime: now + RATE_WINDOW })
+    return true
+  }
+  
+  if (current.count >= RATE_LIMIT) {
+    return false
+  }
+  
+  current.count++
+  return true
+}
 
 export async function POST(request: NextRequest) {
   try {
-    // Parse request for validation and rate limiting
+    // Rate limiting
+    const clientIP = request.headers.get('x-forwarded-for') || 
+                     request.headers.get('x-real-ip') || 
+                     'unknown'
+    
+    if (!checkRateLimit(clientIP)) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Rate limit exceeded',
+          message: 'Too many requests. Please wait a moment before trying again.'
+        },
+        { status: 429 }
+      )
+    }
+
     const body = await request.json()
-    const { providerUrl, headers, payload } = body
+    const { message, agentMetadata, providerAddress } = body
 
-    // Basic validation
-    if (!providerUrl || !headers || !payload) {
+    // Enhanced validation
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields: providerUrl, headers, payload' },
+        { success: false, error: 'Message is required and must be non-empty' },
         { status: 400 }
       )
     }
 
-    // Validate provider URL (security check)
-    if (!isValidProviderUrl(providerUrl)) {
+    if (message.length > 4000) {
       return NextResponse.json(
-        { success: false, error: 'Invalid provider URL' },
+        { success: false, error: 'Message too long (max 4000 characters)' },
         { status: 400 }
       )
     }
 
-    console.log('\n=== Non-Custodial Chat Proxy ===')
-    console.log('Provider:', providerUrl)
-    console.log('Headers present:', Object.keys(headers).length)
+    // Provide default agent metadata if not provided
+    const defaultMetadata = {
+      name: agentMetadata?.name || 'AI Assistant',
+      description: agentMetadata?.description || 'Helpful AI assistant powered by 0G Compute Network'
+    }
 
-    // Rate limiting could go here
-    // await rateLimiter.check(request)
+    console.log('\n=== Enhanced 0G Chat API ===')
+    console.log('Message length:', message.length)
+    console.log('Agent:', defaultMetadata.name)
+    console.log('Provider preference:', providerAddress || 'auto-select')
+    console.log('Client IP:', clientIP)
 
-    // Proxy the request to the provider
-    const response = await fetch(`${providerUrl}/v1/chat/completions`, {
-      method: 'POST',  
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers // Client-generated headers from clientBroker
-      },
-      body: JSON.stringify(payload)
+    // Use ChatService with rate limiting and enhanced caching
+    const chatService = new ChatService(process.env.OG_COMPUTE_PRIVATE_KEY)
+    
+    const result = await chatService.processChat({
+      message: message.trim(),
+      agentMetadata: defaultMetadata
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('Provider error:', response.status, errorText)
-      return NextResponse.json(
-        { success: false, error: `Provider error: ${response.status}`, details: errorText },
-        { status: response.status }
-      )
-    }
+    console.log('Chat processing result:', {
+      success: result.success,
+      isRealAI: result.isRealAI,
+      model: result.model,
+      provider: result.provider,
+      timing: result.metadata.timing
+    })
 
-    const result = await response.json()
-    
-    // Pass through the provider response
+    // Return enhanced response
     return NextResponse.json({
-      success: true,
-      ...result
+      success: result.success,
+      response: result.response,
+      model: result.model,
+      provider: result.provider,
+      isRealAI: result.isRealAI,
+      metadata: {
+        timing: result.metadata.timing,
+        servicesFound: result.metadata.servicesFound,
+        rateLimited: false,
+        cached: !!result.metadata.timing.initBroker && result.metadata.timing.initBroker < 100
+      }
     })
 
   } catch (error: any) {
-    console.error('Chat proxy error:', error)
+    console.error('Enhanced Chat API error:', error)
+    
+    // Enhanced error categorization
+    let errorType = 'service_error'
+    let statusCode = 500
+    
+    if (error.message?.includes('rate limit') || error.message?.includes('Too many requests')) {
+      errorType = 'rate_limit'
+      statusCode = 429
+    } else if (error.message?.includes('timeout') || error.message?.includes('TIMEOUT')) {
+      errorType = 'timeout'
+      statusCode = 504
+    } else if (error.message?.includes('network') || error.message?.includes('NETWORK')) {
+      errorType = 'network_error'
+      statusCode = 503
+    }
+    
     return NextResponse.json(
       { 
         success: false, 
-        error: 'Proxy error',
-        details: error.message
-      },
-      { status: 500 }
-    )
-  }
-}
+        error: errorType,
+        message: error.message,
+        response: `I'm experiencing technical difficulties with the 0G Compute Network. Please try again in a moment.
 
-/**
- * Validate that the provider URL is from a trusted 0G provider
- */
-function isValidProviderUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    
-    // Allow official 0G provider addresses
-    const allowedHosts = [
-      'testnet-rpc.0g.ai',
-      'evmrpc-testnet.0g.ai',
-      // Add more trusted provider endpoints as needed
-    ]
-    
-    // For now, allow any HTTPS URL (providers run on different domains)
-    // In production, maintain a whitelist of approved provider URLs
-    return parsed.protocol === 'https:' && parsed.hostname.length > 0
-  } catch {
-    return false
+🔧 **Technical Details:**
+- Error: ${errorType}
+- Message: ${error.message}
+
+I'm still here to help you as soon as the connection is restored!`
+      },
+      { status: statusCode }
+    )
   }
 }

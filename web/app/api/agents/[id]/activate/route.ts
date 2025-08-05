@@ -109,6 +109,7 @@ export async function POST(
 /**
  * GET /api/agents/[id]/activate
  * Get agent model information (active and candidate models)
+ * Respects ENABLE_FINE_TUNE feature flag
  */
 export async function GET(
   request: NextRequest,
@@ -117,10 +118,29 @@ export async function GET(
   try {
     const agentId = parseInt(params.id)
     
+    // Check if fine-tune is disabled
+    if (process.env.ENABLE_FINE_TUNE !== 'true') {
+      console.log(`[Fine-tune] GET agents/${agentId}/activate skipped - feature disabled`)
+      return NextResponse.json({
+        success: true,
+        agentId,
+        summary: {
+          activeModel: null,
+          candidateModel: null,
+          totalVersions: 0
+        },
+        onChain: {
+          activeModel: null,
+          candidateModel: null
+        },
+        featureDisabled: true
+      })
+    }
+    
     // Get model summary from database
     const summary = await db.getAgentModelSummary(agentId)
     
-    // Get on-chain information
+    // Get on-chain information (only if feature is enabled)
     const activeModelOnChain = await AgentModelRegistryService.getActiveModel(agentId)
     const candidateOnChain = await AgentModelRegistryService.getCandidateModel(agentId)
 

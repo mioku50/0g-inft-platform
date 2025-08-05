@@ -26,7 +26,7 @@ import {
   ArrowLeft
 } from 'lucide-react'
 import { INFT_ABI } from '@/lib/contracts/abis'
-import { computeClient } from '@/lib/compute/client'
+import { useNonCustodialChat } from '@/hooks/useNonCustodialChat'
 import { TransferModal } from '@/components/agent/TransferModal'
 import { ListingModal } from '@/components/marketplace/ListingModal'
 
@@ -60,6 +60,9 @@ export default function ChatPage() {
   const [showTransferModal, setShowTransferModal] = useState(false)
   const [showListingModal, setShowListingModal] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
+
+  // Non-custodial chat hook
+  const { sendMessage: sendNonCustodialMessage, loading: chatLoading, error: chatError } = useNonCustodialChat()
 
   // Read contract data
   const { data: owner } = useContractRead({
@@ -124,7 +127,7 @@ export default function ChatPage() {
   }, [messages])
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading || chatLoading) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -134,66 +137,63 @@ export default function ChatPage() {
     }
 
     setMessages(prev => [...prev, userMessage])
+    const currentInput = input
     setInput('')
     setIsLoading(true)
     setIsStreaming(true)
 
     try {
-      // Call Enhanced 0G Compute API
-      const response = await fetch('/api/compute/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
+      console.log('[Chat] Using non-custodial mode')
+      
+      // Use non-custodial chat
+      const result = await sendNonCustodialMessage(
+        currentInput,
+        {
+          name: agentMetadata?.name || `Agent #${tokenId}`,
+          description: agentMetadata?.description || 'An intelligent AI assistant powered by 0G Network'
         },
-        body: JSON.stringify({
-          message: input,
-          agentMetadata: {
-            name: agentMetadata?.name || `Agent #${tokenId}`,
-            description: agentMetadata?.description || 'An intelligent AI assistant powered by 0G Network'
-          },
-          options: {
-            stream: true,
-            temperature: 0.7,
-            maxTokens: 2000
-          }
-        })
-      })
+        {
+          providerAddress: process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER || '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
+        }
+      )
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-      }
-
-      const result = await response.json()
-
-      if (result.success && result.response) {
+      if (result && result.content) {
         // Create assistant message
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: result.response,
+          content: result.content,
           timestamp: new Date(),
         }
 
         setMessages(prev => [...prev, assistantMessage])
 
         // Show success toast with metadata
-        if (result.metadata) {
-          toast({
-            title: `Response from ${result.model || 'AI'}`,
-            description: `✅ Verified: ${result.metadata.isVerified ? 'Yes' : 'No'} | ⚡ ${result.metadata.timing.totalTTFB}ms`,
-          })
-        }
+        toast({
+          title: `Response from ${result.model || 'AI'}`,
+          description: `✅ Real AI: ${result.isRealAI ? 'Yes' : 'No'} | Provider: ${result.provider ? result.provider.slice(0, 8) + '...' : 'Unknown'}`,
+        })
       } else {
-        throw new Error(result.error || 'Failed to get response')
+        throw new Error('No response content received')
       }
     } catch (error: any) {
-      console.error('Enhanced chat error:', error)
+      console.error('[Chat] Non-custodial error:', error)
       
       // Create error message
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `I apologize, but I'm having trouble connecting to the 0G Compute Network right now. Error: ${error.message}`,
+        content: `I apologize, but I'm having trouble connecting to the 0G Compute Network. 
+
+🔧 **Error Details:**
+${error.message}
+
+💡 **Troubleshooting:**
+- Make sure your wallet is connected
+- Ensure you have sufficient OG balance for compute fees
+- Check that you're on Galileo Testnet v3 (Chain ID: 16601)
+
+I'll be ready to help once the connection is restored!`,
         timestamp: new Date(),
       }
 
@@ -201,7 +201,7 @@ export default function ChatPage() {
 
       toast({
         title: 'Connection Error',
-        description: 'Failed to get response from agent',
+        description: 'Failed to get response from 0G Compute Network',
         variant: 'destructive',
       })
     } finally {
@@ -426,15 +426,15 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                disabled={isLoading}
+                disabled={isLoading || chatLoading}
                 className="bg-white/10 border-white/30 text-white placeholder:text-purple-300 focus:border-purple-400"
               />
               <Button
                 onClick={handleSend}
-                disabled={isLoading || !input.trim()}
+                disabled={isLoading || chatLoading || !input.trim()}
                 className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
               >
-                {isLoading ? (
+                {(isLoading || chatLoading) ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Send className="w-4 h-4" />

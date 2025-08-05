@@ -53,6 +53,12 @@ export class AgentModelRegistryService {
     trainingParamsHash: string,
     taskId: string
   ): Promise<string> {
+    // Check if fine-tune is disabled
+    if (process.env.ENABLE_FINE_TUNE !== 'true') {
+      console.log(`[Fine-tune] attestTask(${tokenId}) skipped - feature disabled`)
+      return '0x0000000000000000000000000000000000000000000000000000000000000000'
+    }
+
     try {
       console.log(`🔗 Attesting task creation for agent ${tokenId}...`);
       
@@ -112,6 +118,12 @@ export class AgentModelRegistryService {
     logRoot: string,
     taskId: string
   ): Promise<string> {
+    // Check if fine-tune is disabled
+    if (process.env.ENABLE_FINE_TUNE !== 'true') {
+      console.log(`[Fine-tune] attestDelivery(${tokenId}) skipped - feature disabled`)
+      return '0x0000000000000000000000000000000000000000000000000000000000000000'
+    }
+
     try {
       console.log(`🔗 Attesting model delivery for agent ${tokenId}...`);
       
@@ -208,6 +220,12 @@ export class AgentModelRegistryService {
    * Get active model for an agent with safe error handling
    */
   static async getActiveModel(tokenId: number): Promise<string> {
+    // Check if fine-tune is disabled
+    if (process.env.ENABLE_FINE_TUNE !== 'true') {
+      console.log(`[Fine-tune] getActiveModel(${tokenId}) skipped - feature disabled`)
+      return '0x0000000000000000000000000000000000000000000000000000000000000000'
+    }
+
     return safeContractCall(
       () => registryContract?.getActiveModel(tokenId),
       '0x0000000000000000000000000000000000000000000000000000000000000000',
@@ -219,6 +237,15 @@ export class AgentModelRegistryService {
    * Get candidate model for an agent with safe error handling
    */
   static async getCandidateModel(tokenId: number): Promise<{ modelRoot: string; hasCandidate: boolean }> {
+    // Check if fine-tune is disabled
+    if (process.env.ENABLE_FINE_TUNE !== 'true') {
+      console.log(`[Fine-tune] getCandidateModel(${tokenId}) skipped - feature disabled`)
+      return {
+        modelRoot: '0x0000000000000000000000000000000000000000000000000000000000000000',
+        hasCandidate: false
+      }
+    }
+
     return safeContractCall(
       async () => {
         const [modelRoot, hasCandidate] = await registryContract?.getCandidateModel(tokenId)
@@ -236,6 +263,12 @@ export class AgentModelRegistryService {
    * Get all model versions for an agent with safe error handling
    */
   static async getModelVersions(tokenId: number): Promise<any[]> {
+    // Check if fine-tune is disabled
+    if (process.env.ENABLE_FINE_TUNE !== 'true') {
+      console.log(`[Fine-tune] getModelVersions(${tokenId}) skipped - feature disabled`)
+      return []
+    }
+
     return safeContractCall(
       () => registryContract?.getModelVersions(tokenId),
       [],
@@ -247,6 +280,12 @@ export class AgentModelRegistryService {
    * Check if a model was delivered for an agent with safe error handling
    */
   static async isModelDelivered(tokenId: number, modelRoot: string): Promise<boolean> {
+    // Check if fine-tune is disabled
+    if (process.env.ENABLE_FINE_TUNE !== 'true') {
+      console.log(`[Fine-tune] isModelDelivered(${tokenId}) skipped - feature disabled`)
+      return false
+    }
+
     return safeContractCall(
       () => {
         const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot))
@@ -261,6 +300,12 @@ export class AgentModelRegistryService {
    * Check if a task was processed with safe error handling
    */
   static async isTaskProcessed(taskId: string): Promise<boolean> {
+    // Check if fine-tune is disabled
+    if (process.env.ENABLE_FINE_TUNE !== 'true') {
+      console.log(`[Fine-tune] isTaskProcessed(${taskId}) skipped - feature disabled`)
+      return false
+    }
+
     return safeContractCall(
       () => registryContract?.isTaskProcessed(taskId),
       false,

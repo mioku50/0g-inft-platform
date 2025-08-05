@@ -78,31 +78,34 @@ const AgentCard = React.memo(({
 }) => {
   return (
     <Card 
-      className="bg-white/10 backdrop-blur-sm border-white/20 hover:bg-white/20 transition-all duration-300 overflow-hidden group"
+      className="bg-white/5 backdrop-blur-xl border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-300 overflow-hidden group shadow-xl hover:shadow-2xl hover:shadow-purple-500/20"
     >
       <div className="p-6">
-        {/* Agent Image */}
-        <div className="h-48 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden border border-white/20">
-          <AgentAvatar agent={agent} size="large" />
-          
-          {agent.status === 'listed' && (
-            <Badge className="absolute top-2 right-2 bg-purple-600 text-white">
-              <ShoppingCart className="w-3 h-3 mr-1" />
-              Listed
-            </Badge>
-          )}
+        {/* Agent Image with Glow Effect */}
+        <div className="relative mb-6">
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-300" />
+          <div className="relative h-48 bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded-2xl flex items-center justify-center border border-white/10 overflow-hidden">
+            <AgentAvatar agent={agent} size="large" />
+            
+            {agent.status === 'listed' && (
+              <Badge className="absolute top-3 right-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white border-0 shadow-lg">
+                <ShoppingCart className="w-3 h-3 mr-1" />
+                Listed
+              </Badge>
+            )}
+          </div>
         </div>
         
-        {/* Agent Info */}
-        <h3 className="text-xl font-bold text-white mb-1 group-hover:text-purple-300 transition-colors">
+        {/* Agent Info with Gradient Text */}
+        <h3 className="text-2xl font-bold bg-gradient-to-r from-white to-purple-300 bg-clip-text text-transparent mb-2 group-hover:from-purple-300 group-hover:to-pink-300 transition-all duration-300">
           {agent.metadata?.name || `Agent #${agent.tokenId}`}
         </h3>
         
-        <div className="flex gap-2 mb-3">
-          <Badge variant="outline" className="border-white/30 text-white">
+        <div className="flex flex-wrap gap-2 mb-4">
+          <Badge variant="outline" className="border-purple-500/30 text-purple-300 bg-purple-500/10">
             #{agent.tokenId}
           </Badge>
-          <Badge className="bg-purple-600 text-white border-0">
+          <Badge className="bg-gradient-to-r from-blue-600 to-purple-600 text-white border-0">
             {agent.metadata?.model || 'Unknown'}
           </Badge>
         </div>
@@ -154,13 +157,15 @@ const AgentCard = React.memo(({
         )}
         
         {/* Actions */}
-        <div className="space-y-2">
+        <div className="space-y-3 mt-6">
           {agent.status === 'owned' && (
             <>
-              <div className="grid grid-cols-2 gap-2">
-                <Link href={`/agent/${agent.tokenId}/chat`}>
-                  <Button variant="outline" size="sm" className="w-full border-white/30 text-white hover:bg-white/10">
-                    <MessageCircle className="h-4 w-4 mr-1" />
+              <div className="grid grid-cols-2 gap-3">
+                <Link href={`/agent/${agent.tokenId}/chat`} className="w-full">
+                  <Button 
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg shadow-blue-500/25 transition-all duration-300"
+                  >
+                    <MessageCircle className="h-4 w-4 mr-2" />
                     Chat
                   </Button>
                 </Link>
@@ -168,44 +173,42 @@ const AgentCard = React.memo(({
                 {isFeatureEnabled('FT_DISABLED') ? (
                   <Button 
                     variant="outline" 
-                    size="sm" 
-                    className="w-full border-white/20 bg-white/5 text-white/60 cursor-not-allowed"
+                    className="w-full border-white/20 bg-white/5 text-white/50 cursor-not-allowed"
                     disabled
                   >
-                    <Brain className="h-4 w-4 mr-1" />
+                    <Brain className="h-4 w-4 mr-2" />
                     Fine-tune
-                    <Badge className="ml-2 bg-yellow-500 text-white text-xs px-1 py-0">
-                      <Clock className="w-3 h-3 mr-1" />
+                    <Badge className="ml-2 bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-xs px-2 py-0.5 rounded-full">
                       Soon
                     </Badge>
                   </Button>
                 ) : (
-                  <Link href={`/agents/${agent.tokenId}/fine-tune`}>
-                    <Button variant="outline" size="sm" className="w-full border-white/30 text-white hover:bg-white/10">
-                      <Brain className="h-4 w-4 mr-1" />
+                  <Link href={`/agents/${agent.tokenId}/fine-tune`} className="w-full">
+                    <Button 
+                      className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg shadow-purple-500/25 transition-all duration-300"
+                    >
+                      <Brain className="h-4 w-4 mr-2" />
                       Fine-tune
                     </Button>
                   </Link>
                 )}
               </div>
               
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 <Button 
                   onClick={() => onClone(agent)}
                   variant="outline"
-                  size="sm"
-                  className="w-full border-white/30 text-white hover:bg-white/10"
+                  className="w-full border-white/20 text-white hover:bg-white/10 hover:border-white/30 transition-all duration-300"
                 >
-                  <Copy className="h-4 w-4 mr-1" />
+                  <Copy className="h-4 w-4 mr-2" />
                   Clone
                 </Button>
                 <Button 
                   onClick={() => onTransfer(agent)}
                   variant="outline"
-                  size="sm"
-                  className="w-full border-white/30 text-white hover:bg-white/10"
+                  className="w-full border-white/20 text-white hover:bg-white/10 hover:border-white/30 transition-all duration-300"
                 >
-                  <Send className="h-4 w-4 mr-1" />
+                  <Send className="h-4 w-4 mr-2" />
                   Transfer
                 </Button>
               </div>
@@ -599,38 +602,40 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-      <div className="container mx-auto py-10 px-4">
-        {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center">
-              <Bot className="h-8 w-8 text-white" />
-            </div>
-            <div>
-              <h1 className="text-4xl font-bold text-white">
-                My Agent Collection
-              </h1>
-              <p className="text-purple-200 mt-1">Manage and interact with your AI agents</p>
-            </div>
-          </div>
+    <div className="min-h-screen relative">
+      {/* Modern gradient background */}
+      <div className="fixed inset-0 bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 opacity-50" />
+      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-purple-600/20 via-transparent to-transparent" />
+      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-blue-600/20 via-transparent to-transparent" />
+      
+      <div className="relative z-10 container mx-auto px-4 py-12">
+        {/* Page Header */}
+        <div className="text-center mb-12">
+          <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+            My AI Agents
+          </h1>
+          <p className="text-xl text-white/80 mb-8">
+            Manage, train, and interact with your decentralized AI agents
+          </p>
           
-          <div className="flex gap-3">
+          {/* Quick Actions */}
+          <div className="flex justify-center gap-4 mb-8">
+            <Link href="/mint">
+              <Button size="lg" className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg shadow-purple-500/25">
+                <Plus className="mr-2 h-5 w-5" />
+                Create New Agent
+              </Button>
+            </Link>
             <Button 
-              onClick={handleRefresh} 
-              variant="outline"
+              size="lg" 
+              variant="outline" 
+              onClick={handleRefresh}
               disabled={loading}
               className="border-white/30 text-white hover:bg-white/10"
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`mr-2 h-5 w-5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
-            <Link href="/mint">
-              <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white">
-                <Plus className="h-4 w-4 mr-2" />
-                Mint New Agent
-              </Button>
-            </Link>
           </div>
         </div>
 
@@ -642,7 +647,7 @@ export default function AgentsPage() {
                 <Sparkles className="w-16 h-16 text-purple-600" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-4">No agents yet</h2>
-              <p className="text-gray-600 mb-8">
+              <p className="text-white/80 mb-8">
                 Create your first AI agent to get started!
               </p>
               <Link href="/mint">
@@ -673,7 +678,7 @@ export default function AgentsPage() {
           <div className="space-y-4 mt-4">
             <div className="bg-gray-50 p-4 rounded-lg border">
               <p className="font-medium">{selectedAgent?.metadata?.name}</p>
-              <p className="text-sm text-gray-600 mt-1">{selectedAgent?.metadata?.description}</p>
+              <p className="text-sm text-white/70 mt-1">{selectedAgent?.metadata?.description}</p>
               <div className="flex gap-2 mt-2">
                 <Badge variant="outline" className="border-purple-300 text-purple-700">Token #{selectedAgent?.tokenId}</Badge>
                 <Badge className="bg-purple-100 text-purple-700 border-0">{selectedAgent?.metadata?.model}</Badge>

@@ -1,5 +1,5 @@
 import { Wallet, JsonRpcProvider, ethers, Interface, Contract } from 'ethers'
-import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
+const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
 import { fromWei } from '@/lib/constants'
 import {
   getRpcUrl,

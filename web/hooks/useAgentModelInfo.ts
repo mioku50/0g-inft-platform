@@ -27,6 +27,19 @@ export function useAgentModelInfo(agentId: number): {
   const fetchModelInfo = useCallback(async () => {
     if (!agentId) return
 
+    // Check if fine-tune is disabled
+    if (process.env.NEXT_PUBLIC_FT_DISABLED === '1') {
+      console.log(`[useAgentModelInfo] Fine-tune disabled - skipping model info for agent ${agentId}`)
+      setModelInfo({
+        hasActiveModel: false,
+        hasCandidate: false,
+        totalVersions: 0,
+        isTraining: false
+      })
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     setError(null)
 

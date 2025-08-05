@@ -60,38 +60,12 @@ import {
   type TaskStatus
 } from '@/lib/fine-tuning/models'
 
-export default function FineTunePage() {
-  const params = useParams()
+export default function AgentFineTunePage({ params }: { params: { id: string } }) {
   const router = useRouter()
-  const agentId = params.id as string
+  const agentId = params.id
   const { address, isConnected } = useAccount()
 
-  // Check if Fine-Tuning is disabled
-  if (isFeatureEnabled('FT_DISABLED')) {
-    return <ComingSoonPage agentId={agentId} />
-  }
-
-  // Load cached dataset from localStorage
-  useEffect(() => {
-    const cacheKey = `fine-tune-dataset-${agentId}`
-    const cached = localStorage.getItem(cacheKey)
-    if (cached) {
-      try {
-        const data = JSON.parse(cached)
-        // Only use cache if it's recent (within 24 hours)
-        if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
-          setUploadedDataset({
-            rootHash: data.rootHash,
-            size: data.size
-          })
-        }
-      } catch (error) {
-        console.warn('Failed to load cached dataset:', error)
-      }
-    }
-  }, [agentId])
-  
-  // Fine-tuning hook
+  // Fine-tuning hook - must be called before any early returns
   const {
     account,
     currentTask,
@@ -139,6 +113,26 @@ export default function FineTunePage() {
   const [taskPolling, setTaskPolling] = useState<NodeJS.Timeout | null>(null)
   const [showHelp, setShowHelp] = useState(false)
 
+  // Load cached dataset from localStorage
+  useEffect(() => {
+    const cacheKey = `fine-tune-dataset-${agentId}`
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
+      try {
+        const data = JSON.parse(cached)
+        // Only use cache if it's recent (within 24 hours)
+        if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+          setUploadedDataset({
+            rootHash: data.rootHash,
+            size: data.size
+          })
+        }
+      } catch (error) {
+        console.warn('Failed to load cached dataset:', error)
+      }
+    }
+  }, [agentId])
+
   // Initialize defaults
   useEffect(() => {
     const activeModels = getActiveModels()
@@ -160,7 +154,7 @@ export default function FineTunePage() {
       'application/jsonl': ['.jsonl'],
       'text/plain': ['.txt']
     },
-    maxFiles: 1,
+    maxSize: 10 * 1024 * 1024, // 10MB limit
     onDrop: (acceptedFiles) => {
       if (acceptedFiles.length > 0) {
         setDatasetFile(acceptedFiles[0])
@@ -171,6 +165,11 @@ export default function FineTunePage() {
       }
     }
   })
+
+  // Check if fine-tuning is disabled - after all hooks
+  if (isFeatureEnabled('FT_DISABLED')) {
+    return <ComingSoonPage agentId={agentId} />
+  }
 
   // Steps configuration
   const steps = [

@@ -2,7 +2,7 @@
 # yarn lockfile v1
 
 
-"@0glabs/0g-serving-broker@0.2.14":
+"@0glabs/0g-serving-broker@^0.2.14":
   version "0.2.14"
   resolved "https://registry.npmjs.org/@0glabs/0g-serving-broker/-/0g-serving-broker-0.2.14.tgz"
   integrity sha512-5zJhS6BmlAPOLaZpDAZnDBO7IKdC0wP9esULdmAp+2cA2O9ATj8WwnZEqhhyGj1xdfjImNXKNty8WBtn+kVb6w==

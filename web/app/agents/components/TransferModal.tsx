@@ -147,14 +147,14 @@ export function TransferModal({ agent, isOpen, onClose, onSuccess }: TransferMod
           {step === 'encrypting' && (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Re-encrypting agent data with TEE...</p>
+              <p className="text-white/80">Re-encrypting agent data with TEE...</p>
             </div>
           )}
 
           {step === 'transferring' && (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Transferring agent on blockchain...</p>
+              <p className="text-white/80">Transferring agent on blockchain...</p>
             </div>
           )}
 

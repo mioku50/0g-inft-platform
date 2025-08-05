@@ -4,7 +4,6 @@
  */
 
 import { ethers, BrowserProvider } from 'ethers'
-import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 
 let cachedBroker: any = null
 let cachedAddress: string | null = null
@@ -31,6 +30,9 @@ export async function getClientBroker() {
     if (cachedBroker && cachedAddress === currentAddress) {
       return cachedBroker
     }
+
+    // Dynamically import the broker function to avoid build issues
+    const { createZGComputeNetworkBroker } = await import('@0glabs/0g-serving-broker')
 
     // Create new broker instance
     console.log('[ClientBroker] Creating new broker for address:', currentAddress)

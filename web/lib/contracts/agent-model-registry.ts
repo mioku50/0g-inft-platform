@@ -15,21 +15,24 @@ const AGENT_MODEL_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_MODEL_REGISTR
   process.env.AGENT_MODEL_REGISTRY_ADDRESS ||
   '0x358d481AbFE7548EA8F3a806c675729910F29E4e'; // Default from .env.local
 
-const PLATFORM_PRIVATE_KEY = process.env.OG_COMPUTE_PRIVATE_KEY;
+const PLATFORM_PRIVATE_KEY = process.env.OG_STORAGE_PRIVATE_KEY;
+
+let platformSigner: any = null;
+let registryContract: any = null;
 
 if (!PLATFORM_PRIVATE_KEY) {
-  throw new Error('OG_COMPUTE_PRIVATE_KEY environment variable required for platform operations');
+  console.warn('⚠️  OG_STORAGE_PRIVATE_KEY not configured - Agent Model Registry operations will be limited');
+} else {
+  // Rate-limited provider and signer for platform operations
+  platformSigner = createRateLimitedWallet(PLATFORM_PRIVATE_KEY);
+  
+  // Rate-limited contract instance
+  registryContract = createRateLimitedContract(
+    AGENT_MODEL_REGISTRY_ADDRESS,
+    AgentModelRegistryABI,
+    platformSigner
+  );
 }
-
-// Rate-limited provider and signer for platform operations
-const platformSigner = createRateLimitedWallet(PLATFORM_PRIVATE_KEY);
-
-// Rate-limited contract instance
-const registryContract = createRateLimitedContract(
-  AGENT_MODEL_REGISTRY_ADDRESS,
-  AgentModelRegistryABI,
-  platformSigner
-);
 
 /**
  * Platform service for interacting with AgentModelRegistry
@@ -67,7 +70,7 @@ export class AgentModelRegistryService {
       const trainingParamsHashBytes32 = trainingParamsHash.startsWith('0x') ? trainingParamsHash : ethers.keccak256(ethers.toUtf8Bytes(trainingParamsHash));
       
       // Call contract method (platform pays gas)
-      const tx = await registryContract.attestTask(
+      const tx = await registryContract?.attestTask(
         tokenId,
         userAddress,
         providerAddress,
@@ -77,18 +80,18 @@ export class AgentModelRegistryService {
         taskId
       );
       
-      console.log(`📄 TaskCreated transaction sent: ${tx.hash}`);
+      console.log(`📄 TaskCreated transaction sent: ${tx?.hash}`);
       
       // Wait for confirmation
-      const receipt = await tx.wait();
+      const receipt = await tx?.wait();
       
-      if (receipt.status !== 1) {
+      if (receipt?.status !== 1) {
         throw new Error('Transaction failed');
       }
       
-      console.log(`✅ Task attested successfully in block ${receipt.blockNumber}`);
+      console.log(`✅ Task attested successfully in block ${receipt?.blockNumber}`);
       
-      return tx.hash;
+      return tx?.hash || '';
       
     } catch (error: any) {
       console.error('Failed to attest task:', error);
@@ -126,7 +129,7 @@ export class AgentModelRegistryService {
       const logRootBytes32 = logRoot.startsWith('0x') ? logRoot : ethers.keccak256(ethers.toUtf8Bytes(logRoot));
       
       // Call contract method (platform pays gas)
-      const tx = await registryContract.attestDelivery(
+      const tx = await registryContract?.attestDelivery(
         tokenId,
         userAddress,
         providerAddress,
@@ -136,18 +139,18 @@ export class AgentModelRegistryService {
         taskId
       );
       
-      console.log(`📄 ModelDelivered transaction sent: ${tx.hash}`);
+      console.log(`📄 ModelDelivered transaction sent: ${tx?.hash}`);
       
       // Wait for confirmation
-      const receipt = await tx.wait();
+      const receipt = await tx?.wait();
       
-      if (receipt.status !== 1) {
+      if (receipt?.status !== 1) {
         throw new Error('Transaction failed');
       }
       
-      console.log(`✅ Model delivery attested successfully in block ${receipt.blockNumber}`);
+      console.log(`✅ Model delivery attested successfully in block ${receipt?.blockNumber}`);
       
-      return tx.hash;
+      return tx?.hash || '';
       
     } catch (error: any) {
       console.error('Failed to attest delivery:', error);
@@ -176,24 +179,24 @@ export class AgentModelRegistryService {
       const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot));
       
       // Call contract method (platform pays gas)
-      const tx = await registryContract.setActiveModel(
+      const tx = await registryContract?.setActiveModel(
         tokenId,
         modelRootBytes32,
         byAddress
       );
       
-      console.log(`📄 ModelActivated transaction sent: ${tx.hash}`);
+      console.log(`📄 ModelActivated transaction sent: ${tx?.hash}`);
       
       // Wait for confirmation
-      const receipt = await tx.wait();
+      const receipt = await tx?.wait();
       
-      if (receipt.status !== 1) {
+      if (receipt?.status !== 1) {
         throw new Error('Transaction failed');
       }
       
-      console.log(`✅ Model activated successfully in block ${receipt.blockNumber}`);
+      console.log(`✅ Model activated successfully in block ${receipt?.blockNumber}`);
       
-      return tx.hash;
+      return tx?.hash || '';
       
     } catch (error: any) {
       console.error('Failed to set active model:', error);
@@ -206,7 +209,7 @@ export class AgentModelRegistryService {
    */
   static async getActiveModel(tokenId: number): Promise<string> {
     return safeContractCall(
-      () => registryContract.getActiveModel(tokenId),
+      () => registryContract?.getActiveModel(tokenId),
       '0x0000000000000000000000000000000000000000000000000000000000000000',
       `getActiveModel(${tokenId})`
     )
@@ -218,7 +221,7 @@ export class AgentModelRegistryService {
   static async getCandidateModel(tokenId: number): Promise<{ modelRoot: string; hasCandidate: boolean }> {
     return safeContractCall(
       async () => {
-        const [modelRoot, hasCandidate] = await registryContract.getCandidateModel(tokenId)
+        const [modelRoot, hasCandidate] = await registryContract?.getCandidateModel(tokenId)
         return { modelRoot, hasCandidate }
       },
       {
@@ -234,7 +237,7 @@ export class AgentModelRegistryService {
    */
   static async getModelVersions(tokenId: number): Promise<any[]> {
     return safeContractCall(
-      () => registryContract.getModelVersions(tokenId),
+      () => registryContract?.getModelVersions(tokenId),
       [],
       `getModelVersions(${tokenId})`
     )
@@ -247,7 +250,7 @@ export class AgentModelRegistryService {
     return safeContractCall(
       () => {
         const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot))
-        return registryContract.isModelDelivered(tokenId, modelRootBytes32)
+        return registryContract?.isModelDelivered(tokenId, modelRootBytes32)
       },
       false,
       `isModelDelivered(${tokenId}, ${modelRoot.slice(0, 10)}...)`
@@ -259,7 +262,7 @@ export class AgentModelRegistryService {
    */
   static async isTaskProcessed(taskId: string): Promise<boolean> {
     return safeContractCall(
-      () => registryContract.isTaskProcessed(taskId),
+      () => registryContract?.isTaskProcessed(taskId),
       false,
       `isTaskProcessed(${taskId})`
     )
@@ -291,20 +294,26 @@ export class AgentModelRegistryService {
       
       // Try to get owner with safe fallback
       const owner = await safeContractCall(
-        () => registryContract.owner?.(),
+        () => registryContract?.owner?.(),
         null,
         'contract.owner()'
       )
       
-      if (!owner) {
+      if (!owner || typeof owner !== 'string') {
         console.warn('⚠️  Contract owner() method not available or failed');
         return true; // Allow operation but warn
       }
       
-      const expectedOwner = platformSigner.address;
+      if (!platformSigner) {
+        console.warn('⚠️  Platform signer not available for contract validation');
+        return true; // Allow operation but warn
+      }
       
-      if (owner.toLowerCase() !== expectedOwner.toLowerCase()) {
-        console.error(`❌ Contract owner mismatch. Expected: ${expectedOwner}, Got: ${owner}`);
+      const expectedOwner = platformSigner.address;
+      const ownerString = owner as string; // Type assertion after validation
+      
+      if (ownerString.toLowerCase() !== expectedOwner.toLowerCase()) {
+        console.error(`❌ Contract owner mismatch. Expected: ${expectedOwner}, Got: ${ownerString}`);
         return false;
       }
       
@@ -332,26 +341,49 @@ export class AgentModelRegistryEvents {
   
   static setupEventListeners() {
     // Listen for TaskCreated events
-    registryContract.on('TaskCreated', (tokenId, user, provider, datasetRoot, pretrainedHash, trainingParamsHash, taskId, timestamp) => {
-      console.log(`🎉 TaskCreated event: Agent ${tokenId}, Task ${taskId}`);
+    registryContract?.on('TaskCreated', (
+      tokenId: bigint,
+      user: string,
+      provider: string,
+      datasetRoot: string,
+      pretrainedHash: string,
+      trainingParamsHash: string,
+      taskId: string,
+      timestamp: bigint
+    ) => {
+      console.log(`🎉 TaskCreated event: Agent ${tokenId.toString()}, Task ${taskId}`);
       // Emit to frontend via WebSocket/SSE if needed
     });
 
     // Listen for ModelDelivered events
-    registryContract.on('ModelDelivered', (tokenId, user, provider, modelRoot, metricsHash, logRoot, taskId, timestamp) => {
-      console.log(`🎉 ModelDelivered event: Agent ${tokenId}, Task ${taskId}`);
+    registryContract?.on('ModelDelivered', (
+      tokenId: bigint,
+      user: string,
+      provider: string,
+      modelRoot: string,
+      metricsHash: string,
+      logRoot: string,
+      taskId: string,
+      timestamp: bigint
+    ) => {
+      console.log(`🎉 ModelDelivered event: Agent ${tokenId.toString()}, Task ${taskId}`);
       // Update database and notify frontend
     });
 
     // Listen for ModelActivated events
-    registryContract.on('ModelActivated', (tokenId, modelRoot, by, timestamp) => {
-      console.log(`🎉 ModelActivated event: Agent ${tokenId}`);
+    registryContract?.on('ModelActivated', (
+      tokenId: bigint,
+      modelRoot: string,
+      by: string,
+      timestamp: bigint
+    ) => {
+      console.log(`🎉 ModelActivated event: Agent ${tokenId.toString()}`);
       // Update database and notify frontend
     });
   }
 
   static removeEventListeners() {
-    registryContract.removeAllListeners();
+    registryContract?.removeAllListeners();
   }
 }
 

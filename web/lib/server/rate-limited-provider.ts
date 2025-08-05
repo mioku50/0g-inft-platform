@@ -5,11 +5,12 @@ import { ethers } from 'ethers'
 import pLimit from 'p-limit'
 import { CHAIN_ID, getRpcUrl } from './compute-env'
 
-// Rate limiting configuration
-const MAX_CONCURRENT_REQUESTS = 4
-const REQUEST_DELAY_MS = 200
-const MAX_RETRIES = 3
-const INITIAL_BACKOFF_MS = 50
+// Rate limiting configuration for 0G Testnet v3 (max 10 requests per 100ms)
+const MAX_CONCURRENT_REQUESTS = 3  // Reduced from 4 to be more conservative
+const REQUEST_DELAY_MS = 120       // Increased from 200ms to ensure we stay under limit
+const MAX_RETRIES = 5              // Increased retries as network is unstable
+const INITIAL_BACKOFF_MS = 100     // Increased initial backoff
+const BATCH_DELAY_MS = 150         // Additional delay between batches
 
 // Create rate limiter
 const limit = pLimit(MAX_CONCURRENT_REQUESTS)
@@ -48,7 +49,7 @@ function isRateLimitError(error: any): boolean {
 }
 
 /**
- * Execute RPC request with rate limiting and retries
+ * Execute RPC request with enhanced rate limiting and retries
  */
 async function executeRpcRequest(request: RetryableRequest, originalSend: Function): Promise<any> {
   const cacheKey = JSON.stringify(request)
@@ -64,22 +65,34 @@ async function executeRpcRequest(request: RetryableRequest, originalSend: Functi
     
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
-        // Add delay between requests
+        // Progressive delay strategy
         if (attempt > 0) {
           const backoffTime = calculateBackoff(attempt)
+          console.log(`[RateLimiter] Retry ${attempt}/${MAX_RETRIES} after ${backoffTime}ms`)
           await new Promise(resolve => setTimeout(resolve, backoffTime))
-        } else if (REQUEST_DELAY_MS > 0) {
+        } else {
+          // Always add base delay to prevent burst requests
           await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS))
+        }
+
+        // Add batch delay for better distribution
+        if (attempt === 0) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
         }
 
         // Execute the request using the original send method
         const result = await originalSend(request.method, request.params)
         
-        // Cache successful result
+        // Cache successful result for longer on successful retry
+        const cacheTtl = attempt > 0 ? CACHE_TTL_MS * 2 : CACHE_TTL_MS
         requestCache.set(cacheKey, { data: result, timestamp: Date.now() })
         
         // Clean old cache entries
         cleanCache()
+        
+        if (attempt > 0) {
+          console.log(`[RateLimiter] Request succeeded on retry ${attempt}`)
+        }
         
         return result
         
@@ -87,17 +100,36 @@ async function executeRpcRequest(request: RetryableRequest, originalSend: Functi
         lastError = error
         
         if (isRateLimitError(error)) {
-          console.warn(`Rate limit hit on attempt ${attempt + 1}/${MAX_RETRIES}:`, error.message)
+          const waitTime = extractWaitTime(error.message) || calculateBackoff(attempt)
+          console.warn(`[RateLimiter] Rate limit hit on attempt ${attempt + 1}/${MAX_RETRIES}, waiting ${waitTime}ms`)
+          
+          // If it's the last attempt, wait a bit longer before giving up
+          if (attempt === MAX_RETRIES - 1) {
+            await new Promise(resolve => setTimeout(resolve, waitTime))
+          }
           continue
         } else {
-          // Non-rate-limit error, don't retry
+          // Non-rate-limit error, don't retry unless it's a network error
+          if (error.code === 'NETWORK_ERROR' || error.code === 'TIMEOUT') {
+            console.warn(`[RateLimiter] Network error on attempt ${attempt + 1}/${MAX_RETRIES}:`, error.message)
+            continue
+          }
           throw error
         }
       }
     }
     
+    console.error(`[RateLimiter] All ${MAX_RETRIES} attempts failed for ${request.method}`)
     throw lastError
   })
+}
+
+/**
+ * Extract wait time from rate limit error message
+ */
+function extractWaitTime(message: string): number | null {
+  const match = message.match(/try again after (\d+)ms/)
+  return match ? parseInt(match[1]) + 50 : null // Add 50ms buffer
 }
 
 /**

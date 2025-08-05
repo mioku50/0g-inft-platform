@@ -174,6 +174,7 @@ export default function ChatPage() {
     setLoading(true)
 
     try {
+      console.log('[Chat] Sending message with enhanced rate limiting...')
       const response = await fetch('/api/compute/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -185,10 +186,25 @@ export default function ChatPage() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to get response')
+        const errorData = await response.json().catch(() => ({}))
+        
+        if (response.status === 429) {
+          throw new Error('Rate limit exceeded. Please wait a moment before sending another message.')
+        } else if (response.status === 504) {
+          throw new Error('Request timeout. The 0G network might be busy. Please try again.')
+        } else {
+          throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`)
+        }
       }
 
       const data = await response.json()
+      
+      console.log('[Chat] Response received:', {
+        success: data.success,
+        isRealAI: data.isRealAI,
+        model: data.model,
+        cached: data.metadata?.cached
+      })
       
       const assistantMessage: Message = {
         id: Date.now().toString(),
@@ -198,12 +214,23 @@ export default function ChatPage() {
       }
 
       setMessages(prev => [...prev, assistantMessage])
-    } catch (error) {
+    } catch (error: any) {
       console.error('Chat error:', error)
+      
+      let errorMessage = 'Sorry, I encountered an error. Please try again.'
+      
+      if (error.message.includes('rate limit')) {
+        errorMessage = '⏱️ **Rate Limit Reached**\n\nI need a moment to catch my breath! Please wait 30 seconds before sending your next message.\n\nThe 0G Compute Network helps me stay responsive by managing request rates.'
+      } else if (error.message.includes('timeout')) {
+        errorMessage = '⏳ **Network Timeout**\n\nThe 0G network is experiencing high demand right now. Let me try to process your request again in a moment.\n\nYour message: "' + userMessage.content + '"'
+      } else if (error.message.includes('provider')) {
+        errorMessage = '🔧 **Provider Unavailable**\n\nMy AI provider is temporarily unavailable. This usually resolves within a few minutes.\n\nTechnical details: ' + error.message
+      }
+      
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
+        content: errorMessage,
         timestamp: new Date()
       }])
     } finally {

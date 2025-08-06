@@ -36,7 +36,7 @@ export function useNonCustodialChat() {
       // Check if wallet is available
       const walletAvailable = await isClientBrokerAvailable()
       if (!walletAvailable) {
-        throw new Error('Wallet not connected. Please connect your wallet first.')
+        throw new Error('Connect wallet to view ledger')
       }
 
       // Ensure ledger exists for the user

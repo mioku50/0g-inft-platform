@@ -5,7 +5,7 @@ require('dotenv').config({ path: '.env' })
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@0glabs/0g-serving-broker"],
+  transpilePackages: ["@0glabs/0g-serving-broker", "@0glabs/0g-serving-user-broker"],
   // Явно передаем переменные в среду выполнения
   env: {
     OG_STORAGE_PRIVATE_KEY: process.env.OG_STORAGE_PRIVATE_KEY || '',
@@ -73,10 +73,9 @@ const nextConfig = {
   images: {
     domains: ['api.dicebear.com', 'ipfs.io'],
   },
-  // Экспериментальная поддержка для серверных компонентов
+  // Remove esmExternals as it causes issues with SDK imports
   experimental: {
-    esmExternals: true,
-    serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk', '@0glabs/0g-serving-broker'],
+    serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk', '@0glabs/0g-serving-broker', '@0glabs/0g-serving-user-broker'],
   },
 }
 

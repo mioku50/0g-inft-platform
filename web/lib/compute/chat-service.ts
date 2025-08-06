@@ -166,8 +166,6 @@ export class ChatService {
         fineTuningContract
       )
 
-      broker.signerAddress = wallet.address
-
       // Enhanced balance check with rate limiting
       await this.ensureMinBalance(broker)
 

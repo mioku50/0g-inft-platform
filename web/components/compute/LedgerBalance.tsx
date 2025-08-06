@@ -27,18 +27,26 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
   const [loading, setLoading] = useState(false)
   const [toppingUp, setToppingUp] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isClient, setIsClient] = useState(false)
+
+  // Client-side only rendering guard
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
 
   // Load ledger info when wallet connects
   useEffect(() => {
-    if (isConnected && address) {
+    if (isClient && isConnected && address) {
       loadLedgerInfo()
     } else {
       setLedgerInfo(null)
       setError(null)
     }
-  }, [isConnected, address])
+  }, [isClient, isConnected, address])
 
   const loadLedgerInfo = async () => {
+    if (typeof window === 'undefined') return
+    
     setLoading(true)
     setError(null)
     
@@ -57,16 +65,33 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
         return
       }
 
-      // Ensure ledger exists
-      await ensureLedger(currentAddress)
+      // Try to get existing ledger first
+      try {
+        const balance = await broker.ledger.getBalance()
+        setLedgerInfo({
+          address: currentAddress,
+          balance: balance.toString(),
+          balanceFormatted: parseFloat(balance).toFixed(6)
+        })
+        console.log('[LedgerBalance] Existing ledger found with balance:', balance)
+        return
+      } catch (ledgerError: any) {
+        console.log('[LedgerBalance] No existing ledger, will create one')
+      }
 
-      // Get ledger balance
+      // Auto-create ledger if it doesn't exist
+      console.log('[LedgerBalance] Creating ledger with 0.01 OG')
+      await broker.ledger.addLedger(0.01)
+      
+      // Get the new balance
       const balance = await broker.ledger.getBalance()
       setLedgerInfo({
         address: currentAddress,
         balance: balance.toString(),
         balanceFormatted: parseFloat(balance).toFixed(6)
       })
+      
+      console.log('[LedgerBalance] Ledger created successfully with balance:', balance)
     } catch (err: any) {
       console.error('[LedgerBalance] Error loading ledger info:', err)
       setError(`Failed to load ledger: ${err.message}`)
@@ -76,7 +101,7 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
   }
 
   const topUpLedger = async () => {
-    if (!ledgerInfo) return
+    if (!ledgerInfo || typeof window === 'undefined') return
 
     setToppingUp(true)
     setError(null)
@@ -91,6 +116,7 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
         description: `Added 0.01 OG to your ledger!`,
       })
 
+      // Refresh balance after top-up
       await loadLedgerInfo()
     } catch (err: any) {
       console.error('[LedgerBalance] Error topping up:', err)
@@ -103,6 +129,11 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
     } finally {
       setToppingUp(false)
     }
+  }
+
+  // Show nothing during SSR
+  if (!isClient) {
+    return null
   }
 
   if (!isConnected) {

@@ -3,14 +3,26 @@
  * Uses injected wallet (MetaMask, WalletConnect, etc.) via ethers BrowserProvider
  */
 
-import { ethers, BrowserProvider } from 'ethers'
+// Only import ethers statically as it's safe for SSR
+import { BrowserProvider } from 'ethers'
 
 let cachedBroker: any = null
 let cachedAddress: string | null = null
+let ethersModule: any = null
 
 // Provider acknowledgment cache (30 min TTL)
 const acknowledgeCache = new Map<string, number>()
 const ACKNOWLEDGE_TTL = 30 * 60 * 1000 // 30 minutes
+
+/**
+ * Get ethers module dynamically to avoid SSR issues
+ */
+async function getEthers() {
+  if (!ethersModule && typeof window !== 'undefined') {
+    ethersModule = await import('ethers')
+  }
+  return ethersModule
+}
 
 /**
  * Get or create a client-side broker instance using the injected wallet
@@ -21,6 +33,12 @@ export async function getClientBroker() {
     // Check if we have an injected wallet
     if (typeof window === 'undefined' || !window.ethereum) {
       throw new Error('No injected wallet found. Please install MetaMask or connect a wallet.')
+    }
+
+    // Get ethers module
+    const ethers = await getEthers()
+    if (!ethers) {
+      throw new Error('Failed to load ethers module')
     }
 
     // Create browser provider
@@ -35,8 +53,9 @@ export async function getClientBroker() {
       return cachedBroker
     }
 
-    // Dynamically import the broker function to avoid build issues
-    const { createZGComputeNetworkBroker } = await import('@0glabs/0g-serving-broker')
+    // Dynamically import the ESM version of the broker function using the correct path
+    const brokerModule = await import('@0glabs/0g-serving-broker')
+    const { createZGComputeNetworkBroker } = brokerModule
 
     // Create new broker instance
     console.log('[ClientBroker] Creating new broker for address:', currentAddress)
@@ -96,6 +115,24 @@ export async function getCurrentWalletAddress(): Promise<string | null> {
 }
 
 /**
+ * Get ledger balance for the current user
+ */
+export async function getLedgerBalance(userAddress?: string): Promise<number> {
+  try {
+    const broker = await getClientBroker()
+    const balance = await broker.ledger.getBalance()
+    
+    console.log('[ClientBroker] Ledger balance:', balance)
+    return parseFloat(balance) || 0
+    
+  } catch (error) {
+    console.error('[ClientBroker] Failed to get ledger balance:', error)
+    // Return 0 if ledger doesn't exist or other error
+    return 0
+  }
+}
+
+/**
  * Ensure ledger exists for the current user
  * Creates a ledger account if it doesn't exist
  */
@@ -112,8 +149,8 @@ export async function ensureLedger(userAddress?: string): Promise<boolean> {
     
     // Check if ledger already exists
     try {
-      const ledgerInfo = await broker.ledger.getLedgerInfo()
-      if (ledgerInfo && ledgerInfo.length > 0) {
+      const ledgerInfo = await broker.ledger.getLedger()
+      if (ledgerInfo && ledgerInfo.balance) {
         console.log('[ClientBroker] Ledger already exists')
         return true
       }
@@ -122,7 +159,7 @@ export async function ensureLedger(userAddress?: string): Promise<boolean> {
       console.log('[ClientBroker] Ledger not found, creating new one')
     }
 
-    // Create ledger with initial balance (0.01 ETH = 10000000000000000 wei)
+    // Create ledger with initial balance (0.01 OG)
     const initialBalance = 0.01
     await broker.ledger.addLedger(initialBalance)
     
@@ -185,38 +222,6 @@ export async function prepareComputeRequest(
   } catch (error) {
     console.error('[ClientBroker] Failed to prepare request:', error)
     throw new Error(`Failed to prepare compute request: ${(error as Error).message}`)
-  }
-}
-
-/**
- * Get ledger balance for the current user
- */
-export async function getLedgerBalance(userAddress?: string): Promise<number> {
-  try {
-    const broker = await getClientBroker()
-    const balance = await broker.ledger.getBalance()
-    
-    console.log('[ClientBroker] Ledger balance:', balance)
-    return parseFloat(balance) || 0
-    
-  } catch (error) {
-    console.error('[ClientBroker] Failed to get ledger balance:', error)
-    // Return 0 if ledger doesn't exist or other error
-    return 0
-  }
-}
-
-/**
- * Check if ledger exists for the current user
- */
-export async function checkLedgerExists(): Promise<boolean> {
-  try {
-    const broker = await getClientBroker()
-    const ledgerInfo = await broker.ledger.getLedgerInfo()
-    return ledgerInfo && ledgerInfo.length > 0
-  } catch (error) {
-    console.log('[ClientBroker] Ledger check failed - probably does not exist:', error)
-    return false
   }
 }
 

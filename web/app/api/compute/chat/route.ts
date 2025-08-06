@@ -86,11 +86,11 @@ export async function POST(request: NextRequest) {
 
     // Check if using non-custodial mode (prepared request)
     if (prepared === true && prep) {
-      console.log('[CHAT] HIT – non-custodial')
+      console.log('[CHAT] HIT - Using non-custodial mode - proxying prepared request')
 
       // Forward to proxy endpoint
       const origin = new URL(request.url).origin
-      console.log('[PROXY] HIT – POST', `${origin}/api/compute/proxy`)
+      console.log('[PROXY] HIT - POST', `${origin}/api/compute/proxy`)
       const proxyResponse = await fetch(`${origin}/api/compute/proxy`, {
         method: 'POST',
         headers: {
@@ -119,11 +119,10 @@ export async function POST(request: NextRequest) {
       hasPrep: !!prep
     })
     
-    if (useNonCustodial) {
-      console.log('[CHAT] Non-custodial mode enforced but no prepared request provided')
+    if (useNonCustodial && !prep) {
+      console.log('[CHAT] HIT - non-custodial mode required but no prepared request provided')
       return NextResponse.json(
         { 
-          success: false, 
           error: 'non_custodial_required',
           message: 'Non-custodial mode is enabled but no prepared request provided. Please connect wallet and try again.',
           requiresPreparedRequest: true

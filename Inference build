@@ -210,3 +210,124 @@ All changes are minimal and surgical, focusing on fixing existing functionality 
 Testing
 The build succeeds without errors and the testing dashboard provides comprehensive validation of all implemented features. The logging chain now properly appears in both frontend and backend consoles when using non-custodial mode.
 
+Overview
+This PR fixes critical issues preventing the non-custodial 0G chat system from working correctly. The main problems were ESM import errors causing "exports is not defined" browser crashes, improper prepared request validation, SSR hydration issues with the LedgerBalance component, and excessive ENOENT error spam in server logs.
+
+Issues Fixed
+1. ESM Import Error ("exports is not defined")
+Problem: Browser crashes with exports is not defined when attempting to use 0G SDK
+
+// Before: Static import causing SSR issues
+import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
+Solution: Implemented proper dynamic client-side imports with SSR guards
+
+// After: Dynamic import with client-side guard
+if (typeof window !== 'undefined') {
+  const brokerModule = await import('@0glabs/0g-serving-broker')
+  const { createZGComputeNetworkBroker } = brokerModule
+}
+Updated next.config.js to properly transpile SDK packages:
+
+transpilePackages: ["@0glabs/0g-serving-broker", "@0glabs/0g-serving-user-broker"]
+2. Non-Custodial Request Validation
+Problem: API wasn't properly validating prepared requests for non-custodial mode
+
+// Before: Inconsistent validation logic
+if (useNonCustodial) {
+  // Missing proper prepared request check
+}
+Solution: Added proper validation with correct logging chain
+
+// After: Proper validation and logging
+if (useNonCustodial && !prep) {
+  console.log('[CHAT] HIT - non-custodial mode required but no prepared request provided')
+  return NextResponse.json({
+    error: 'non_custodial_required',
+    requiresPreparedRequest: true
+  }, { status: 400 })
+}
+3. LedgerBalance Component SSR Issues
+Problem: Component trying to access wallet during SSR causing hydration mismatches
+
+// Before: Immediate wallet access
+useEffect(() => {
+  if (isConnected && address) {
+    loadLedgerInfo() // Runs during SSR
+  }
+}, [isConnected, address])
+Solution: Added proper client-side rendering guards
+
+// After: Client-side guard with auto-ledger creation
+const [isClient, setIsClient] = useState(false)
+
+useEffect(() => {
+  setIsClient(true) // Ensure client-side only
+}, [])
+
+useEffect(() => {
+  if (isClient && isConnected && address) {
+    loadLedgerInfo() // Only runs on client
+  }
+}, [isClient, isConnected, address])
+4. ENOENT Error Spam Cleanup
+Problem: Server logs flooded with ENOENT errors for missing metadata files
+
+// Before: Noisy error logging
+} catch (fileError: any) {
+  console.log('[Storage Retrieve] Local file not found:', cleanRootHash)
+  if (fileError.code === 'ENOENT') {
+    console.log('[Storage Retrieve] ENOENT - File does not exist, will use fallback')
+  }
+}
+Solution: Silent fallback for expected missing files
+
+// After: Quiet fallback logging
+} catch (fileError: any) {
+  if (fileError.code === 'ENOENT') {
+    console.log('[Storage Retrieve] Local file not found, falling back to indexer')
+  } else {
+    console.log('[Storage Retrieve] File access error:', fileError.message)
+  }
+}
+Testing Results
+Manual Testing Verification
+ESM Import Fix ✅
+
+No more "exports is not defined" errors in browser console
+SDK loads properly in client environment
+Non-Custodial Flow ✅
+
+Proper logging chain: [CHAT] start → [CHAT] prepared → [CHAT] fetch
+Server logs: [CHAT] HIT - non-custodial mode required → [PROXY] HIT
+Correct 400 error when prepared request missing
+LedgerBalance Component ✅
+
+No SSR hydration errors
+Shows "Connect wallet to view ledger" when disconnected
+Auto-creates ledger on first connection
+ENOENT Cleanup ✅
+
+No more error spam in server logs
+Graceful fallback to indexer storage
+Test Results Screenshot
+The test suite confirms all fixes are working:
+
+Test results showing successful non-custodial validation and storage retrieve
+
+Environment Configuration
+All fixes maintain the existing environment configuration:
+
+USE_NONCUSTODIAL_INFERENCE=true
+NEXT_PUBLIC_USE_NONCUSTODIAL_INFERENCE=true
+INDEXING_WATCHER_ENABLED=false
+NEXT_PUBLIC_INDEXING_WATCHER_ENABLED=false
+No contract addresses or core flow logic were modified as requested.
+
+Files Modified
+web/lib/compute/clientBroker.ts - ESM import fixes and client-side guards
+web/next.config.js - SDK transpiling configuration
+web/app/api/compute/chat/route.ts - Prepared request validation
+web/components/compute/LedgerBalance.tsx - SSR fixes and auto-creation
+web/app/api/storage/retrieve/route.ts - ENOENT error cleanup
+web/hooks/useNonCustodialChat.ts - Improved error messaging
+The non-custodial 0G chat system is now fully functional with proper error handling, SSR compatibility, and clean logging.

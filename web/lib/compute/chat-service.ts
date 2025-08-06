@@ -196,7 +196,7 @@ export class ChatService {
       
       if (balance < minBalance) {
         console.log('Low balance, adding funds...')
-              await broker.ledger.addLedger(0.05)
+              await broker.ledger.addLedger(ethers.parseEther('0.05'))
         console.log('Funds added successfully')
       }
     } catch (error: any) {

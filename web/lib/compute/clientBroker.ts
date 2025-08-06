@@ -138,10 +138,13 @@ export async function getCurrentWalletAddress(): Promise<string | null> {
 export async function getLedgerBalance(userAddress?: string): Promise<number> {
   try {
     const broker = await getClientBroker()
-    const balance = await broker.ledger.getBalance()
+    const ledger = await broker.ledger.getLedger()
+    const ethers = await getEthers()
+    const balanceWei = ledger.balance
+    const balanceOG = ethers.formatEther(balanceWei)
     
-    console.log('[ClientBroker] Ledger balance:', balance)
-    return parseFloat(balance) || 0
+    console.log('[ClientBroker] Ledger balance:', balanceOG, 'OG')
+    return parseFloat(balanceOG) || 0
     
   } catch (error) {
     console.error('[ClientBroker] Failed to get ledger balance:', error)
@@ -178,7 +181,8 @@ export async function ensureLedger(userAddress?: string): Promise<boolean> {
     }
 
     // Create ledger with initial balance (0.01 OG)  
-    await broker.ledger.addLedger(0.01)
+    const ethers = await getEthers()
+    await broker.ledger.addLedger(ethers.parseEther('0.01'))
     
     console.log('[ClientBroker] Ledger created successfully with balance: 0.01 OG')
     return true

@@ -8,6 +8,10 @@ import { ethers, BrowserProvider } from 'ethers'
 let cachedBroker: any = null
 let cachedAddress: string | null = null
 
+// Provider acknowledgment cache (30 min TTL)
+const acknowledgeCache = new Map<string, number>()
+const ACKNOWLEDGE_TTL = 30 * 60 * 1000 // 30 minutes
+
 /**
  * Get or create a client-side broker instance using the injected wallet
  * This is a singleton that reinitializes when the wallet address changes

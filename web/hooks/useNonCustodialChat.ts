@@ -32,6 +32,7 @@ export function useNonCustodialChat() {
 
     try {
       console.log('[CHAT] start - Beginning non-custodial chat request')
+      console.log('[CHAT] prepared - Checking wallet availability...')
       
       // Check if wallet is available
       const walletAvailable = await isClientBrokerAvailable()
@@ -40,13 +41,15 @@ export function useNonCustodialChat() {
       }
 
       // Ensure ledger exists for the user
-      console.log('[CHAT] Ensuring ledger...')
+      console.log('[CHAT] prepared - Ensuring ledger exists...')
       await ensureLedger()
 
       // Use default provider if none specified
       const providerAddress = options.providerAddress || 
         process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER ||
         '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
+
+      console.log('[CHAT] prepared - Using provider:', providerAddress)
 
       // Prepare the chat payload
       const payload = {
@@ -64,14 +67,16 @@ export function useNonCustodialChat() {
         temperature: 0.7
       }
 
-      console.log('[CHAT] prepared - Preparing compute request...')
+      console.log('[CHAT] prepared - Preparing compute request with SDK...')
       
       // Prepare signed request
       const preparedRequest = await prepareComputeRequest(providerAddress, payload)
 
-      console.log('[CHAT] fetch - Sending to chat API...', {
+      console.log('[CHAT] fetch - Sending to chat API...')
+      console.log('[CHAT] HIT - Request prepared successfully:', {
         endpoint: preparedRequest.endpoint,
-        hasHeaders: Object.keys(preparedRequest.headers).length > 0
+        hasHeaders: Object.keys(preparedRequest.headers).length > 0,
+        provider: providerAddress
       })
 
       // Send to chat API with prepared request

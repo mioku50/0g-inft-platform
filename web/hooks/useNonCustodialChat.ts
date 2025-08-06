@@ -6,7 +6,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { ensureLedger, prepareComputeRequest, isClientBrokerAvailable } from '@/lib/compute/clientBroker'
+import { ensureLedger, prepareComputeRequest, isClientBrokerAvailable, getClientBroker } from '@/lib/compute/clientBroker'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -92,34 +92,58 @@ export function useNonCustodialChat() {
 
       // Handle different response types (JSON or streaming)
       const contentType = response.headers.get('content-type')
+      let responseContent: string = ''
+      let responseData: any = null
       
       if (contentType?.includes('application/json')) {
         const data = await response.json()
+        responseData = data
         
         if (data.choices && data.choices[0]) {
-          return {
-            content: data.choices[0].message.content,
-            model: data.model,
-            provider: providerAddress,
-            isRealAI: true,
-            chatId: data.id
-          }
+          responseContent = data.choices[0].message.content
         } else if (data.success && data.response) {
-          return {
-            content: data.response,
-            model: data.model,
-            provider: data.provider,
-            isRealAI: data.isRealAI,
-            metadata: data.metadata
-          }
+          responseContent = data.response
         } else {
           throw new Error(data.error || 'Unexpected response format')
         }
       } else {
         // Handle text response
-        const text = await response.text()
+        responseContent = await response.text()
+      }
+
+      // After getting the response from proxy, call processResponse
+      try {
+        const broker = await getClientBroker()
+        const completionId = responseData?.id || 'completion-' + Date.now()
+        await broker.inference.processResponse(providerAddress, responseContent, completionId)
+        console.log('[CHAT] processResponse called successfully')
+      } catch (processError: any) {
+        console.warn('[CHAT] processResponse failed (non-critical):', processError.message)
+        // Don't throw here as the chat response was successful
+      }
+
+      // Return the response
+      if (contentType?.includes('application/json') && responseData) {
+        if (responseData.choices && responseData.choices[0]) {
+          return {
+            content: responseContent,
+            model: responseData.model,
+            provider: providerAddress,
+            isRealAI: true,
+            chatId: responseData.id
+          }
+        } else if (responseData.success && responseData.response) {
+          return {
+            content: responseContent,
+            model: responseData.model,
+            provider: responseData.provider,
+            isRealAI: responseData.isRealAI,
+            metadata: responseData.metadata
+          }
+        }
+      } else {
         return {
-          content: text,
+          content: responseContent,
           model: options.model || 'unknown',
           provider: providerAddress,
           isRealAI: true

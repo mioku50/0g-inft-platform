@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAccount } from 'wagmi'
+import { ethers } from 'ethers'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
@@ -81,7 +82,7 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
 
       // Auto-create ledger if it doesn't exist
       console.log('[LedgerBalance] Creating ledger with 0.01 OG')
-      await broker.ledger.addLedger(0.01)
+      await broker.ledger.addLedger(ethers.parseEther('0.01'))
       
       // Get the new balance
       const balance = await broker.ledger.getBalance()
@@ -109,7 +110,7 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
     try {
       console.log('[LedgerBalance] Depositing 0.01 OG to ledger...')
       const broker = await getClientBroker()
-      await broker.ledger.depositFund(0.01)
+      await broker.ledger.depositFund(ethers.parseEther('0.01'))
 
       toast({
         title: "Top-up Successful",

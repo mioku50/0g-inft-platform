@@ -20,7 +20,7 @@ export function parseBoolEnv(name: string, defaultValue = false, depth = 0): boo
     }
 
     // Remove inline comments (anything after #)
-    const cleanValue = rawValue.split('#')[0].trim().toLowerCase()
+    const cleanValue = rawValue?.split('#')[0]?.trim()?.toLowerCase() || ''
     
     if (!cleanValue) {
       console.log(`[parseBoolEnv] ${name}="${rawValue}" -> ${defaultValue} (empty after comment removal)`)

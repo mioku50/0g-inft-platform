@@ -1,20 +1,21 @@
 // web/app/api/compute/analyze-prompt/route.ts
+export const runtime = 'nodejs'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
 import { getRpcUrl, getPrivateKey } from '@/lib/server/compute-env'
-const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
-
 export async function POST(request: NextRequest) {
   try {
     const { prompt } = await request.json()
     
-    const provider = new ethers.JsonRpcProvider(getRpcUrl())
+        const provider = new ethers.JsonRpcProvider(getRpcUrl())
     const pk = getPrivateKey()
     if (!pk) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
     const wallet = new ethers.Wallet(pk, provider)
     
-    const broker = await createZGComputeNetworkBroker(wallet)
-    
+    // Dynamic import for server-side usage
+    const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
+    const broker = await createZGComputeNetworkBroker(wallet)  
     const providerAddress = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
     
     const analysisPrompt = `Analyze this AI system prompt and provide suggestions for improvement:

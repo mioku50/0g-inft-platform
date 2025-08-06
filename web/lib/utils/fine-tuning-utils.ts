@@ -81,7 +81,7 @@ export async function checkDatasetAccessibility(rootHash: string): Promise<{ acc
 export function parseBooleanEnv(value: string | undefined, defaultValue: boolean = false): boolean {
   if (!value) return defaultValue
   
-  const cleanValue = value.split('#')[0].trim().toLowerCase()
+  const cleanValue = value?.split('#')[0]?.trim()?.toLowerCase() || ''
   const trueValues = ['1', 'true', 'yes', 'on', 'enable', 'enabled']
   const falseValues = ['0', 'false', 'no', 'off', 'disable', 'disabled']
   

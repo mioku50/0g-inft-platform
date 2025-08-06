@@ -25,8 +25,8 @@ export function parseBoolEnv(name: string, defaultValue = false, depth = 0): boo
       return defaultValue
     }
 
-    // Remove inline comments (anything after #) and trim
-    const cleanValue = rawValue.split('#')[0].trim().toLowerCase()
+      // Remove inline comments (anything after #) and trim
+  const cleanValue = rawValue?.split('#')[0]?.trim()?.toLowerCase() || ''
     
     if (!cleanValue) {
       return defaultValue

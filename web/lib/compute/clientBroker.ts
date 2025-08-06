@@ -60,8 +60,8 @@ export async function getClientBroker() {
       return cachedBroker
     }
 
-    // Dynamically import the ESM version of the broker with explicit path
-    const brokerModule = await import('@0glabs/0g-serving-broker/lib.esm/index.js')
+    // Dynamically import the broker module
+    const brokerModule = await import('@0glabs/0g-serving-broker')
     const { createZGComputeNetworkBroker } = brokerModule
 
     // Create new broker instance

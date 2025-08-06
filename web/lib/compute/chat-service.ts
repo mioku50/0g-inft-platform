@@ -1,7 +1,6 @@
 export const runtime = 'nodejs'
 
 import { ethers } from 'ethers'
-import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import OpenAI from 'openai'
 import {
   getComputeLedgerContract,

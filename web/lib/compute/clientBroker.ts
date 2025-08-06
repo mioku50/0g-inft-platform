@@ -6,8 +6,8 @@
 // Only import ethers statically as it's safe for SSR
 import { BrowserProvider } from 'ethers'
 
-let cachedBroker: any = null
-let cachedAddress: string | null = null
+// Broker cache by wallet address
+const brokerCache = new Map<string, any>()
 let ethersModule: any = null
 
 // Provider acknowledgment cache (30 min TTL)
@@ -26,12 +26,17 @@ async function getEthers() {
 
 /**
  * Get or create a client-side broker instance using the injected wallet
- * This is a singleton that reinitializes when the wallet address changes
+ * This is a singleton per wallet address
  */
 export async function getClientBroker() {
+  // SSR guard
+  if (typeof window === 'undefined') {
+    throw new Error('Client broker can only be used in browser environment')
+  }
+
   try {
     // Check if we have an injected wallet
-    if (typeof window === 'undefined' || !window.ethereum) {
+    if (!window.ethereum) {
       throw new Error('No injected wallet found. Please install MetaMask or connect a wallet.')
     }
 
@@ -48,12 +53,13 @@ export async function getClientBroker() {
     const signer = await provider.getSigner()
     const currentAddress = await signer.getAddress()
 
-    // Return cached broker if address hasn't changed
-    if (cachedBroker && cachedAddress === currentAddress) {
+    // Return cached broker if we have one for this address
+    const cachedBroker = brokerCache.get(currentAddress)
+    if (cachedBroker) {
       return cachedBroker
     }
 
-    // Dynamically import the ESM version of the broker function using the correct path
+    // Dynamically import the broker module
     const brokerModule = await import('@0glabs/0g-serving-broker')
     const { createZGComputeNetworkBroker } = brokerModule
 
@@ -61,9 +67,8 @@ export async function getClientBroker() {
     console.log('[ClientBroker] Creating new broker for address:', currentAddress)
     const broker = await createZGComputeNetworkBroker(signer)
 
-    // Cache the broker and address
-    cachedBroker = broker
-    cachedAddress = currentAddress
+    // Cache the broker by address
+    brokerCache.set(currentAddress, broker)
 
     return broker
   } catch (error) {
@@ -73,19 +78,27 @@ export async function getClientBroker() {
 }
 
 /**
- * Clear cached broker (useful when wallet disconnects or changes)
+ * Clear cached broker for specific address or all
  */
-export function clearBrokerCache() {
-  cachedBroker = null
-  cachedAddress = null
+export function clearBrokerCache(address?: string) {
+  if (address) {
+    brokerCache.delete(address)
+  } else {
+    brokerCache.clear()
+  }
 }
 
 /**
  * Check if client broker is available (wallet connected)
  */
 export async function isClientBrokerAvailable(): Promise<boolean> {
+  // SSR guard
+  if (typeof window === 'undefined') {
+    return false
+  }
+
   try {
-    if (typeof window === 'undefined' || !window.ethereum) {
+    if (!window.ethereum) {
       return false
     }
 
@@ -101,8 +114,13 @@ export async function isClientBrokerAvailable(): Promise<boolean> {
  * Get current wallet address if available
  */
 export async function getCurrentWalletAddress(): Promise<string | null> {
+  // SSR guard
+  if (typeof window === 'undefined') {
+    return null
+  }
+
   try {
-    if (typeof window === 'undefined' || !window.ethereum) {
+    if (!window.ethereum) {
       return null
     }
 

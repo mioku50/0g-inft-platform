@@ -89,7 +89,7 @@ async function checkSystemHealth() {
       const account = await broker.ledger.getAccount(wallet.address)
       if (!account || account[0] === BigInt(0)) {
         console.log('📝 Creating compute account...')
-        await broker.ledger.addLedger(ethers.parseEther('0.01')) // 0.01 OG initial deposit
+        await broker.ledger.addLedger(0.01) // 0.01 OG initial deposit
         console.log('✅ Compute account created!')
       } else {
         console.log('✅ Compute account already exists')

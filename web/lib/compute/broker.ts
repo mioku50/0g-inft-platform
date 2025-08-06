@@ -764,8 +764,8 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
       try {
         console.log('[fine] depositFund:start', { user, provider, amountEth })
         
-        // Convert amount to BigInt in wei for SDK
-        const amountWei = ethers.parseEther(amountEth)
+        // Convert amount to number for SDK (SDK expects OG as number)
+        const amountOG = parseFloat(amountEth)
         
         // Try to get existing ledger first
         let account;
@@ -785,8 +785,8 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         if (hasExistingAccount) {
           // Use depositFund for existing accounts (SDK expects number in OG)
           try {
-            console.log('[fine] Calling SDK depositFund with amount:', amountWei)
-            await broker.ledger.depositFund(amountWei)
+            console.log('[fine] Calling SDK depositFund with amount:', amountOG)
+            await broker.ledger.depositFund(amountOG)
             console.log('[fine] depositFund:existing-account:completed')
           } catch (depositError: any) {
             console.log('[fine] depositFund:existing-account:error', depositError.message)
@@ -803,8 +803,8 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         } else {
           // Use addLedger for new accounts (SDK expects number in OG)
           try {
-            console.log('[fine] Calling SDK addLedger with amount:', amountWei)
-            await broker.ledger.addLedger(amountWei)
+            console.log('[fine] Calling SDK addLedger with amount:', amountOG)
+            await broker.ledger.addLedger(amountOG)
             console.log('[fine] depositFund:new-account:completed')
           } catch (addError: any) {
             console.log('[fine] depositFund:new-account:error', addError.message)
@@ -812,7 +812,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
             if (addError.message && addError.message.includes('Ledger already exists')) {
               console.log('[fine] depositFund:race-condition-detected, retrying with depositFund')
               // Retry with depositFund since account now exists
-              await broker.ledger.depositFund(amountWei)
+              await broker.ledger.depositFund(amountOG)
               console.log('[fine] depositFund:race-condition:resolved')
             } else {
               throw addError
@@ -825,7 +825,7 @@ async function addFineTuningSupport(broker: any, signer: Wallet) {
         const txUrl = formatTxUrl(mockTxHash)
 
         // SDK handles transaction internally, so we return a success response
-        console.log('[fine] depositFund:success', { mockTxHash, amountWei })
+        console.log('[fine] depositFund:success', { mockTxHash, amountOG })
 
         return { txHash: mockTxHash, txUrl, status: 'completed' }
       } catch (e: any) {

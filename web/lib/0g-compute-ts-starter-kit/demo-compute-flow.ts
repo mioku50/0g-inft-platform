@@ -62,7 +62,7 @@ async function testComputeFlow() {
       console.log(ledgerInfo);
     } catch (error) {
       console.log("⚠️  Ledger account does not exist, creating...");
-      await broker.ledger.addLedger(ethers.parseEther('0.1'));
+      await broker.ledger.addLedger(0.1);
       console.log(`✅ Ledger created with ${INITIAL_FUND_AMOUNT} OG tokens`);
       
       // Get updated balance

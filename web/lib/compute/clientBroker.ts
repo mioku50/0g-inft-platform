@@ -178,11 +178,9 @@ export async function ensureLedger(userAddress?: string): Promise<boolean> {
     }
 
     // Create ledger with initial balance (0.01 OG)  
-    const ethers = await getEthers()
-    const initialBalance = ethers.parseEther('0.01')
-    await broker.ledger.addLedger(initialBalance)
+    await broker.ledger.addLedger(0.01)
     
-    console.log('[ClientBroker] Ledger created successfully with balance:', initialBalance)
+    console.log('[ClientBroker] Ledger created successfully with balance: 0.01 OG')
     return true
     
   } catch (error) {

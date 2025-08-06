@@ -61,7 +61,7 @@ class BrokerService {
     await this.ensureInitialized();
     
     try {
-      await this.broker!.ledger.depositFund(ethers.parseEther(amount.toString()));
+      await this.broker!.ledger.depositFund(amount);
       return "Deposit successful";
     } catch (error: any) {
       throw new Error(`Failed to deposit funds: ${error.message}`);
@@ -76,7 +76,7 @@ class BrokerService {
     await this.ensureInitialized();
     
     try {
-      await this.broker!.ledger.addLedger(ethers.parseEther(amount.toString()));
+      await this.broker!.ledger.addLedger(amount);
       return "Funds added to ledger successfully";
     } catch (error: any) {
       throw new Error(`Failed to add funds to ledger: ${error.message}`);

@@ -158,6 +158,9 @@ export class ChatService {
         fineTuning: fineTuningContract
       })
       
+      // Dynamic import for server-side usage
+      const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
+      
       const broker = await createZGComputeNetworkBroker(
         wallet,
         ledgerContract,
@@ -193,8 +196,7 @@ export class ChatService {
       
       if (balance < minBalance) {
         console.log('Low balance, adding funds...')
-        const addAmount = ethers.parseEther('0.05')
-        await broker.ledger.addLedger(addAmount)
+              await broker.ledger.addLedger(0.05)
         console.log('Funds added successfully')
       }
     } catch (error: any) {

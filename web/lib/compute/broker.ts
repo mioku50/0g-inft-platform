@@ -333,9 +333,10 @@ export const ledgerSafe = {
       if (error) {
         if (error === 'LedgerNotExists') {
           try {
-            const initAmount = BigInt(Math.floor(Math.max(minBalanceOG, 0.05) * 1e18))
+            const initAmountOG = Math.max(minBalanceOG, 0.05).toString()
+            const initAmount = ethers.parseEther(initAmountOG)
             await br.ledger.addLedger(initAmount)
-            console.log(`Created ledger with ${fromWei(initAmount)} OG`)
+            console.log(`Created ledger with ${initAmountOG} OG`)
             return true
           } catch (addErr: any) {
             console.log('Failed to create ledger:', addErr.message)

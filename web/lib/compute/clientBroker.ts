@@ -10,9 +10,10 @@ import { BrowserProvider } from 'ethers'
 const brokerCache = new Map<string, any>()
 let ethersModule: any = null
 
-// Provider acknowledgment cache (30 min TTL)
+// Provider acknowledgment cache
 const acknowledgeCache = new Map<string, number>()
-const ACKNOWLEDGE_TTL = 30 * 60 * 1000 // 30 minutes
+const ACKNOWLEDGE_TTL_MIN = parseInt(process.env.NEXT_PUBLIC_BROKER_ACK_TTL_MIN || '30')
+const ACKNOWLEDGE_TTL = ACKNOWLEDGE_TTL_MIN * 60 * 1000 // Convert to milliseconds
 
 /**
  * Get ethers module dynamically to avoid SSR issues
@@ -182,6 +183,7 @@ export async function ensureLedger(userAddress?: string): Promise<boolean> {
 
     // Create ledger with initial balance (0.01 OG)  
     const ethers = await getEthers()
+    console.log('[ClientBroker] Creating new ledger with 0.01 OG initial balance...')
     await broker.ledger.addLedger(ethers.parseEther('0.01'))
     
     console.log('[ClientBroker] Ledger created successfully with balance: 0.01 OG')

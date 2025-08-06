@@ -28,62 +28,57 @@ function Navigation() {
   }
   
   return (
-    <nav className="bg-white/90 backdrop-blur-sm shadow-sm sticky top-0 z-50">
+    <nav className="bg-gray-900/90 backdrop-blur-sm shadow-lg sticky top-0 z-50 border-b border-white/10">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
-          <div className="flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-              <span className="text-2xl">🐼</span>
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                0G INFT
-              </span>
+          <div className="flex items-center space-x-8">
+            <Link href="/" className="text-xl font-bold text-white">
+              0G INFT
             </Link>
             
-            <div className="hidden md:flex items-center gap-6">
+            <div className="hidden md:flex space-x-6">
               <Link 
                 href="/" 
-                className={`font-medium transition-colors ${
-                  isActive('/') 
-                    ? 'text-blue-600' 
-                    : 'text-gray-700 hover:text-blue-600'
-                }`}
+                className={pathname === '/' 
+                  ? 'text-purple-400 font-medium' 
+                  : 'text-white/80 hover:text-white'
+                }
               >
                 Home
               </Link>
               <Link 
                 href="/mint" 
-                className={`font-medium transition-colors ${
-                  isActive('/mint') 
-                    ? 'text-blue-600' 
-                    : 'text-gray-700 hover:text-blue-600'
-                }`}
+                className={pathname === '/mint' 
+                  ? 'text-purple-400 font-medium' 
+                  : 'text-white/80 hover:text-white'
+                }
               >
                 Mint Agent
               </Link>
               <Link 
                 href="/agents" 
-                className={`font-medium transition-colors ${
-                  isActive('/agents') 
-                    ? 'text-blue-600' 
-                    : 'text-gray-700 hover:text-blue-600'
-                }`}
+                className={pathname === '/agents' 
+                  ? 'text-purple-400 font-medium' 
+                  : 'text-white/80 hover:text-white'
+                }
               >
                 My Agents
               </Link>
               <Link 
                 href="/marketplace" 
-                className={`font-medium transition-colors ${
-                  isActive('/marketplace') 
-                    ? 'text-blue-600' 
-                    : 'text-gray-700 hover:text-blue-600'
-                }`}
+                className={pathname === '/marketplace' 
+                  ? 'text-purple-400 font-medium' 
+                  : 'text-white/80 hover:text-white'
+                }
               >
                 Marketplace
               </Link>
             </div>
           </div>
           
-          <ConnectButton />
+          <div className="flex items-center space-x-4">
+            <ConnectButton />
+          </div>
         </div>
       </div>
     </nav>

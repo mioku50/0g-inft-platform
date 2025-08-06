@@ -8,13 +8,20 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import Link from 'next/link'
-import { ArrowLeft, Send, Loader2 } from 'lucide-react'
+import { ArrowLeft, Send, Loader2, Wallet, RefreshCw } from 'lucide-react'
+import { ethers } from 'ethers'
 
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+}
+
+interface LedgerInfo {
+  address: string
+  balance: string
+  needsTopUp: boolean
 }
 
 export default function ChatPage() {
@@ -28,6 +35,8 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
+  const [ledgerInfo, setLedgerInfo] = useState<LedgerInfo | null>(null)
+  const [loadingLedger, setLoadingLedger] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
@@ -36,6 +45,66 @@ export default function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Function to check ledger balance
+  const checkLedgerBalance = async () => {
+    if (!address) return
+    
+    const useNonCustodial = process.env.NEXT_PUBLIC_USE_NONCUSTODIAL_INFERENCE === 'true'
+    if (!useNonCustodial) return
+    
+    setLoadingLedger(true)
+    try {
+      const { getClientBroker } = await import('@/lib/compute/clientBroker')
+      const broker = await getClientBroker()
+      
+      const ledgerData = await broker.ledger.getLedger()
+      if (ledgerData && ledgerData.ledgerInfo) {
+        const balance = ethers.formatEther(ledgerData.ledgerInfo[0] || '0')
+        setLedgerInfo({
+          address: address,
+          balance: balance,
+          needsTopUp: parseFloat(balance) < 0.001
+        })
+      }
+    } catch (error) {
+      console.log('[Chat] Ledger not found or error:', error)
+      setLedgerInfo({
+        address: address,
+        balance: '0',
+        needsTopUp: true
+      })
+    } finally {
+      setLoadingLedger(false)
+    }
+  }
+
+  // Check ledger balance when wallet connects
+  useEffect(() => {
+    if (address) {
+      checkLedgerBalance()
+    }
+  }, [address])
+
+  // Function to top up ledger
+  const topUpLedger = async (amount: number = 0.01) => {
+    if (!address) return
+    
+    setLoadingLedger(true)
+    try {
+      const { getClientBroker } = await import('@/lib/compute/clientBroker')
+      const broker = await getClientBroker()
+      
+      await broker.ledger.depositFund(amount)
+      
+      // Refresh balance after deposit
+      await checkLedgerBalance()
+    } catch (error) {
+      console.error('[Chat] Failed to top up ledger:', error)
+    } finally {
+      setLoadingLedger(false)
+    }
+  }
 
   useEffect(() => {
     if (!publicClient || !tokenId) return
@@ -174,27 +243,35 @@ export default function ChatPage() {
     setLoading(true)
 
     try {
-      console.log('[Chat] Checking for non-custodial mode...')
+      console.log('[Chat] Starting message send process...')
+      console.log('[Chat] Environment USE_NONCUSTODIAL_INFERENCE:', process.env.NEXT_PUBLIC_USE_NONCUSTODIAL_INFERENCE)
+      console.log('[Chat] Wallet address:', address)
       
       // Check if non-custodial mode is enabled and wallet is connected
       const useNonCustodial = process.env.NEXT_PUBLIC_USE_NONCUSTODIAL_INFERENCE === 'true'
       
       if (useNonCustodial && address) {
         console.log('[Chat] Using non-custodial mode with wallet:', address)
+        console.log('[Chat] Importing client broker modules...')
         
         // Import and use non-custodial chat
         const { ensureLedger, prepareComputeRequest, isClientBrokerAvailable } = await import('@/lib/compute/clientBroker')
         
+        console.log('[Chat] Checking wallet availability...')
         const walletAvailable = await isClientBrokerAvailable()
         if (!walletAvailable) {
           throw new Error('Wallet not connected. Please connect your wallet to use AI chat.')
         }
+        console.log('[Chat] Wallet is available')
 
         // Ensure ledger exists
+        console.log('[Chat] Ensuring ledger account...')
         await ensureLedger()
+        console.log('[Chat] Ledger account ready')
 
         // Prepare the request
         const providerAddress = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
+        console.log('[Chat] Preparing compute request for provider:', providerAddress)
         const payload = {
           messages: [
             {
@@ -211,8 +288,14 @@ export default function ChatPage() {
         }
 
         const preparedRequest = await prepareComputeRequest(providerAddress, payload)
+        console.log('[Chat] Request prepared:', {
+          endpoint: preparedRequest.endpoint,
+          hasHeaders: Object.keys(preparedRequest.headers).length > 0,
+          bodySize: preparedRequest.body.length
+        })
 
         // Send prepared request
+        console.log('[Chat] Sending request to /api/compute/chat...')
         const response = await fetch('/api/compute/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -224,6 +307,7 @@ export default function ChatPage() {
             prep: preparedRequest
           }),
         })
+        console.log('[Chat] Response received:', response.status, response.statusText)
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}))
@@ -348,17 +432,64 @@ export default function ChatPage() {
       <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-blue-600/20 via-transparent to-transparent" />
       
       <div className="relative z-10 container mx-auto px-4 py-8 max-w-4xl">
+        {/* Back button */}
+        <Link href="/agents" className="inline-flex items-center text-white/80 hover:text-white mb-6 transition-colors">
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Agents
+        </Link>
+
+        {/* Ledger Balance Card - Show only in non-custodial mode */}
+        {address && process.env.NEXT_PUBLIC_USE_NONCUSTODIAL_INFERENCE === 'true' && (
+          <Card className="mb-6 bg-gray-900/50 backdrop-blur-xl border-white/10">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Wallet className="h-5 w-5 text-purple-400" />
+                  <div>
+                    <p className="text-sm text-white/60">Ledger Balance</p>
+                    <p className="text-lg font-semibold text-white">
+                      {loadingLedger ? (
+                        <span className="text-white/40">Loading...</span>
+                      ) : ledgerInfo ? (
+                        `${ledgerInfo.balance} OG`
+                      ) : (
+                        <span className="text-white/40">Not initialized</span>
+                      )}
+                    </p>
+                  </div>
+                  {ledgerInfo?.needsTopUp && (
+                    <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">
+                      Low balance
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={checkLedgerBalance}
+                    disabled={loadingLedger}
+                    variant="ghost"
+                    size="sm"
+                    className="text-white/60 hover:text-white hover:bg-white/10"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${loadingLedger ? 'animate-spin' : ''}`} />
+                  </Button>
+                  <Button
+                    onClick={() => topUpLedger(0.01)}
+                    disabled={loadingLedger || !address}
+                    size="sm"
+                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                  >
+                    Top up (0.01 OG)
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Main chat container */}
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          <Link href="/agents">
-            <Button 
-              variant="outline" 
-              className="border-white/20 text-white hover:bg-white/10 hover:border-white/30 transition-all duration-300"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Agents
-            </Button>
-          </Link>
           
           {agent && (
             <div className="text-center">

@@ -97,6 +97,7 @@ export async function getCurrentWalletAddress(): Promise<string | null> {
  */
 export async function ensureLedger(userAddress?: string): Promise<boolean> {
   try {
+    console.log('[ClientBroker.ensureLedger] Starting...')
     const broker = await getClientBroker()
     const address = userAddress || await getCurrentWalletAddress()
     
@@ -104,29 +105,35 @@ export async function ensureLedger(userAddress?: string): Promise<boolean> {
       throw new Error('No wallet address available')
     }
 
-    console.log('[ClientBroker] Ensuring ledger for address:', address)
+    console.log('[ClientBroker.ensureLedger] Checking ledger for address:', address)
     
     // Check if ledger already exists
     try {
-      const ledgerInfo = await broker.ledger.getLedgerInfo()
-      if (ledgerInfo && ledgerInfo.length > 0) {
-        console.log('[ClientBroker] Ledger already exists')
+      console.log('[ClientBroker.ensureLedger] Calling getLedger()...')
+      const ledgerInfo = await broker.ledger.getLedger()
+      console.log('[ClientBroker.ensureLedger] Ledger info:', ledgerInfo)
+      
+      if (ledgerInfo && ledgerInfo.ledgerInfo && ledgerInfo.ledgerInfo.length > 0) {
+        const balance = ledgerInfo.ledgerInfo[0]
+        console.log('[ClientBroker.ensureLedger] Ledger exists with balance:', balance.toString())
         return true
       }
     } catch (error) {
       // Ledger doesn't exist, we'll create it
-      console.log('[ClientBroker] Ledger not found, creating new one')
+      console.log('[ClientBroker.ensureLedger] Ledger not found, will create:', error)
     }
 
     // Create ledger with initial balance (0.01 ETH = 10000000000000000 wei)
     const initialBalance = 0.01
-    await broker.ledger.addLedger(initialBalance)
+    console.log('[ClientBroker.ensureLedger] Creating ledger with balance:', initialBalance)
+    const tx = await broker.ledger.addLedger(initialBalance)
+    console.log('[ClientBroker.ensureLedger] Ledger creation tx:', tx)
     
-    console.log('[ClientBroker] Ledger created successfully with balance:', initialBalance)
+    console.log('[ClientBroker.ensureLedger] Ledger created successfully')
     return true
     
   } catch (error) {
-    console.error('[ClientBroker] Failed to ensure ledger:', error)
+    console.error('[ClientBroker.ensureLedger] Failed:', error)
     throw new Error(`Failed to ensure ledger: ${(error as Error).message}`)
   }
 }

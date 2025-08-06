@@ -184,9 +184,37 @@ export async function prepareComputeRequest(
   }
 }
 
-// Cache for provider acknowledgments (30 minutes TTL)
-const acknowledgeCache = new Map<string, number>()
-const ACKNOWLEDGE_TTL = 30 * 60 * 1000 // 30 minutes
+/**
+ * Get ledger balance for the current user
+ */
+export async function getLedgerBalance(userAddress?: string): Promise<number> {
+  try {
+    const broker = await getClientBroker()
+    const balance = await broker.ledger.getBalance()
+    
+    console.log('[ClientBroker] Ledger balance:', balance)
+    return parseFloat(balance) || 0
+    
+  } catch (error) {
+    console.error('[ClientBroker] Failed to get ledger balance:', error)
+    // Return 0 if ledger doesn't exist or other error
+    return 0
+  }
+}
+
+/**
+ * Check if ledger exists for the current user
+ */
+export async function checkLedgerExists(): Promise<boolean> {
+  try {
+    const broker = await getClientBroker()
+    const ledgerInfo = await broker.ledger.getLedgerInfo()
+    return ledgerInfo && ledgerInfo.length > 0
+  } catch (error) {
+    console.log('[ClientBroker] Ledger check failed - probably does not exist:', error)
+    return false
+  }
+}
 
 /**
  * Acknowledge provider if not already done (with caching)

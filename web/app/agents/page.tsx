@@ -197,16 +197,14 @@ const AgentCard = React.memo(({
               <div className="grid grid-cols-2 gap-3">
                 <Button 
                   onClick={() => onClone(agent)}
-                  variant="outline"
-                  className="w-full border-white/20 text-white hover:bg-white/10 hover:border-white/30 transition-all duration-300"
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/25 transition-all duration-300"
                 >
                   <Copy className="h-4 w-4 mr-2" />
                   Clone
                 </Button>
                 <Button 
                   onClick={() => onTransfer(agent)}
-                  variant="outline"
-                  className="w-full border-white/20 text-white hover:bg-white/10 hover:border-white/30 transition-all duration-300"
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/25 transition-all duration-300"
                 >
                   <Send className="h-4 w-4 mr-2" />
                   Transfer

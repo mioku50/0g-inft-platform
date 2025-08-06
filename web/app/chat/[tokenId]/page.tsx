@@ -29,6 +29,7 @@ import { INFT_ABI } from '@/lib/contracts/abis'
 import { useNonCustodialChat } from '@/hooks/useNonCustodialChat'
 import { TransferModal } from '@/components/agent/TransferModal'
 import { ListingModal } from '@/components/marketplace/ListingModal'
+import { LedgerBalance } from '@/components/compute/LedgerBalance'
 
 interface Message {
   id: string
@@ -301,6 +302,11 @@ I'll be ready to help once the connection is restored!`,
                 ))}
               </div>
             </div>
+
+            <Separator className="bg-white/20" />
+
+            {/* Ledger Balance */}
+            <LedgerBalance compact={true} />
 
             <Separator className="bg-white/20" />
 

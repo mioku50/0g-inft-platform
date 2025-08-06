@@ -150,4 +150,100 @@ Preservation of storage custodial functionality
 Comprehensive error handling and user guidance
 The platform is now ready for production deployment with the new hybrid architecture, providing users with the security benefits of non-custodial compute while maintaining the UX benefits of custodial storage.
 
+Issues Fixed
 
+1. Inference Chat Request Tracking
+
+The inference chat system lacked proper debugging capabilities, making it difficult to troubleshoot when requests weren't reaching the server. Added comprehensive console logging markers throughout the request flow:
+
+// Client-side logging in useNonCustodialChat hook
+console.log('[CHAT] start - Beginning non-custodial chat request')
+console.log('[CHAT] prepared - Preparing compute request...')
+console.log('[CHAT] fetch - Sending to chat API...', { endpoint, hasHeaders })
+
+// Server-side logging in API routes
+console.log('[CHAT] HIT - Using non-custodial mode - proxying prepared request')
+console.log('[PROXY] HIT - POST https://provider.0g.ai/chat/completions')
+This enables developers to trace the complete request path from client → chat API → proxy → 0G provider.
+
+2. Metadata Sync Interference in Development
+
+Background metadata synchronization was causing ENOENT errors and slowing down the development server. Implemented proper environment-based control:
+
+// Server-side check in /api/sync/metadata
+const isIndexingEnabled = process.env.INDEXING_WATCHER_ENABLED !== 'false'
+if (!isIndexingEnabled) {
+  return NextResponse.json({
+    success: true,
+    message: 'Metadata sync is disabled',
+    disabled: true
+  })
+}
+
+// Client-side hook respect for environment
+const isIndexingEnabled = process.env.NEXT_PUBLIC_INDEXING_WATCHER_ENABLED !== 'false'
+const shouldSync = enabled && isIndexingEnabled
+Now developers can set INDEXING_WATCHER_ENABLED=false to disable background sync during development.
+
+3. Environment Configuration Verification
+
+Enhanced environment loading verification and proper separation of server-side vs client-side configuration:
+
+# Server-side only (private keys)
+INDEXING_WATCHER_ENABLED=false
+OG_STORAGE_PRIVATE_KEY=0x...
+
+# Client-side accessible
+NEXT_PUBLIC_INDEXING_WATCHER_ENABLED=false
+NEXT_PUBLIC_USE_NONCUSTODIAL_INFERENCE=true
+The dev server now properly shows "Environments: .env.local" confirming configuration is loaded.
+
+4. Enhanced Error Handling for Missing Files
+
+Improved the /api/storage/retrieve route to handle missing metadata files gracefully:
+
+} catch (fileError) {
+  console.log('[Storage Retrieve] Local file not found:', cleanRootHash)
+  // Continue to fallback instead of throwing ENOENT
+}
+🧪 Testing Results
+
+API Endpoints Verified:
+
+✅ /api/compute/chat - Proper logging and non-custodial mode detection
+✅ /api/compute/proxy - Security allowlist blocking unauthorized hosts
+✅ /api/sync/metadata - Respects INDEXING_WATCHER_ENABLED flag
+✅ /api/storage/retrieve - Graceful handling of missing files
+Console Output Example:
+
+=== Enhanced 0G Chat API ===
+Mode: non-custodial ✅
+[CHAT] HIT - Using non-custodial mode - proxying prepared request ✅
+[Compute Proxy] Blocked request to unauthorized host ✅
+Build Status:
+
+✅ npm run build - Compiles successfully with no errors
+✅ npm run dev - Starts in 2.4s with proper environment loading
+✅ All TypeScript compilation passes
+📸 UI Screenshots
+
+The platform's UI is working perfectly with excellent visibility on the dark gradient backgrounds:
+
+Agents Page - Clean Navigation & Connect Wallet UI:
+Agents Page
+
+Mint Page - Professional Glassmorphism Design:
+Mint Page
+
+Marketplace - Beautiful Coming Soon Interface:
+Marketplace
+
+🎯 Architecture Improvements
+
+This maintains the desired hybrid architecture:
+
+Non-custodial Compute: Users control their own wallet transactions for AI inference
+Custodial Storage: Platform manages storage operations for optimal UX
+Proper Separation: Environment variables correctly separated between server and client
+Enhanced Security: Proxy allowlists prevent unauthorized requests
+The logging system now provides complete visibility into the inference request flow, making it easy to debug issues and verify that the non-custodial architecture is working correctly.

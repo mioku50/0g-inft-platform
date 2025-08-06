@@ -5,7 +5,7 @@ require('dotenv').config({ path: '.env' })
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@0glabs/0g-serving-broker", "@0glabs/0g-serving-user-broker"],
+  transpilePackages: ["@0glabs/0g-serving-broker"],
   // Явно передаем переменные в среду выполнения
   env: {
     OG_STORAGE_PRIVATE_KEY: process.env.OG_STORAGE_PRIVATE_KEY || '',

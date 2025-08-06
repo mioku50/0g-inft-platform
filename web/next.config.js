@@ -1,4 +1,5 @@
 // Загружаем переменные из .env файла
+require('dotenv').config({ path: '.env.local' })
 require('dotenv').config({ path: '.env' })
 
 /** @type {import('next').NextConfig} */
@@ -9,6 +10,8 @@ const nextConfig = {
   env: {
     OG_STORAGE_PRIVATE_KEY: process.env.OG_STORAGE_PRIVATE_KEY || '',
     OG_COMPUTE_PRIVATE_KEY: process.env.OG_COMPUTE_PRIVATE_KEY || '',
+    USE_NONCUSTODIAL_INFERENCE: process.env.USE_NONCUSTODIAL_INFERENCE || 'false',
+    ENABLE_FINE_TUNE: process.env.ENABLE_FINE_TUNE || 'false',
   },
   webpack: (config, { isServer }) => {
     // Add polyfills for Node.js modules

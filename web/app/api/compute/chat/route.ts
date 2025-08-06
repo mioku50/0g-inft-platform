@@ -108,14 +108,23 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Fallback to custodial mode (dev/legacy)
+    // Check if non-custodial mode is enforced
     const useNonCustodial = process.env.USE_NONCUSTODIAL_INFERENCE === 'true'
-    if (useNonCustodial && !process.env.OG_COMPUTE_PRIVATE_KEY) {
+    console.log('[CHAT] Environment check:', {
+      USE_NONCUSTODIAL_INFERENCE: process.env.USE_NONCUSTODIAL_INFERENCE,
+      useNonCustodial,
+      prepared,
+      hasPrep: !!prep
+    })
+    
+    if (useNonCustodial) {
+      console.log('[CHAT] Non-custodial mode enforced but no prepared request provided')
       return NextResponse.json(
         { 
           success: false, 
           error: 'non_custodial_required',
-          message: 'Non-custodial mode is enabled but no prepared request provided. Please connect wallet and try again.'
+          message: 'Non-custodial mode is enabled but no prepared request provided. Please connect wallet and try again.',
+          requiresPreparedRequest: true
         },
         { status: 400 }
       )

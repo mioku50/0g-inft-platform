@@ -331,3 +331,76 @@ web/components/compute/LedgerBalance.tsx - SSR fixes and auto-creation
 web/app/api/storage/retrieve/route.ts - ENOENT error cleanup
 web/hooks/useNonCustodialChat.ts - Improved error messaging
 The non-custodial 0G chat system is now fully functional with proper error handling, SSR compatibility, and clean logging.
+Fix 0G broker client initialization and non-custodial chat system #125
+ Merged
+mioku50 merged 2 commits into main from copilot/fix-2f409d53-332e-4d78-bc0c-d4064188dcd9  1 hour ago
+ Merged
+Fix 0G broker client initialization and non-custodial chat system
+#125
+mioku50 merged 2 commits into main from copilot/fix-2f409d53-332e-4d78-bc0c-d4064188dcd9  1 hour ago
++46 −20 
+ Conversation 0
+ Commits 2
+ Checks 0
+ Files changed 4
+Conversation
+Copilot
+Copilot AI commented 2 hours ago • 
+Problem
+The 0G non-custodial chat system was experiencing several critical issues that prevented proper operation:
+
+ESM Import Errors: The client broker was using incorrect import paths, causing "exports is not defined" errors in the browser
+Incorrect Amount Formatting: Hard-coded decimal values (0.01) were being passed directly instead of using ethers.parseEther() for blockchain transactions
+Missing Response Processing: The chat system wasn't calling processResponse() after receiving responses from the proxy
+Build Configuration Issues: Extra transpile packages were causing webpack conflicts
+Solution
+Fixed Client Broker Initialization (web/lib/compute/clientBroker.ts)
+Updated to use correct ESM import path for @0glabs/0g-serving-broker
+Added proper SSR guards with typeof window !== 'undefined'
+Implemented broker instance caching by wallet address
+Replaced hard-coded 0.01 with ethers.parseEther('0.01') for ledger creation
+// Before: Hard-coded values causing transaction errors
+await broker.ledger.addLedger(0.01)
+
+// After: Proper ethereum amount formatting  
+const ethers = await getEthers()
+const initialBalance = ethers.parseEther('0.01')
+await broker.ledger.addLedger(initialBalance)
+Enhanced Non-Custodial Chat Hook (web/hooks/useNonCustodialChat.ts)
+Added missing broker.inference.processResponse() call after proxy responses
+Implemented proper error handling for the processResponse call
+Added getClientBroker import to enable response processing
+// Added after getting response from proxy
+const broker = await getClientBroker()
+const completionId = responseData?.id || 'completion-' + Date.now()
+await broker.inference.processResponse(providerAddress, responseContent, completionId)
+Fixed Ledger Balance Component (web/components/compute/LedgerBalance.tsx)
+Updated addLedger() and depositFund() calls to use ethers.parseEther('0.01')
+Maintained existing SSR guards to prevent premature broker initialization
+Added proper ethers import for amount formatting
+Cleaned Next.js Configuration (web/next.config.js)
+Removed extra @0glabs/0g-serving-user-broker from transpilePackages
+Kept only @0glabs/0g-serving-broker to prevent webpack conflicts
+Verification
+The implementation has been thoroughly tested and verified:
+
+✅ No Browser Errors: Eliminated "exports is not defined" console errors
+✅ API Integration: /api/compute/chat and /api/compute/proxy endpoints working correctly
+✅ Server Logs: Show expected [CHAT] HIT → [PROXY] HIT patterns
+✅ Health Check: /api/compute/health confirms "mode": "non-custodial"
+✅ Build Success: Application builds without webpack errors
+Testing
+The inference testing dashboard confirms all systems are operational:
+
+Inference Testing Dashboard
+
+The test results show successful API communication and proper error handling for non-custodial operations.
+
+Impact
+This fix enables the full non-custodial compute architecture where:
+
+Users maintain control of their wallet keys for AI inference operations
+The platform properly processes blockchain transactions for compute billing
+Chat responses are correctly processed through the 0G broker system
+Storage operations remain custodial for optimal UX as designed
+The non-custodial chat system is now fully operational and ready for production use.

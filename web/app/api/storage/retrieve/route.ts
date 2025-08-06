@@ -40,7 +40,11 @@ export async function POST(request: NextRequest) {
         rootHash: cleanRootHash,
       })
     } catch (error: any) {
-      console.error('Storage retrieval error:', error)
+      if (error.code === 'ENOENT') {
+        console.log('[Storage Retrieve] ENOENT - falling back to remote indexer')
+      } else {
+        console.error('Storage retrieval error:', error)
+      }
 
       // Если не удалось загрузить, пробуем локальное хранилище
       if (cleanRootHash.startsWith('local://')) {

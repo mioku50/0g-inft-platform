@@ -10,6 +10,7 @@ import { INFT_ABI } from '@/lib/contracts/abis'
 import Link from 'next/link'
 import { ArrowLeft, Send, Loader2 } from 'lucide-react'
 import { LedgerBalance } from '@/components/compute/LedgerBalance'
+import { useNonCustodialChat } from '@/hooks/useNonCustodialChat'
 
 interface Message {
   id: string
@@ -30,6 +31,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const { sendMessage: sendNonCustodialMessage } = useNonCustodialChat()
 
   const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
 
@@ -175,92 +177,31 @@ export default function ChatPage() {
     setLoading(true)
 
     try {
-      console.log('[Chat] Checking for non-custodial mode...')
-      
-      // Check if non-custodial mode is enabled and wallet is connected
       const useNonCustodial = process.env.NEXT_PUBLIC_USE_NONCUSTODIAL_INFERENCE === 'true'
-      
+
       if (useNonCustodial && address) {
-        console.log('[Chat] Using non-custodial mode with wallet:', address)
-        
-        // Import and use non-custodial chat
-        const { ensureLedger, prepareComputeRequest, isClientBrokerAvailable } = await import('@/lib/compute/clientBroker')
-        
-        const walletAvailable = await isClientBrokerAvailable()
-        if (!walletAvailable) {
-          throw new Error('Wallet not connected. Please connect your wallet to use AI chat.')
-        }
-
-        // Ensure ledger exists
-        await ensureLedger()
-
-        // Prepare the request
-        const providerAddress = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
-        const payload = {
-          messages: [
-            {
-              role: 'system',
-              content: `You are ${agent?.metadata?.name || 'AI Assistant'}. ${agent?.metadata?.description || 'You are helpful and friendly.'}`
-            },
-            {
-              role: 'user',
-              content: userMessage.content
-            }
-          ],
-          max_tokens: 1000,
-          temperature: 0.7
-        }
-
-        const preparedRequest = await prepareComputeRequest(providerAddress, payload)
-
-        // Send prepared request
-        const response = await fetch('/api/compute/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: userMessage.content,
-            agentMetadata: agent?.metadata,
-            providerAddress,
-            prepared: true,
-            prep: preparedRequest
-          }),
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.message || `HTTP ${response.status}`)
-        }
-
-        // Handle different response types
-        const contentType = response.headers.get('content-type')
-        let responseContent = ''
-        
-        if (contentType?.includes('application/json')) {
-          const data = await response.json()
-          if (data.choices && data.choices[0]) {
-            responseContent = data.choices[0].message.content
-          } else if (data.success && data.response) {
-            responseContent = data.response
-          } else {
-            throw new Error('Unexpected response format')
+        const result = await sendNonCustodialMessage(
+          userMessage.content,
+          {
+            name: agent?.metadata?.name || 'AI Assistant',
+            description: agent?.metadata?.description || 'AI Assistant'
+          },
+          {
+            providerAddress: '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
           }
-        } else {
-          responseContent = await response.text()
-        }
+        )
 
-        const assistantMessage: Message = {
-          id: Date.now().toString(),
-          role: 'assistant',
-          content: responseContent,
-          timestamp: new Date()
+        if (result && result.content) {
+          const assistantMessage: Message = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: result.content,
+            timestamp: new Date()
+          }
+          setMessages(prev => [...prev, assistantMessage])
         }
-
-        setMessages(prev => [...prev, assistantMessage])
-        
       } else {
         // Fallback to custodial mode
-        console.log('[Chat] Using custodial mode fallback...')
-        
         const response = await fetch('/api/compute/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

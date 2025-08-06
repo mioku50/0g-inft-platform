@@ -75,6 +75,7 @@ const nextConfig = {
   },
   // Экспериментальная поддержка для серверных компонентов
   experimental: {
+    esmExternals: true,
     serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk', '@0glabs/0g-serving-broker'],
   },
 }

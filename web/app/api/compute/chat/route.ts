@@ -86,11 +86,11 @@ export async function POST(request: NextRequest) {
 
     // Check if using non-custodial mode (prepared request)
     if (prepared === true && prep) {
-      console.log('[CHAT] HIT - Using non-custodial mode - proxying prepared request')
-      console.log('[PROXY] HIT - Forwarding to proxy endpoint')
-      
+      console.log('[CHAT] HIT – non-custodial')
+
       // Forward to proxy endpoint
       const origin = new URL(request.url).origin
+      console.log('[PROXY] HIT – POST', `${origin}/api/compute/proxy`)
       const proxyResponse = await fetch(`${origin}/api/compute/proxy`, {
         method: 'POST',
         headers: {

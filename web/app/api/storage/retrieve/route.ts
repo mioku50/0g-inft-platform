@@ -55,8 +55,13 @@ export async function POST(request: NextRequest) {
           await fs.access(localPath)
           const localContent = await fs.readFile(localPath, 'utf-8')
           return NextResponse.json({ success: true, content: localContent, rootHash: cleanRootHash, local: true })
-        } catch (fileError) {
+        } catch (fileError: any) {
           console.log('[Storage Retrieve] Local file not found:', cleanRootHash)
+          if (fileError.code === 'ENOENT') {
+            console.log('[Storage Retrieve] ENOENT - File does not exist, will use fallback')
+          } else {
+            console.log('[Storage Retrieve] File access error:', fileError.message)
+          }
           // continue to fallback
         }
       } else if (cleanRootHash) {
@@ -75,8 +80,13 @@ export async function POST(request: NextRequest) {
             rootHash: cleanRootHash,
             local: true,
           })
-        } catch (fileError) {
+        } catch (fileError: any) {
           console.log('[Storage Retrieve] Local metadata file not found:', cleanRootHash)
+          if (fileError.code === 'ENOENT') {
+            console.log('[Storage Retrieve] ENOENT - Metadata file does not exist, using graceful fallback')
+          } else {
+            console.log('[Storage Retrieve] Metadata file access error:', fileError.message)
+          }
           // continue to fallback
         }
       }

@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
     // Check if using non-custodial mode (prepared request)
     if (prepared === true && prep) {
       console.log('[CHAT] HIT - Using non-custodial mode - proxying prepared request')
+      console.log('[PROXY] HIT - Forwarding to proxy endpoint')
       
       // Forward to proxy endpoint
       const origin = new URL(request.url).origin
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify(prep)
       })
 
+      console.log('[PROXY] Response received from provider:', proxyResponse.status)
       const proxyResult = await proxyResponse.text()
       
       return new Response(proxyResult, {

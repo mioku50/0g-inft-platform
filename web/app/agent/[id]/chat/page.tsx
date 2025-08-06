@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import Link from 'next/link'
 import { ArrowLeft, Send, Loader2 } from 'lucide-react'
+import { LedgerBalance } from '@/components/compute/LedgerBalance'
 
 interface Message {
   id: string
@@ -352,8 +353,8 @@ export default function ChatPage() {
         <div className="flex items-center justify-between mb-8">
           <Link href="/agents">
             <Button 
-              variant="outline" 
-              className="border-white/20 text-white hover:bg-white/10 hover:border-white/30 transition-all duration-300"
+              variant="ghost" 
+              className="bg-transparent/0 hover:bg-white/10 border border-white/20 hover:border-white/40 text-white transition-all duration-300"
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Agents
@@ -368,6 +369,16 @@ export default function ChatPage() {
               <p className="text-white/60 text-sm">{agent.metadata?.model || 'AI Assistant'}</p>
             </div>
           )}
+
+          {/* Ledger Balance */}
+          <div className="hidden md:block">
+            <LedgerBalance compact />
+          </div>
+        </div>
+
+        {/* Mobile Ledger Balance */}
+        <div className="md:hidden mb-6">
+          <LedgerBalance />
         </div>
 
         {/* Chat Container */}

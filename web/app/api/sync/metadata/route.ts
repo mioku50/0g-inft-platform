@@ -11,6 +11,25 @@ const withTimeout = <T>(p: Promise<T>, ms = 3000) =>
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if indexing watcher is enabled
+    const isIndexingEnabled = process.env.INDEXING_WATCHER_ENABLED !== 'false'
+    
+    if (!isIndexingEnabled) {
+      console.log('[Sync API] Metadata sync disabled via INDEXING_WATCHER_ENABLED=false')
+      return NextResponse.json({
+        success: true,
+        message: 'Metadata sync is disabled',
+        disabled: true,
+        result: {
+          fixed: 0,
+          processed: 0,
+          total: 0,
+          skipped: true,
+          reason: 'INDEXING_WATCHER_ENABLED=false'
+        }
+      })
+    }
+    
     // Проверяем авторизацию (опционально)
     const authHeader = request.headers.get('authorization')
     // if (authHeader !== `Bearer ${process.env.SYNC_SECRET}`) {

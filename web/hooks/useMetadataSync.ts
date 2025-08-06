@@ -7,7 +7,16 @@ export function useMetadataSync(enabled = true, intervalMinutes = 5) {
   const syncInProgressRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   
+  // Check if indexing watcher is enabled
+  const isIndexingEnabled = process.env.NEXT_PUBLIC_INDEXING_WATCHER_ENABLED !== 'false'
+  const shouldSync = enabled && isIndexingEnabled
+  
   const syncMetadata = useCallback(async () => {
+    if (!isIndexingEnabled) {
+      console.log('[useMetadataSync] Metadata sync disabled via INDEXING_WATCHER_ENABLED=false')
+      return
+    }
+    
     // Предотвращаем множественные вызовы
     if (syncInProgressRef.current) {
       console.log('[useMetadataSync] Sync already in progress, skipping...')
@@ -60,10 +69,10 @@ export function useMetadataSync(enabled = true, intervalMinutes = 5) {
       setIsSyncing(false)
       abortControllerRef.current = null
     }
-  }, [])
+  }, [isIndexingEnabled])
   
   useEffect(() => {
-    if (!enabled) return
+    if (!shouldSync) return
     
     // НЕ синхронизируем при каждом монтировании!
     // Только по интервалу
@@ -71,14 +80,14 @@ export function useMetadataSync(enabled = true, intervalMinutes = 5) {
     
     // Первая синхронизация через 10 секунд после монтирования
     const initialTimeout = setTimeout(() => {
-      if (mounted && enabled) {
+      if (mounted && shouldSync) {
         syncMetadata()
       }
     }, 10000)
     
     // Периодическая синхронизация
     const interval = setInterval(() => {
-      if (mounted && enabled) {
+      if (mounted && shouldSync) {
         syncMetadata()
       }
     }, intervalMinutes * 60 * 1000)
@@ -93,7 +102,7 @@ export function useMetadataSync(enabled = true, intervalMinutes = 5) {
         abortControllerRef.current.abort()
       }
     }
-  }, [enabled, intervalMinutes, syncMetadata])
+  }, [shouldSync, intervalMinutes, syncMetadata])
   
   return { 
     syncMetadata, 

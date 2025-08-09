@@ -75,7 +75,7 @@ const nextConfig = {
   },
   // Remove esmExternals as it causes issues with SDK imports
   experimental: {
-    serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk', '@0glabs/0g-serving-broker', '@0glabs/0g-serving-user-broker'],
+    serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk'],
   },
 }
 

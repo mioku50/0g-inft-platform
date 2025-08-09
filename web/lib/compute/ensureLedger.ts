@@ -96,11 +96,11 @@ export async function createLedgerAccount(options: CreateLedgerOptions = {}): Pr
     
     if (initialDeposit > 0) {
       // Create account with initial deposit
-      await broker.ledger.depositFund(initialDeposit)
+      await broker.ledger.depositFund(ethers.parseEther(initialDeposit.toString()))
       onProgress?.(`Account created with ${initialDeposit} OG deposit`)
     } else {
       // Create account without deposit (if supported by SDK)
-      await broker.ledger.addLedger()
+      await broker.ledger.addLedger(ethers.parseEther('0'))
       onProgress?.('Account created successfully')
     }
 
@@ -127,7 +127,7 @@ export async function depositToLedger(options: DepositOptions): Promise<boolean>
     onProgress?.(`Depositing ${amount} OG...`)
     
     const broker = await getClientBroker()
-    await broker.ledger.depositFund(amount)
+    await broker.ledger.depositFund(ethers.parseEther(amount.toString()))
     
     onProgress?.(`Successfully deposited ${amount} OG`)
     return true

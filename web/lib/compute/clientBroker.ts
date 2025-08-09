@@ -6,13 +6,14 @@
 // Only import ethers statically as it's safe for SSR
 import { BrowserProvider } from 'ethers'
 
-let cachedBroker: any = null
-let cachedAddress: string | null = null
+// Broker cache by wallet address
+const brokerCache = new Map<string, any>()
 let ethersModule: any = null
 
-// Provider acknowledgment cache (30 min TTL)
+// Provider acknowledgment cache
 const acknowledgeCache = new Map<string, number>()
-const ACKNOWLEDGE_TTL = 30 * 60 * 1000 // 30 minutes
+const ACKNOWLEDGE_TTL_MIN = parseInt(process.env.NEXT_PUBLIC_BROKER_ACK_TTL_MIN || '30')
+const ACKNOWLEDGE_TTL = ACKNOWLEDGE_TTL_MIN * 60 * 1000 // Convert to milliseconds
 
 /**
  * Get ethers module dynamically to avoid SSR issues
@@ -26,12 +27,17 @@ async function getEthers() {
 
 /**
  * Get or create a client-side broker instance using the injected wallet
- * This is a singleton that reinitializes when the wallet address changes
+ * This is a singleton per wallet address
  */
 export async function getClientBroker() {
+  // SSR guard
+  if (typeof window === 'undefined') {
+    throw new Error('Client broker can only be used in browser environment')
+  }
+
   try {
     // Check if we have an injected wallet
-    if (typeof window === 'undefined' || !window.ethereum) {
+    if (!window.ethereum) {
       throw new Error('No injected wallet found. Please install MetaMask or connect a wallet.')
     }
 
@@ -48,12 +54,13 @@ export async function getClientBroker() {
     const signer = await provider.getSigner()
     const currentAddress = await signer.getAddress()
 
-    // Return cached broker if address hasn't changed
-    if (cachedBroker && cachedAddress === currentAddress) {
+    // Return cached broker if we have one for this address
+    const cachedBroker = brokerCache.get(currentAddress)
+    if (cachedBroker) {
       return cachedBroker
     }
 
-    // Dynamically import the ESM version of the broker function using the correct path
+    // Dynamically import the broker module
     const brokerModule = await import('@0glabs/0g-serving-broker')
     const { createZGComputeNetworkBroker } = brokerModule
 
@@ -61,9 +68,8 @@ export async function getClientBroker() {
     console.log('[ClientBroker] Creating new broker for address:', currentAddress)
     const broker = await createZGComputeNetworkBroker(signer)
 
-    // Cache the broker and address
-    cachedBroker = broker
-    cachedAddress = currentAddress
+    // Cache the broker by address
+    brokerCache.set(currentAddress, broker)
 
     return broker
   } catch (error) {
@@ -73,19 +79,27 @@ export async function getClientBroker() {
 }
 
 /**
- * Clear cached broker (useful when wallet disconnects or changes)
+ * Clear cached broker for specific address or all
  */
-export function clearBrokerCache() {
-  cachedBroker = null
-  cachedAddress = null
+export function clearBrokerCache(address?: string) {
+  if (address) {
+    brokerCache.delete(address)
+  } else {
+    brokerCache.clear()
+  }
 }
 
 /**
  * Check if client broker is available (wallet connected)
  */
 export async function isClientBrokerAvailable(): Promise<boolean> {
+  // SSR guard
+  if (typeof window === 'undefined') {
+    return false
+  }
+
   try {
-    if (typeof window === 'undefined' || !window.ethereum) {
+    if (!window.ethereum) {
       return false
     }
 
@@ -101,8 +115,13 @@ export async function isClientBrokerAvailable(): Promise<boolean> {
  * Get current wallet address if available
  */
 export async function getCurrentWalletAddress(): Promise<string | null> {
+  // SSR guard
+  if (typeof window === 'undefined') {
+    return null
+  }
+
   try {
-    if (typeof window === 'undefined' || !window.ethereum) {
+    if (!window.ethereum) {
       return null
     }
 
@@ -120,10 +139,13 @@ export async function getCurrentWalletAddress(): Promise<string | null> {
 export async function getLedgerBalance(userAddress?: string): Promise<number> {
   try {
     const broker = await getClientBroker()
-    const balance = await broker.ledger.getBalance()
+    const ledger = await broker.ledger.getLedger()
+    const ethers = await getEthers()
+    const balanceWei = ledger.balance
+    const balanceOG = ethers.formatEther(balanceWei)
     
-    console.log('[ClientBroker] Ledger balance:', balance)
-    return parseFloat(balance) || 0
+    console.log('[ClientBroker] Ledger balance:', balanceOG, 'OG')
+    return parseFloat(balanceOG) || 0
     
   } catch (error) {
     console.error('[ClientBroker] Failed to get ledger balance:', error)
@@ -161,10 +183,10 @@ export async function ensureLedger(userAddress?: string): Promise<boolean> {
 
     // Create ledger with initial balance (0.01 OG)  
     const ethers = await getEthers()
-    const initialBalance = ethers.parseEther('0.01')
-    await broker.ledger.addLedger(initialBalance)
+    console.log('[ClientBroker] Creating new ledger with 0.01 OG initial balance...')
+    await broker.ledger.addLedger(ethers.parseEther('0.01'))
     
-    console.log('[ClientBroker] Ledger created successfully with balance:', initialBalance)
+    console.log('[ClientBroker] Ledger created successfully with balance: 0.01 OG')
     return true
     
   } catch (error) {

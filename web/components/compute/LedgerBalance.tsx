@@ -68,13 +68,15 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
 
       // Try to get existing ledger first
       try {
-        const balance = await broker.ledger.getBalance()
+        const ledger = await broker.ledger.getLedger()
+        const balanceWei = ledger.balance
+        const balanceOG = ethers.formatEther(balanceWei)
         setLedgerInfo({
           address: currentAddress,
-          balance: balance.toString(),
-          balanceFormatted: parseFloat(balance).toFixed(6)
+          balance: balanceWei.toString(),
+          balanceFormatted: parseFloat(balanceOG).toFixed(6)
         })
-        console.log('[LedgerBalance] Existing ledger found with balance:', balance)
+        console.log('[LedgerBalance] Existing ledger found with balance:', balanceOG, 'OG')
         return
       } catch (ledgerError: any) {
         console.log('[LedgerBalance] No existing ledger, will create one')
@@ -85,14 +87,16 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
       await broker.ledger.addLedger(ethers.parseEther('0.01'))
       
       // Get the new balance
-      const balance = await broker.ledger.getBalance()
+      const ledger = await broker.ledger.getLedger()
+      const balanceWei = ledger.balance
+      const balanceOG = ethers.formatEther(balanceWei)
       setLedgerInfo({
         address: currentAddress,
-        balance: balance.toString(),
-        balanceFormatted: parseFloat(balance).toFixed(6)
+        balance: balanceWei.toString(),
+        balanceFormatted: parseFloat(balanceOG).toFixed(6)
       })
       
-      console.log('[LedgerBalance] Ledger created successfully with balance:', balance)
+      console.log('[LedgerBalance] Ledger created successfully with balance:', balanceOG, 'OG')
     } catch (err: any) {
       console.error('[LedgerBalance] Error loading ledger info:', err)
       setError(`Failed to load ledger: ${err.message}`)
@@ -101,6 +105,9 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
     }
   }
 
+  const [showTopUpDialog, setShowTopUpDialog] = useState(false)
+  const [topUpAmount, setTopUpAmount] = useState('0.01')
+
   const topUpLedger = async () => {
     if (!ledgerInfo || typeof window === 'undefined') return
 
@@ -108,17 +115,24 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
     setError(null)
 
     try {
-      console.log('[LedgerBalance] Depositing 0.01 OG to ledger...')
+      const amount = topUpAmount.trim()
+      if (!amount || parseFloat(amount) <= 0) {
+        throw new Error('Invalid amount')
+      }
+
+      console.log(`[LedgerBalance] Depositing ${amount} OG to ledger...`)
       const broker = await getClientBroker()
-      await broker.ledger.depositFund(ethers.parseEther('0.01'))
+      await broker.ledger.depositFund(ethers.parseEther(amount))
 
       toast({
         title: "Top-up Successful",
-        description: `Added 0.01 OG to your ledger!`,
+        description: `Added ${amount} OG to your ledger!`,
       })
 
       // Refresh balance after top-up
       await loadLedgerInfo()
+      setShowTopUpDialog(false)
+      setTopUpAmount('0.01')
     } catch (err: any) {
       console.error('[LedgerBalance] Error topping up:', err)
       setError(`Top-up failed: ${err.message}`)

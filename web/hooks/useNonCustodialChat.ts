@@ -7,6 +7,7 @@
 
 import { useState, useCallback } from 'react'
 import { ensureLedger, prepareComputeRequest, isClientBrokerAvailable, getClientBroker } from '@/lib/compute/clientBroker'
+import { useToast } from '@/hooks/use-toast'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -21,12 +22,25 @@ interface NonCustodialChatOptions {
 export function useNonCustodialChat() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isSending, setIsSending] = useState(false)
+  const { toast } = useToast()
 
   const sendMessage = useCallback(async (
     message: string,
     agentMetadata: { name: string; description: string },
     options: NonCustodialChatOptions = {}
   ) => {
+    // Prevent double clicks
+    if (isSending) {
+      toast({
+        title: "Please wait",
+        description: "Previous message is still being sent",
+        variant: "default"
+      })
+      return null
+    }
+
+    setIsSending(true)
     setLoading(true)
     setError(null)
 
@@ -36,10 +50,19 @@ export function useNonCustodialChat() {
       // Check if wallet is available
       const walletAvailable = await isClientBrokerAvailable()
       if (!walletAvailable) {
+        toast({
+          title: "Wallet Required",
+          description: "Please connect your wallet to use non-custodial chat",
+          variant: "destructive"
+        })
         throw new Error('Connect wallet to view ledger')
       }
 
       // Ensure ledger exists for the user
+      toast({
+        title: "Preparing ledger",
+        description: "Creating or verifying your compute ledger...",
+      })
       await ensureLedger()
 
       // Use default provider if none specified
@@ -153,11 +176,34 @@ export function useNonCustodialChat() {
     } catch (err: any) {
       console.error('[CHAT] Error in non-custodial chat:', err)
       setError(err.message)
+      
+      // Show appropriate error toast
+      if (err.message.includes('insufficient funds')) {
+        toast({
+          title: "Insufficient Funds",
+          description: "Please top up your ledger balance",
+          variant: "destructive"
+        })
+      } else if (err.message.includes('Headers already used')) {
+        toast({
+          title: "Headers Expired",
+          description: "Retrying with fresh headers...",
+          variant: "default"
+        })
+      } else {
+        toast({
+          title: "Chat Error",
+          description: err.message,
+          variant: "destructive"
+        })
+      }
+      
       throw err
     } finally {
       setLoading(false)
+      setIsSending(false)
     }
-  }, [])
+  }, [toast, isSending])
 
   const checkWalletStatus = useCallback(async () => {
     try {

@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { 
           success: false, 
-          error: 'Rate limit exceeded',
+          error: 'rate_limit',
           message: 'Too many requests. Please wait a moment before trying again.'
         },
         { status: 429 }
@@ -59,14 +59,14 @@ export async function POST(request: NextRequest) {
     // Enhanced validation
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Message is required and must be non-empty' },
+        { success: false, error: 'bad_request', message: 'Message is required and must be non-empty' },
         { status: 400 }
       )
     }
 
     if (message.length > 4000) {
       return NextResponse.json(
-        { success: false, error: 'Message too long (max 4000 characters)' },
+        { success: false, error: 'bad_request', message: 'Message too long (max 4000 characters)' },
         { status: 400 }
       )
     }
@@ -77,20 +77,14 @@ export async function POST(request: NextRequest) {
       description: agentMetadata?.description || 'Helpful AI assistant powered by 0G Compute Network'
     }
 
-    console.log('\n=== Enhanced 0G Chat API ===')
-    console.log('Message length:', message.length)
-    console.log('Agent:', defaultMetadata.name)
-    console.log('Provider preference:', providerAddress || 'auto-select')
-    console.log('Client IP:', clientIP)
-    console.log('Mode:', prepared ? 'non-custodial' : 'custodial')
+    console.log('\n[CHAT] HIT', { mode: prepared ? 'non-custodial' : 'custodial', clientIP })
 
     // Check if using non-custodial mode (prepared request)
     if (prepared === true && prep) {
-      console.log('[CHAT] HIT - Using non-custodial mode - proxying prepared request')
+      console.log('[PROXY] HIT - forwarding prepared request')
 
       // Forward to proxy endpoint
       const origin = new URL(request.url).origin
-      console.log('[PROXY] HIT - POST', `${origin}/api/compute/proxy`)
       const proxyResponse = await fetch(`${origin}/api/compute/proxy`, {
         method: 'POST',
         headers: {
@@ -99,7 +93,6 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify(prep)
       })
 
-      console.log('[PROXY] Response received from provider:', proxyResponse.status)
       const proxyResult = await proxyResponse.text()
       
       return new Response(proxyResult, {
@@ -112,15 +105,7 @@ export async function POST(request: NextRequest) {
 
     // Check if non-custodial mode is enforced
     const useNonCustodial = process.env.USE_NONCUSTODIAL_INFERENCE === 'true'
-    console.log('[CHAT] Environment check:', {
-      USE_NONCUSTODIAL_INFERENCE: process.env.USE_NONCUSTODIAL_INFERENCE,
-      useNonCustodial,
-      prepared,
-      hasPrep: !!prep
-    })
-    
     if (useNonCustodial && !prep) {
-      console.log('[CHAT] HIT - non-custodial mode required but no prepared request provided')
       return NextResponse.json(
         { 
           error: 'non_custodial_required',
@@ -139,15 +124,6 @@ export async function POST(request: NextRequest) {
       agentMetadata: defaultMetadata
     })
 
-    console.log('Chat processing result:', {
-      success: result.success,
-      isRealAI: result.isRealAI,
-      model: result.model,
-      provider: result.provider,
-      timing: result.metadata.timing
-    })
-
-    // Return enhanced response
     return NextResponse.json({
       success: result.success,
       response: result.response,
@@ -163,8 +139,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error: any) {
-    console.error('Enhanced Chat API error:', error)
-    
     // Enhanced error categorization
     let errorType = 'service_error'
     let statusCode = 500
@@ -185,13 +159,6 @@ export async function POST(request: NextRequest) {
         success: false, 
         error: errorType,
         message: error.message,
-        response: `I'm experiencing technical difficulties with the 0G Compute Network. Please try again in a moment.
-
-🔧 **Technical Details:**
-- Error: ${errorType}
-- Message: ${error.message}
-
-I'm still here to help you as soon as the connection is restored!`
       },
       { status: statusCode }
     )

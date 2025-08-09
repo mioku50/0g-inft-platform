@@ -1,3 +1,5 @@
+'use client'
+
 /**
  * Client-side broker for non-custodial 0G Compute operations
  * Uses injected wallet (MetaMask, WalletConnect, etc.) via ethers BrowserProvider
@@ -5,6 +7,7 @@
 
 // Only import ethers statically as it's safe for SSR
 import { BrowserProvider } from 'ethers'
+import { DBG } from '@/lib/utils/log'
 
 // Broker cache by wallet address
 const brokerCache = new Map<string, any>()
@@ -32,12 +35,12 @@ async function getEthers() {
 export async function getClientBroker() {
   // SSR guard
   if (typeof window === 'undefined') {
-    throw new Error('Client broker can only be used in browser environment')
+    throw new Error('Broker must run in browser')
   }
 
   try {
     // Check if we have an injected wallet
-    if (!window.ethereum) {
+    if (!(window as any).ethereum) {
       throw new Error('No injected wallet found. Please install MetaMask or connect a wallet.')
     }
 
@@ -48,7 +51,7 @@ export async function getClientBroker() {
     }
 
     // Create browser provider
-    const provider = new BrowserProvider(window.ethereum)
+    const provider = new BrowserProvider((window as any).ethereum)
     
     // Get the signer and current address
     const signer = await provider.getSigner()
@@ -60,12 +63,12 @@ export async function getClientBroker() {
       return cachedBroker
     }
 
-    // Dynamically import the broker module
-    const brokerModule = await import('@0glabs/0g-serving-broker')
-    const { createZGComputeNetworkBroker } = brokerModule
+    // Dynamically import the broker module (top-level package only)
+    const mod = await import('@0glabs/0g-serving-broker')
+    const { createZGComputeNetworkBroker } = mod as any
 
     // Create new broker instance
-    console.log('[ClientBroker] Creating new broker for address:', currentAddress)
+    DBG('[BROKER] Creating new broker for address:', currentAddress)
     const broker = await createZGComputeNetworkBroker(signer)
 
     // Cache the broker by address
@@ -73,6 +76,7 @@ export async function getClientBroker() {
 
     return broker
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('[ClientBroker] Failed to create broker:', error)
     throw new Error(`Failed to initialize client broker: ${(error as Error).message}`)
   }
@@ -99,11 +103,11 @@ export async function isClientBrokerAvailable(): Promise<boolean> {
   }
 
   try {
-    if (!window.ethereum) {
+    if (!(window as any).ethereum) {
       return false
     }
 
-    const provider = new BrowserProvider(window.ethereum)
+    const provider = new BrowserProvider((window as any).ethereum)
     const accounts = await provider.listAccounts()
     return accounts.length > 0
   } catch {
@@ -121,11 +125,11 @@ export async function getCurrentWalletAddress(): Promise<string | null> {
   }
 
   try {
-    if (!window.ethereum) {
+    if (!(window as any).ethereum) {
       return null
     }
 
-    const provider = new BrowserProvider(window.ethereum)
+    const provider = new BrowserProvider((window as any).ethereum)
     const signer = await provider.getSigner()
     return await signer.getAddress()
   } catch {
@@ -142,12 +146,13 @@ export async function getLedgerBalance(userAddress?: string): Promise<number> {
     const ledger = await broker.ledger.getLedger()
     const ethers = await getEthers()
     const balanceWei = ledger.balance
-    const balanceOG = ethers.formatEther(balanceWei)
+    const balanceOG = (ethers as any).formatEther(balanceWei)
     
-    console.log('[ClientBroker] Ledger balance:', balanceOG, 'OG')
+    DBG('[LEDGER] Ledger balance:', balanceOG, 'OG')
     return parseFloat(balanceOG) || 0
     
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('[ClientBroker] Failed to get ledger balance:', error)
     // Return 0 if ledger doesn't exist or other error
     return 0
@@ -161,35 +166,36 @@ export async function getLedgerBalance(userAddress?: string): Promise<number> {
 export async function ensureLedger(userAddress?: string): Promise<boolean> {
   try {
     const broker = await getClientBroker()
-    const address = userAddress || await getCurrentWalletAddress()
+    const address = userAddress || (await getCurrentWalletAddress())
     
     if (!address) {
       throw new Error('No wallet address available')
     }
 
-    console.log('[ClientBroker] Ensuring ledger for address:', address)
+    DBG('[LEDGER] Ensuring ledger for address:', address)
     
     // Check if ledger already exists
     try {
       const ledgerInfo = await broker.ledger.getLedger()
       if (ledgerInfo && ledgerInfo.balance) {
-        console.log('[ClientBroker] Ledger already exists')
+        DBG('[LEDGER] Ledger already exists')
         return true
       }
     } catch (error) {
       // Ledger doesn't exist, we'll create it
-      console.log('[ClientBroker] Ledger not found, creating new one')
+      DBG('[LEDGER] Ledger not found, creating new one')
     }
 
     // Create ledger with initial balance (0.01 OG)  
     const ethers = await getEthers()
-    console.log('[ClientBroker] Creating new ledger with 0.01 OG initial balance...')
-    await broker.ledger.addLedger(ethers.parseEther('0.01'))
+    DBG('[LEDGER] Creating new ledger with 0.01 OG initial balance...')
+    await broker.ledger.addLedger((ethers as any).parseEther('0.01'))
     
-    console.log('[ClientBroker] Ledger created successfully with balance: 0.01 OG')
+    DBG('[LEDGER] Ledger created successfully with balance: 0.01 OG')
     return true
     
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('[ClientBroker] Failed to ensure ledger:', error)
     throw new Error(`Failed to ensure ledger: ${(error as Error).message}`)
   }
@@ -211,7 +217,7 @@ export async function prepareComputeRequest(
   try {
     const broker = await getClientBroker()
     
-    console.log('[ClientBroker] Preparing compute request for provider:', providerAddress)
+    DBG('[CHAT] Preparing compute request for provider:', providerAddress)
     
     // Acknowledge provider if not already done (cached for 30 min)
     await acknowledgeProviderIfNeeded(broker, providerAddress)
@@ -227,7 +233,7 @@ export async function prepareComputeRequest(
     // Get request headers with billing information
     const headers = await broker.inference.getRequestHeaders(providerAddress, content)
     
-    console.log('[ClientBroker] Request prepared successfully')
+    DBG('[CHAT] Request prepared successfully')
     
     return {
       endpoint: `${endpoint}/chat/completions`,
@@ -243,6 +249,7 @@ export async function prepareComputeRequest(
     }
     
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('[ClientBroker] Failed to prepare request:', error)
     throw new Error(`Failed to prepare compute request: ${(error as Error).message}`)
   }
@@ -256,17 +263,18 @@ async function acknowledgeProviderIfNeeded(broker: any, providerAddress: string)
   const lastAck = acknowledgeCache.get(providerAddress)
   
   if (lastAck && (now - lastAck) < ACKNOWLEDGE_TTL) {
-    console.log('[ClientBroker] Provider already acknowledged (cached)')
+    DBG('[BROKER] Provider already acknowledged (cached)')
     return
   }
   
   try {
-    console.log('[ClientBroker] Acknowledging provider:', providerAddress)
+    DBG('[BROKER] Acknowledging provider:', providerAddress)
     await broker.inference.acknowledgeProviderSigner(providerAddress)
     acknowledgeCache.set(providerAddress, now)
-    console.log('[ClientBroker] Provider acknowledged successfully')
+    DBG('[BROKER] Provider acknowledged successfully')
   } catch (error) {
-    console.warn('[ClientBroker] Failed to acknowledge provider (may already be acknowledged):', error)
+    // eslint-disable-next-line no-console
+    console.warn('[ClientBroker] Failed to acknowledge provider (may already be acknowledged):', (error as any)?.message || error)
     // Don't throw here as provider might already be acknowledged
   }
 }

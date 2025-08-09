@@ -1,5 +1,5 @@
 /**
- * Health check route - Updated for non-custodial compute
+ * Health check route - Updated for non-custodial compute with SDK diagnostics
  */
 
 export const runtime = 'nodejs'
@@ -8,9 +8,8 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('=== Non-Custodial Compute Health Check ===')
-
-    const healthStatus = {
+    // Basic health info
+    const healthStatus: any = {
       timestamp: new Date().toISOString(),
       mode: 'non-custodial',
       compute: {
@@ -31,20 +30,28 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      health: 'healthy',
-      ...healthStatus
-    })
+    // SDK diagnostics (best-effort)
+    try {
+      const mod: any = await import('@0glabs/0g-serving-broker')
+      healthStatus.sdk = {
+        name: '@0glabs/0g-serving-broker',
+        version: undefined,
+        exports: Object.keys(mod || {}),
+      }
+    } catch (e) {
+      healthStatus.sdk = { error: 'unavailable' }
+    }
 
+    // Env flags
+    healthStatus.flags = {
+      USE_NONCUSTODIAL_INFERENCE: process.env.USE_NONCUSTODIAL_INFERENCE || 'false',
+      NEXT_PUBLIC_DEBUG: process.env.NEXT_PUBLIC_DEBUG || '0',
+    }
+
+    return NextResponse.json({ success: true, health: 'healthy', ...healthStatus })
   } catch (error: any) {
-    console.error('Health check error:', error)
     return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Health check failed',
-        details: error.message
-      },
+      { success: false, error: 'Health check failed', details: error.message },
       { status: 500 }
     )
   }

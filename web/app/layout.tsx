@@ -2,6 +2,7 @@
 'use client'
 
 import './globals.css'
+import '@/lib/utils/commonjs-polyfill' // Import CommonJS polyfill
 import type { Metadata } from 'next'
 import { Providers } from './providers'
 import Link from 'next/link'

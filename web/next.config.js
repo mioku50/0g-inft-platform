@@ -1,95 +1,35 @@
-// Загружаем переменные из .env файла
+// next.config.js
 require('dotenv').config({ path: '.env.local' })
 require('dotenv').config({ path: '.env' })
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: [
-    '@0glabs/0g-serving-broker',
-    '@0glabs/0g-serving-user-broker',
-  ],
-  // Явно передаем переменные в среду выполнения
-  env: {
-    OG_STORAGE_PRIVATE_KEY: process.env.OG_STORAGE_PRIVATE_KEY || '',
-    OG_COMPUTE_PRIVATE_KEY: process.env.OG_COMPUTE_PRIVATE_KEY || '',
-    USE_NONCUSTODIAL_INFERENCE: process.env.USE_NONCUSTODIAL_INFERENCE || 'false',
-    ENABLE_FINE_TUNE: process.env.ENABLE_FINE_TUNE || 'false',
-  },
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      // Браузер предпочитает ESM - настраиваем condition names для ESM разрешения
-      config.resolve.conditionNames = ['import', 'module', 'browser', 'default'];
-    } else {
-      // Для сервера используем стандартные условия
-      config.resolve.conditionNames = ['require', 'node', 'default'];
-    }
 
-    // Add polyfills for Node.js modules
+  // Нужен ТОЛЬКО брокер
+  transpilePackages: ['@0glabs/0g-serving-broker'],
+
+  webpack: (config, { isServer }) => {
+    // Никаких принудительных conditionNames — пусть Next сам выберет ESM для browser
+    // Минимальные fallbacks, чтобы не тянуть node-модули в браузер
     config.resolve.fallback = {
       ...config.resolve.fallback,
       fs: false,
       net: false,
       tls: false,
-      crypto: !isServer ? require.resolve('crypto-browserify') : false,
-      stream: !isServer ? require.resolve('stream-browserify') : false,
-      util: !isServer ? require.resolve('util/') : false,
-      buffer: !isServer ? require.resolve('buffer/') : false,
-      events: !isServer ? require.resolve('events/') : false,
-      process: !isServer ? require.resolve('process/browser') : false,
-      path: !isServer ? require.resolve('path-browserify') : false,
-      os: !isServer ? require.resolve('os-browserify/browser') : false,
       child_process: false,
       'fs/promises': false,
       readline: false,
     }
 
-    // Handle node: protocol imports for browser
-    if (!isServer) {
-      config.resolve.alias = {
-        ...config.resolve.alias,
-        'node:crypto': 'crypto-browserify',
-        'node:stream': 'stream-browserify',
-        'node:buffer': 'buffer',
-        'node:util': 'util',
-        'node:events': 'events',
-        'node:path': 'path-browserify',
-        'node:os': 'os-browserify/browser',
-        'node:process': 'process/browser',
-        'node:fs': false,
-        'node:child_process': false,
-        'node:fs/promises': false,
-        'node:readline': false,
-      }
-    }
-
-    // Игнорируем некоторые модули
-    config.externals.push({
-      'pino-pretty': 'commonjs pino-pretty',
-      lokijs: 'commonjs lokijs',
-      encoding: 'commonjs encoding',
-    })
-
-    // Provide глобальные переменные
-    const webpack = require('webpack')
-    config.plugins.push(
-      new webpack.ProvidePlugin({
-        Buffer: ['buffer', 'Buffer'],
-        process: 'process/browser',
-      })
-    )
-
     return config
   },
-  images: {
-    domains: ['api.dicebear.com', 'ipfs.io'],
-  },
+
+  images: { domains: ['api.dicebear.com', 'ipfs.io'] },
+
+  // ВАЖНО: убрать broker из serverComponentsExternalPackages — он не нужен на сервере
   experimental: {
-    serverComponentsExternalPackages: [
-      '@0glabs/0g-serving-broker',
-      '@0glabs/0g-serving-user-broker',
-      '@0glabs/0g-ts-sdk',
-    ],
+    serverComponentsExternalPackages: [],
   },
 }
 

@@ -9,7 +9,23 @@
 import { BrowserProvider } from 'ethers'
 import { BROKER_LOG, LEDGER_LOG } from '@/lib/utils/log'
 
-// Broker cache by wallet address
+// Broker module cache
+let BrokerMod: any | null = null
+
+async function loadSdk() {
+  if (BrokerMod) return BrokerMod
+  if (typeof window === 'undefined') throw new Error('Broker must run in browser')
+  try {
+    BrokerMod = await import('@0glabs/0g-serving-broker')
+    return BrokerMod
+  } catch (e: any) {
+    console.error('[ClientBroker] import failed', e)
+    // Пробрасываем оригинальное сообщение, иначе на UI виден только общий текст
+    throw new Error(`@0glabs/0g-serving-broker import failed: ${e?.message || String(e)}`)
+  }
+}
+
+// Broker cache by wallet address  
 const brokerCache = new Map<string, any>()
 let ethersModule: any = null
 
@@ -64,15 +80,7 @@ export async function getClientBroker() {
     }
 
     // Dynamically import the broker module with error handling
-    let mod: any;
-    try {
-      // Import the top-level package (should resolve to ESM in browser)
-      mod = await import('@0glabs/0g-serving-broker');
-    } catch (e) {
-      console.error('[ClientBroker] Failed to import SDK:', e);
-      throw new Error('Failed to import @0glabs/0g-serving-broker. Ensure the package is properly installed.');
-    }
-    const { createZGComputeNetworkBroker } = mod
+    const { createZGComputeNetworkBroker } = await loadSdk()
 
     // Create new broker instance
     BROKER_LOG('Creating new broker for address:', currentAddress)

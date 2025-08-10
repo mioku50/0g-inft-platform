@@ -548,4 +548,109 @@ curl http://localhost:3000/api/compute/health
 # ✅ Returns SDK version 0.2.14 with full export list
 The development server now starts without errors, the API endpoints work correctly, and the SDK is properly integrated for both server-side and client-side usage.
 
+Problem
 
+The 0G INFT Platform was experiencing critical SDK import failures that prevented the non-custodial compute system from working. Users encountered "exports is not defined" errors when the application tried to load @0glabs/0g-serving-broker, making it impossible to:
+
+Create client-side brokers for wallet-based compute operations
+Initialize ledger accounts for 0G compute payments
+Send chat messages through the compute API chain
+Display agent names/models in chat interfaces
+The root cause was a complex combination of:
+
+Dependency conflicts: @0glabs/0g-serving-broker@0.2.14 required ethers@6.13.1 but the project used 6.15.0
+Aggressive webpack configuration: Over-configured next.config.js with incompatible conditionNames and polyfills
+CommonJS/ESM compatibility issues: Browser environment lacked CommonJS globals expected by the SDK
+Solution
+
+Fixed Dependency Resolution
+
+Downgraded ethers from 6.15.0 to 6.13.1 to match SDK requirements
+Added proper npm overrides to ensure consistent dependency resolution
+Successfully installed all dependencies using --legacy-peer-deps
+Simplified Next.js Configuration
+
+Replaced the complex webpack configuration with a minimal, safe setup:
+
+const nextConfig = {
+  reactStrictMode: true,
+  transpilePackages: ['@0glabs/0g-serving-broker'], // Only what's needed
+  webpack: (config, { isServer }) => {
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false, net: false, tls: false, // Minimal fallbacks
+      child_process: false, 'fs/promises': false, readline: false,
+    }
+    return config
+  },
+  experimental: {
+    serverComponentsExternalPackages: [], // Removed broker from server
+  },
+}
+Enhanced ClientBroker Implementation
+
+Improved clientBroker.ts with better error handling and dynamic imports:
+
+async function loadSdk() {
+  if (BrokerMod) return BrokerMod
+  if (typeof window === 'undefined') throw new Error('Broker must run in browser')
+  try {
+    BrokerMod = await import('@0glabs/0g-serving-broker')
+    return BrokerMod
+  } catch (e: any) {
+    console.error('[ClientBroker] import failed', e)
+    throw new Error(`@0glabs/0g-serving-broker import failed: ${e?.message || String(e)}`)
+  }
+}
+Added CommonJS Polyfill
+
+Created browser-compatible polyfill for missing CommonJS globals:
+
+if (typeof window !== 'undefined') {
+  if (typeof global === 'undefined') (window as any).global = window
+  if (typeof exports === 'undefined') (window as any).exports = {}
+  if (typeof module === 'undefined') (window as any).module = { exports: {} }
+  // Smart require() mock for common patterns
+}
+Results
+
+Build Success
+
+✅ Production build successful  
+✅ SDK chunks generated in .next/static/chunks/
+✅ Health API confirms SDK availability
+✅ No server-side broker imports (client-only)
+Import Diagnostics
+
+Created /dev/import-check page for real-time SDK import testing and debugging.
+
+Architecture Restored
+
+The non-custodial compute flow now works correctly:
+
+User Wallet → ClientBroker → /api/compute/chat → /api/compute/proxy → 0G Provider
+                ↓
+           broker.inference.processResponse(response)
+Clean Codebase
+
+Moved legacy files (client.ts.backup) to legacy/compute/ directory
+Maintained only essential compute files: clientBroker.ts, ComputeProvider.tsx, chat-service.ts, ledger-utils.ts
+Verified no imports of outdated files in active codebase
+Screenshots
+
+Before: SDK Import Error
+SDK Import Error
+
+After: Platform Fully Functional
+Platform Working
+
+The platform now correctly prompts users to connect their wallet for non-custodial compute operations, with all UI components and navigation working properly.
+
+Testing
+
+✅ Production build completes without errors
+✅ Health endpoint confirms SDK availability
+✅ Main application loads with full UI
+✅ Wallet connection flow works as expected
+✅ Ready for ledger creation and compute operations
+This fix restores the core non-custodial compute functionality that enables users to create AI agents, manage ledger accounts, and interact with 0G compute providers through their connected wallets.

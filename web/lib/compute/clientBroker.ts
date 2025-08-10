@@ -7,7 +7,7 @@
 
 // Only import ethers statically as it's safe for SSR
 import { BrowserProvider } from 'ethers'
-import { DBG } from '@/lib/utils/log'
+import { BROKER_LOG, LEDGER_LOG } from '@/lib/utils/log'
 
 // Broker cache by wallet address
 const brokerCache = new Map<string, any>()
@@ -68,7 +68,7 @@ export async function getClientBroker() {
     const { createZGComputeNetworkBroker } = mod as any
 
     // Create new broker instance
-    DBG('[BROKER] Creating new broker for address:', currentAddress)
+    BROKER_LOG('Creating new broker for address:', currentAddress)
     const broker = await createZGComputeNetworkBroker(signer)
 
     // Cache the broker by address
@@ -148,7 +148,7 @@ export async function getLedgerBalance(userAddress?: string): Promise<number> {
     const balanceWei = ledger.balance
     const balanceOG = (ethers as any).formatEther(balanceWei)
     
-    DBG('[LEDGER] Ledger balance:', balanceOG, 'OG')
+    LEDGER_LOG('Ledger balance:', balanceOG, 'OG')
     return parseFloat(balanceOG) || 0
     
   } catch (error) {
@@ -172,26 +172,26 @@ export async function ensureLedger(userAddress?: string): Promise<boolean> {
       throw new Error('No wallet address available')
     }
 
-    DBG('[LEDGER] Ensuring ledger for address:', address)
+    LEDGER_LOG('Ensuring ledger for address:', address)
     
     // Check if ledger already exists
     try {
       const ledgerInfo = await broker.ledger.getLedger()
       if (ledgerInfo && ledgerInfo.balance) {
-        DBG('[LEDGER] Ledger already exists')
+        LEDGER_LOG('Ledger already exists')
         return true
       }
     } catch (error) {
       // Ledger doesn't exist, we'll create it
-      DBG('[LEDGER] Ledger not found, creating new one')
+      LEDGER_LOG('Ledger not found, creating new one')
     }
 
     // Create ledger with initial balance (0.01 OG)  
     const ethers = await getEthers()
-    DBG('[LEDGER] Creating new ledger with 0.01 OG initial balance...')
+    LEDGER_LOG('Creating new ledger with 0.01 OG initial balance...')
     await broker.ledger.addLedger((ethers as any).parseEther('0.01'))
     
-    DBG('[LEDGER] Ledger created successfully with balance: 0.01 OG')
+    LEDGER_LOG('Ledger created successfully with balance: 0.01 OG')
     return true
     
   } catch (error) {
@@ -217,7 +217,7 @@ export async function prepareComputeRequest(
   try {
     const broker = await getClientBroker()
     
-    DBG('[CHAT] Preparing compute request for provider:', providerAddress)
+    BROKER_LOG('Preparing compute request for provider:', providerAddress)
     
     // Acknowledge provider if not already done (cached for 30 min)
     await acknowledgeProviderIfNeeded(broker, providerAddress)
@@ -233,7 +233,7 @@ export async function prepareComputeRequest(
     // Get request headers with billing information
     const headers = await broker.inference.getRequestHeaders(providerAddress, content)
     
-    DBG('[CHAT] Request prepared successfully')
+    BROKER_LOG('Request prepared successfully')
     
     return {
       endpoint: `${endpoint}/chat/completions`,
@@ -263,15 +263,15 @@ async function acknowledgeProviderIfNeeded(broker: any, providerAddress: string)
   const lastAck = acknowledgeCache.get(providerAddress)
   
   if (lastAck && (now - lastAck) < ACKNOWLEDGE_TTL) {
-    DBG('[BROKER] Provider already acknowledged (cached)')
+    BROKER_LOG('Provider already acknowledged (cached)')
     return
   }
   
   try {
-    DBG('[BROKER] Acknowledging provider:', providerAddress)
+    BROKER_LOG('Acknowledging provider:', providerAddress)
     await broker.inference.acknowledgeProviderSigner(providerAddress)
     acknowledgeCache.set(providerAddress, now)
-    DBG('[BROKER] Provider acknowledged successfully')
+    BROKER_LOG('Provider acknowledged successfully')
   } catch (error) {
     // eslint-disable-next-line no-console
     console.warn('[ClientBroker] Failed to acknowledge provider (may already be acknowledged):', (error as any)?.message || error)

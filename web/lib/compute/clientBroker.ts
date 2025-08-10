@@ -64,8 +64,8 @@ export async function getClientBroker() {
     }
 
     // Dynamically import the broker module (top-level package only)
-    const mod = await import('@0glabs/0g-serving-broker')
-    const { createZGComputeNetworkBroker } = mod as any
+    const mod: any = await import('@0glabs/0g-serving-broker')
+    const { createZGComputeNetworkBroker } = mod
 
     // Create new broker instance
     BROKER_LOG('Creating new broker for address:', currentAddress)

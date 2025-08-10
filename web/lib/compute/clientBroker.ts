@@ -63,8 +63,15 @@ export async function getClientBroker() {
       return cachedBroker
     }
 
-    // Dynamically import the broker module (top-level package only)
-    const mod: any = await import('@0glabs/0g-serving-broker')
+    // Dynamically import the broker module with error handling
+    let mod: any;
+    try {
+      // Import the top-level package (should resolve to ESM in browser)
+      mod = await import('@0glabs/0g-serving-broker');
+    } catch (e) {
+      console.error('[ClientBroker] Failed to import SDK:', e);
+      throw new Error('Failed to import @0glabs/0g-serving-broker. Ensure the package is properly installed.');
+    }
     const { createZGComputeNetworkBroker } = mod
 
     // Create new broker instance

@@ -172,3 +172,5 @@ export function ComputeProvider({ children }: ComputeProviderProps) {
     </ComputeContext.Provider>
   )
 }
+
+export default ComputeProvider

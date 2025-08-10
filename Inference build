@@ -493,3 +493,59 @@ NEXT_PUBLIC_DEBUG=1 ./start-dev.sh
 Visit /agent/[id]/chat with a connected wallet to see the complete flow with tagged debug logs in the console.
 
 The chat functionality now provides a complete, secure, and debuggable non-custodial AI experience with proper error handling and user guidance.
+Copilot
+@Copilot Copilot AI commented 1 hour ago •
+Resolves the "Module not found: Can't resolve '@0glabs/0g-serving-broker'" error that was preventing the web application from building successfully.
+
+Problem
+
+The Next.js build was failing with a webpack module resolution error when trying to import the @0glabs/0g-serving-broker SDK in web/lib/compute/clientBroker.ts. This was preventing the application from compiling and running.
+
+Failed to compile.
+
+./lib/compute/clientBroker.ts
+Module not found: Can't resolve '@0glabs/0g-serving-broker'
+Root Cause
+
+The issue was caused by webpack's module resolution configuration not properly handling the SDK's dual CommonJS/ESM export structure. The SDK package exports both formats:
+
+./lib.commonjs/index.js for Node.js/server environments
+./lib.esm/index.mjs for browser/ESM environments
+Solution
+
+1. Fixed Webpack Configuration
+
+Updated next.config.js to properly configure webpack's condition names for different environments:
+
+Browser builds now use ['import', 'module', 'browser', 'default'] conditions to prefer ESM
+Server builds use ['require', 'node', 'default'] conditions for CommonJS compatibility
+2. Improved Error Handling
+
+Enhanced the dynamic import in clientBroker.ts with better error handling and messaging when the SDK fails to load.
+
+3. Fixed Dynamic Import
+
+Added missing default export to ComputeProvider.tsx to resolve TypeScript errors with Next.js dynamic imports.
+
+Verification
+
+The fix has been verified through multiple test scenarios:
+
+Build Success:
+
+npm run build
+# ✅ Completed successfully without module resolution errors
+Package Resolution:
+
+pnpm ls @0glabs/0g-serving-broker
+# → @0glabs/0g-serving-broker 0.2.14 ✅
+
+node -e "console.log(require.resolve('@0glabs/0g-serving-broker'))"
+# → /web/node_modules/@0glabs/0g-serving-broker/lib.commonjs/index.js ✅
+Runtime Integration:
+
+curl http://localhost:3000/api/compute/health
+# ✅ Returns SDK version 0.2.14 with full export list
+The development server now starts without errors, the API endpoints work correctly, and the SDK is properly integrated for both server-side and client-side usage.
+
+

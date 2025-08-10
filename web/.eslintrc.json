@@ -7,6 +7,14 @@
     "@typescript-eslint/no-explicit-any": "off",
     "@typescript-eslint/no-unused-vars": "off",
     "import/no-anonymous-default-export": "off",
-    "react-hooks/exhaustive-deps": "warn"
+    "react-hooks/exhaustive-deps": "warn",
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          "@0glabs/0g-serving-broker/*"
+        ]
+      }
+    ]
   }
 }

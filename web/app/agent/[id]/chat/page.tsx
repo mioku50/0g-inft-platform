@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { ArrowLeft, Send, Loader2 } from 'lucide-react'
 import { LedgerBalance } from '@/components/compute/LedgerBalance'
 import { useNonCustodialChat } from '@/hooks/useNonCustodialChat'
+import { isClientBrokerAvailable } from '@/lib/compute/clientBroker'
 
 interface Message {
   id: string
@@ -382,5 +383,19 @@ export default function ChatPage() {
         </Card>
       </div>
     </div>
+  )
+}
+
+function DevComputeDebug() {
+  const { address } = useAccount()
+  const [brokerOk, setBrokerOk] = useState<boolean>(false)
+  useEffect(() => {
+    (async () => {
+      try { setBrokerOk(await isClientBrokerAvailable()) } catch { setBrokerOk(false) }
+    })()
+  }, [])
+  if (process.env.NEXT_PUBLIC_DEBUG !== '1') return null
+  return (
+    <div className="text-xs text-purple-300/80 mt-2">[debug] wallet={address?.slice(0,6)} broker={String(brokerOk)}</div>
   )
 }

@@ -5,7 +5,10 @@ require('dotenv').config({ path: '.env' })
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@0glabs/0g-serving-broker"],
+  transpilePackages: [
+    '@0glabs/0g-serving-broker',
+    '@0glabs/0g-serving-user-broker',
+  ],
   // Явно передаем переменные в среду выполнения
   env: {
     OG_STORAGE_PRIVATE_KEY: process.env.OG_STORAGE_PRIVATE_KEY || '',
@@ -14,6 +17,16 @@ const nextConfig = {
     ENABLE_FINE_TUNE: process.env.ENABLE_FINE_TUNE || 'false',
   },
   webpack: (config, { isServer }) => {
+    // Prefer ESM in browser
+    if (!isServer) {
+      config.resolve.conditionNames = [
+        'import',
+        'module',
+        'browser',
+        'default',
+      ]
+    }
+
     // Add polyfills for Node.js modules
     config.resolve.fallback = {
       ...config.resolve.fallback,
@@ -73,9 +86,12 @@ const nextConfig = {
   images: {
     domains: ['api.dicebear.com', 'ipfs.io'],
   },
-  // Remove esmExternals as it causes issues with SDK imports
   experimental: {
-    serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk'],
+    serverComponentsExternalPackages: [
+      '@0glabs/0g-serving-broker',
+      '@0glabs/0g-serving-user-broker',
+      '@0glabs/0g-ts-sdk',
+    ],
   },
 }
 

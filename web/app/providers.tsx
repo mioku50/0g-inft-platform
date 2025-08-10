@@ -6,7 +6,13 @@ import { RainbowKitProvider, getDefaultWallets } from '@rainbow-me/rainbowkit'
 import { jsonRpcProvider } from 'wagmi/providers/jsonRpc'
 import '@rainbow-me/rainbowkit/styles.css'
 import { useEffect, useState } from 'react'
-import { ComputeProvider } from '@/lib/compute/ComputeProvider'
+import dynamic from 'next/dynamic'
+
+// Load ComputeProvider on client only
+const ComputeProvider = dynamic(
+  () => import('@/lib/compute/ComputeProvider'),
+  { ssr: false }
+)
 
 // Определяем 0G Network
 const ogNetwork = {

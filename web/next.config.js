@@ -17,15 +17,17 @@ const nextConfig = {
     ENABLE_FINE_TUNE: process.env.ENABLE_FINE_TUNE || 'false',
   },
   webpack: (config, { isServer }) => {
-    // Prefer ESM in browser
     if (!isServer) {
-      config.resolve.conditionNames = [
-        'import',
-        'module',
-        'browser',
-        'default',
-      ]
+      // Force ESM build for browser
+      const path = require('path')
+      const brokerDir = path.dirname(require.resolve('@0glabs/0g-serving-broker'))
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        '@0glabs/0g-serving-broker': path.join(brokerDir, 'lib.esm/index.mjs'),
+      }
     }
+    // Ensure ESM/browser resolution
+    config.resolve.conditionNames = ['import', 'module', 'browser', 'default']
 
     // Add polyfills for Node.js modules
     config.resolve.fallback = {

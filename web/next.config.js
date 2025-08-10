@@ -18,16 +18,12 @@ const nextConfig = {
   },
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      // Force ESM build for browser
-      const path = require('path')
-      const brokerDir = path.dirname(require.resolve('@0glabs/0g-serving-broker'))
-      config.resolve.alias = {
-        ...config.resolve.alias,
-        '@0glabs/0g-serving-broker': path.join(brokerDir, 'lib.esm/index.mjs'),
-      }
+      // Браузер предпочитает ESM - настраиваем condition names для ESM разрешения
+      config.resolve.conditionNames = ['import', 'module', 'browser', 'default'];
+    } else {
+      // Для сервера используем стандартные условия
+      config.resolve.conditionNames = ['require', 'node', 'default'];
     }
-    // Ensure ESM/browser resolution
-    config.resolve.conditionNames = ['import', 'module', 'browser', 'default']
 
     // Add polyfills for Node.js modules
     config.resolve.fallback = {

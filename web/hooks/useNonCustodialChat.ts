@@ -8,6 +8,7 @@
 import { useState, useCallback } from 'react'
 import { ensureLedger, prepareComputeRequest, isClientBrokerAvailable, getClientBroker } from '@/lib/compute/clientBroker'
 import { useToast } from '@/hooks/use-toast'
+import { CHAT_LOG } from '@/lib/utils/log'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -45,7 +46,7 @@ export function useNonCustodialChat() {
     setError(null)
 
     try {
-      console.log('[CHAT] start')
+      CHAT_LOG('start')
 
       // Check if wallet is available
       const walletAvailable = await isClientBrokerAvailable()
@@ -86,12 +87,12 @@ export function useNonCustodialChat() {
         temperature: 0.7
       }
 
-      console.log('[CHAT] prepared')
+      CHAT_LOG('prepared')
 
       // Prepare signed request
       const preparedRequest = await prepareComputeRequest(providerAddress, payload)
 
-      console.log('[CHAT] fetch')
+      CHAT_LOG('fetch')
 
       // Send to chat API with prepared request
       const response = await fetch('/api/compute/chat', {
@@ -139,9 +140,9 @@ export function useNonCustodialChat() {
         const broker = await getClientBroker()
         const completionId = responseData?.id || 'completion-' + Date.now()
         await broker.inference.processResponse(providerAddress, responseContent, completionId)
-        console.log('[CHAT] processResponse called successfully')
+        CHAT_LOG('processResponse called successfully')
       } catch (processError: any) {
-        console.warn('[CHAT] processResponse failed (non-critical):', processError.message)
+        CHAT_LOG('processResponse failed (non-critical):', processError.message)
         // Don't throw here as the chat response was successful
       }
 
@@ -174,7 +175,7 @@ export function useNonCustodialChat() {
       }
 
     } catch (err: any) {
-      console.error('[CHAT] Error in non-custodial chat:', err)
+      CHAT_LOG('Error in non-custodial chat:', err)
       setError(err.message)
       
       // Show appropriate error toast

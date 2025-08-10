@@ -16,21 +16,29 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { PROXY_LOG } from '@/lib/utils/log'
 
 // Allowlisted 0G compute provider hosts (updated for real 0G providers)
 const ALLOWED_HOSTS = [
-  // Official 0G provider hosts
+  // Official 0G provider hosts (from documentation and SDK examples)
+  'inference-testnet.0g.ai',
+  'compute-testnet.0g.ai',
+  'serving-testnet.0g.ai',
+  'api.0g.ai',
+  'testnet.0g.ai',
+  
+  // From 0G Compute TS Starter Kit documentation
   'provider-1.0g.ai',
   'provider-2.0g.ai', 
   'provider-3.0g.ai',
-  'compute-testnet.0g.ai',
-  'inference-testnet.0g.ai',
-  'serving-testnet.0g.ai',
   
-  // Known 0G provider endpoints (add more as discovered)
-  'api.0g.ai',
-  'testnet.0g.ai',
+  // Known provider IP addresses mentioned in docs (if needed)
   'galileo-testnet.0g.ai',
+  'evmrpc-testnet.0g.ai',
+  
+  // Additional domains that may be used by 0G providers
+  '0g.ai',
+  '0glabs.ai',
   
   // Local development (remove in production)
   'localhost',
@@ -158,8 +166,8 @@ export async function POST(req: NextRequest) {
     // Filter headers for security
     const filteredHeaders = filterHeaders(headers)
 
-    console.log(`[PROXY] HIT - ${method} ${endpoint}`)
-    console.log('[PROXY] Filtered headers:', Object.keys(filteredHeaders))
+    PROXY_LOG(`HIT - ${method} ${endpoint}`)
+    PROXY_LOG('Filtered headers:', Object.keys(filteredHeaders))
     
     // Forward the request to the 0G compute provider with timeout
     const controller = new AbortController()
@@ -181,7 +189,7 @@ export async function POST(req: NextRequest) {
       // Get response content type
       const contentType = response.headers.get('content-type') || 'application/json'
       
-      console.log(`[Compute Proxy] Response ${response.status} from ${new URL(endpoint).hostname}`)
+      PROXY_LOG(`Response ${response.status} from ${new URL(endpoint).hostname}`)
       
       // Handle streaming responses (SSE/text streaming)
       if (contentType.includes('text/plain') || contentType.includes('text/event-stream')) {
@@ -204,7 +212,7 @@ export async function POST(req: NextRequest) {
         const responseData = await response.json()
         
         // Log minimal metrics (no PII)
-        console.log(`[Compute Proxy] Metrics: provider=${new URL(endpoint).hostname}, status=${response.status}, model=${responseData.model || 'unknown'}, isRealAI=true`)
+        PROXY_LOG(`Metrics: provider=${new URL(endpoint).hostname}, status=${response.status}, model=${responseData.model || 'unknown'}, isRealAI=true`)
         
         return NextResponse.json(responseData, {
           status: response.status,
@@ -235,7 +243,7 @@ export async function POST(req: NextRequest) {
     
     // Log error metrics (no PII) - endpoint may not be available in error context
     const errorType = error.name === 'AbortError' ? 'timeout' : 'proxy_error'
-    console.log(`[Compute Proxy] Error metrics: type=${errorType}`)
+    PROXY_LOG(`Error metrics: type=${errorType}`)
     
     return NextResponse.json(
       { 

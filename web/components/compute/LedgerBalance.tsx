@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { Wallet, Plus, Loader2, AlertCircle, Zap, RefreshCw } from 'lucide-react'
 import { getClientBroker, ensureLedger, getCurrentWalletAddress, isClientBrokerAvailable } from '@/lib/compute/clientBroker'
+import { LEDGER_LOG } from '@/lib/utils/log'
 
 interface LedgerBalanceProps {
   className?: string
@@ -76,14 +77,14 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
           balance: balanceWei.toString(),
           balanceFormatted: parseFloat(balanceOG).toFixed(6)
         })
-        console.log('[LedgerBalance] Existing ledger found with balance:', balanceOG, 'OG')
+        LEDGER_LOG('Existing ledger found with balance:', balanceOG, 'OG')
         return
       } catch (ledgerError: any) {
-        console.log('[LedgerBalance] No existing ledger, will create one')
+        LEDGER_LOG('No existing ledger, will create one')
       }
 
       // Auto-create ledger if it doesn't exist
-      console.log('[LedgerBalance] Creating ledger with 0.01 OG')
+      LEDGER_LOG('Creating ledger with 0.01 OG')
       await broker.ledger.addLedger(ethers.parseEther('0.01'))
       
       // Get the new balance
@@ -96,9 +97,9 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
         balanceFormatted: parseFloat(balanceOG).toFixed(6)
       })
       
-      console.log('[LedgerBalance] Ledger created successfully with balance:', balanceOG, 'OG')
+      LEDGER_LOG('Ledger created successfully with balance:', balanceOG, 'OG')
     } catch (err: any) {
-      console.error('[LedgerBalance] Error loading ledger info:', err)
+      LEDGER_LOG('Error loading ledger info:', err)
       setError(`Failed to load ledger: ${err.message}`)
     } finally {
       setLoading(false)
@@ -120,7 +121,7 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
         throw new Error('Invalid amount')
       }
 
-      console.log(`[LedgerBalance] Depositing ${amount} OG to ledger...`)
+      LEDGER_LOG(`Depositing ${amount} OG to ledger...`)
       const broker = await getClientBroker()
       await broker.ledger.depositFund(ethers.parseEther(amount))
 
@@ -134,7 +135,7 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
       setShowTopUpDialog(false)
       setTopUpAmount('0.01')
     } catch (err: any) {
-      console.error('[LedgerBalance] Error topping up:', err)
+      LEDGER_LOG('Error topping up:', err)
       setError(`Top-up failed: ${err.message}`)
       toast({
         title: "Top-up Failed",

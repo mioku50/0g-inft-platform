@@ -12,6 +12,7 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { ChatService } from '@/lib/compute/chat-service'
+import { CHAT_LOG, PROXY_LOG } from '@/lib/utils/log'
 
 // Rate limiting per IP (simple in-memory implementation)
 const requestCounts = new Map<string, { count: number; resetTime: number }>()
@@ -77,11 +78,11 @@ export async function POST(request: NextRequest) {
       description: agentMetadata?.description || 'Helpful AI assistant powered by 0G Compute Network'
     }
 
-    console.log('\n[CHAT] HIT', { mode: prepared ? 'non-custodial' : 'custodial', clientIP })
+    CHAT_LOG('HIT', { mode: prepared ? 'non-custodial' : 'custodial', clientIP })
 
     // Check if using non-custodial mode (prepared request)
     if (prepared === true && prep) {
-      console.log('[PROXY] HIT - forwarding prepared request')
+      PROXY_LOG('HIT - forwarding prepared request')
 
       // Forward to proxy endpoint
       const origin = new URL(request.url).origin

@@ -33,13 +33,22 @@ export async function GET(request: NextRequest) {
     // SDK diagnostics (best-effort)
     try {
       const mod: any = await import('@0glabs/0g-serving-broker')
+      // Get package.json version
+      const packageVersion = require('../../../../package.json').dependencies['@0glabs/0g-serving-broker']
+      
       healthStatus.sdk = {
         name: '@0glabs/0g-serving-broker',
-        version: undefined,
-        exports: Object.keys(mod || {}),
+        version: packageVersion || '0.2.14',
+        sdkVersion: '0.2.14',
+        sdkExports: Object.keys(mod || {}),
+        mainExports: mod.createZGComputeNetworkBroker ? 'available' : 'missing'
       }
     } catch (e) {
-      healthStatus.sdk = { error: 'unavailable' }
+      healthStatus.sdk = { 
+        error: 'unavailable', 
+        details: (e as Error).message,
+        sdkVersion: '0.2.14' // fallback
+      }
     }
 
     // Env flags

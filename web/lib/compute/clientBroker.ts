@@ -9,38 +9,27 @@
 import { BrowserProvider } from 'ethers'
 import { BROKER_LOG, LEDGER_LOG } from '@/lib/utils/log'
 
-// HMR-safe SDK loading with global/module caching and parallel import protection
-let BrokerMod: any | null = null
-let loadingPromise: Promise<any> | null = null
+// HMR-safe SDK loading with global cache and parallel import protection
+let __sdkLoading: Promise<any> | null = null
 
 export async function loadSdk() {
-  if (typeof window === 'undefined') {
-    throw new Error('Broker must run in browser')
-  }
-
   const g = globalThis as any
-
-  // 1) global cache (survives HMR)
   if (g.__OG_BROKER_SDK__) return g.__OG_BROKER_SDK__
+  if (__sdkLoading) return __sdkLoading
 
-  // 2) module-level cache
-  if (BrokerMod) return BrokerMod
+  __sdkLoading = import('@0glabs/0g-serving-broker')
+    .then((mod) => {
+      if (!mod?.createZGComputeNetworkBroker) {
+        throw new Error('SDK loaded but missing createZGComputeNetworkBroker')
+      }
+      g.__OG_BROKER_SDK__ = mod
+      return mod
+    })
+    .finally(() => {
+      __sdkLoading = null
+    })
 
-  // 3) prevent parallel imports
-  if (!loadingPromise) {
-    loadingPromise = import('@0glabs/0g-serving-broker')
-      .then((mod) => {
-        g.__OG_BROKER_SDK__ = mod
-        BrokerMod = mod
-        return mod
-      })
-      .finally(() => {
-        // keep reference in BrokerMod/global, promise no longer needed
-        loadingPromise = null
-      })
-  }
-
-  return loadingPromise
+  return __sdkLoading
 }
 
 // Broker cache by wallet address  
@@ -68,8 +57,7 @@ async function getEthers() {
 export function clearSdkCache() {
   const g = globalThis as any
   delete g.__OG_BROKER_SDK__
-  BrokerMod = null
-  loadingPromise = null
+  __sdkLoading = null
   console.log('[ClientBroker] SDK cache cleared')
 }
 
@@ -109,7 +97,14 @@ export async function getClientBroker() {
     }
 
     // Dynamically import the broker module with error handling
-    const { createZGComputeNetworkBroker } = await loadSdk()
+    let mod: any
+    try {
+      mod = await loadSdk()
+    } catch (e) {
+      console.error('[SDK] import failed', e)
+      throw new Error('Failed to import @0glabs/0g-serving-broker')
+    }
+    const { createZGComputeNetworkBroker } = mod
 
     // Create new broker instance
     BROKER_LOG('Creating new broker for address:', currentAddress)

@@ -1,13 +1,14 @@
-'use client'
+"use client"
 import { useEffect, useState } from 'react'
+import { loadSdk } from '@/lib/compute/clientBroker'
 
 export default function ImportCheckPage() {
   const [out, setOut] = useState('pending...')
-  
+
   useEffect(() => {
-    (async () => {
+    ;(async () => {
       try {
-        const mod = await import('@0glabs/0g-serving-broker')
+        const mod = await loadSdk()
         setOut('OK: ' + Object.keys(mod).join(', '))
       } catch (e: any) {
         setOut('ERR: ' + (e?.message || String(e)))

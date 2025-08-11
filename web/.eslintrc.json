@@ -7,20 +7,31 @@
     "@typescript-eslint/no-explicit-any": "off",
     "@typescript-eslint/no-unused-vars": "off",
     "import/no-anonymous-default-export": "off",
-    "react-hooks/exhaustive-deps": "warn",
-    "no-restricted-imports": [
-      "error",
-      {
-        "paths": [
+    "react-hooks/exhaustive-deps": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["**/lib/compute/clientBroker.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": ["**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
           {
-            "name": "@0glabs/0g-serving-broker",
-            "message": "Импортируй SDK только через clientBroker.ts (loadSdk)!"
+            "paths": [
+              {
+                "name": "@0glabs/0g-serving-broker",
+                "message": "Импортируй SDK только через lib/compute/clientBroker.ts (loadSdk)!"
+              },
+              "@0glabs/0g-serving-broker/*"
+            ]
           }
-        ],
-        "patterns": [
-          "@0glabs/0g-serving-broker/*"
         ]
       }
-    ]
-  }
+    }
+  ]
 }

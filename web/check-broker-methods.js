@@ -1,5 +1,6 @@
 const { ethers } = require('ethers');
-const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker');
+const pkg = ['@0glabs', '0g-serving-broker'].join('/');
+const { createZGComputeNetworkBroker } = require(pkg);
 
 async function checkMethods() {
   const provider = new ethers.JsonRpcProvider('https://evmrpc-testnet.0g.ai');

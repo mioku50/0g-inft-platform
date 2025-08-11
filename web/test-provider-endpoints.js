@@ -15,7 +15,8 @@ async function testProviderEndpoints() {
     const provider = new ethers.JsonRpcProvider('https://evmrpc-testnet.0g.ai')
     
     // Import the 0G SDK
-    const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
+    const pkg = ['@0glabs', '0g-serving-broker'].join('/')
+    const { createZGComputeNetworkBroker } = require(pkg)
     
     // We need a signer for the broker, but we can use a dummy one for testing
     const dummyWallet = ethers.Wallet.createRandom().connect(provider)

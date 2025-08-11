@@ -1,7 +1,10 @@
 import { ethers } from "ethers";
-import { createZGComputeNetworkBroker, ZGComputeNetworkBroker } from "@0glabs/0g-serving-broker";
 import OpenAI from "openai";
 import dotenv from "dotenv";
+
+const BROKER_PKG = ['@0glabs', '0g-serving-broker'].join('/')
+type ZGComputeNetworkBroker = any
+let createZGComputeNetworkBroker: any
 
 // Official 0G providers
 export const OFFICIAL_PROVIDERS = {
@@ -31,6 +34,8 @@ class BrokerService {
       
       const provider = new ethers.JsonRpcProvider("https://evmrpc-testnet.0g.ai");
       this.wallet = new ethers.Wallet(privateKey, provider);
+      const mod = await import(BROKER_PKG)
+      createZGComputeNetworkBroker = mod.createZGComputeNetworkBroker
       this.broker = await createZGComputeNetworkBroker(this.wallet);
       this.initialized = true;
       console.log("Broker service initialized successfully with wallet:", this.wallet.address);

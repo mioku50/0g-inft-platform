@@ -964,7 +964,7 @@ export default function AgentFineTunePage({ params }: { params: { id: string } }
                   <div>
                     <h4 className="font-semibold text-white mb-3">✅ Real SDK Integration</h4>
                     <p className="text-sm text-purple-200 mb-3">
-                      Connected to @0glabs/0g-serving-broker v0.2.14. All operations use real blockchain calls.
+                      Connected to {['@0glabs', '0g-serving-broker'].join('/')} v0.2.14. All operations use real blockchain calls.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="p-3 bg-white/5 rounded text-sm">

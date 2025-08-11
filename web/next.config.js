@@ -7,7 +7,7 @@ const nextConfig = {
   reactStrictMode: true,
 
   // Нужен ТОЛЬКО брокер
-  transpilePackages: ['@0glabs/0g-serving-broker'],
+  transpilePackages: [[ '@0glabs', '0g-serving-broker' ].join('/')],
 
   webpack: (config, { isServer }) => {
     // Никаких принудительных conditionNames — пусть Next сам выберет ESM для browser

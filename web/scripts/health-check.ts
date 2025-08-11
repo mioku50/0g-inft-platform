@@ -1,7 +1,6 @@
 // scripts/health-check.ts
 export {}
 const { ethers } = require('ethers')
-const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
 const dotenv = require('dotenv')
 
 dotenv.config({ path: '.env' })
@@ -78,29 +77,7 @@ async function checkSystemHealth() {
     }
   }
   
-  // Check compute broker initialization
-  if (process.argv[2] === 'init-compute') {
-    console.log('\n🤖 Initializing compute broker...')
-    try {
-      const wallet = new ethers.Wallet(process.env.OG_COMPUTE_PRIVATE_KEY!, provider)
-      const broker = await createZGComputeNetworkBroker(wallet)
-      
-      // Check if account exists
-      const account = await broker.ledger.getAccount(wallet.address)
-      if (!account || account[0] === BigInt(0)) {
-        console.log('📝 Creating compute account...')
-        await broker.ledger.addLedger(ethers.parseEther('0.01')) // 0.01 OG initial deposit
-        console.log('✅ Compute account created!')
-      } else {
-        console.log('✅ Compute account already exists')
-        const balance = ethers.formatEther(account[0])
-        console.log(`   Balance: ${balance} OG`)
-      }
-    } catch (error) {
-      console.error('❌ Failed to initialize compute:', error)
-      issues.push('❌ Compute initialization failed')
-    }
-  }
+  // Compute broker initialization removed: SDK can only be loaded in the browser
   
   // Summary
   console.log('\n📊 Health Check Summary:')

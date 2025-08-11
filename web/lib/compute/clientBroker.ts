@@ -13,21 +13,31 @@ import { BROKER_LOG, LEDGER_LOG } from '@/lib/utils/log'
 let __sdkLoading: Promise<any> | null = null
 
 export async function loadSdk() {
-  const g = globalThis as any
+  const g = (globalThis as any)
   if (g.__OG_BROKER_SDK__) return g.__OG_BROKER_SDK__
   if (__sdkLoading) return __sdkLoading
 
-  __sdkLoading = import('@0glabs/0g-serving-broker')
-    .then((mod) => {
-      if (!mod?.createZGComputeNetworkBroker) {
-        throw new Error('SDK loaded but missing createZGComputeNetworkBroker')
-      }
+  __sdkLoading = (async () => {
+    try {
+      const mod = await import('@0glabs/0g-serving-broker')
+      if (!mod?.createZGComputeNetworkBroker) throw new Error('missing createZGComputeNetworkBroker')
       g.__OG_BROKER_SDK__ = mod
       return mod
-    })
-    .finally(() => {
-      __sdkLoading = null
-    })
+    } catch (e1) {
+      // dev-fallback: только в DEV
+      if (process.env.NODE_ENV !== 'production') {
+        try {
+          const mod2 = await import('@0glabs/0g-serving-broker/lib.esm/index.mjs')
+          g.__OG_BROKER_SDK__ = mod2
+          return mod2
+        } catch (e2) {
+          console.error('[SDK] both imports failed', { e1, e2 })
+          throw e1
+        }
+      }
+      throw e1
+    }
+  })().finally(() => { __sdkLoading = null })
 
   return __sdkLoading
 }
@@ -74,7 +84,7 @@ export async function getClientBroker() {
   try {
     // Check if we have an injected wallet
     if (!(window as any).ethereum) {
-      throw new Error('No injected wallet found. Please install MetaMask or connect a wallet.')
+      throw new Error('Подключите кошелёк')
     }
 
     // Get ethers module
@@ -105,6 +115,10 @@ export async function getClientBroker() {
       throw new Error('Failed to import @0glabs/0g-serving-broker')
     }
     const { createZGComputeNetworkBroker } = mod
+
+    // Log SDK version
+    const sdkVersion = (mod && (mod as any).version) || 'unknown'
+    BROKER_LOG(`[BROKER] SDK v${sdkVersion} loaded`)
 
     // Create new broker instance
     BROKER_LOG('Creating new broker for address:', currentAddress)

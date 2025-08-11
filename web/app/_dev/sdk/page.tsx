@@ -14,6 +14,9 @@ export default function DevSdkPage() {
     try {
       const { loadSdk } = await import('@/lib/compute/clientBroker')
       const mod = await loadSdk()
+      // diagnostics
+      // eslint-disable-next-line no-console
+      console.log('sdk.origin', (mod as any)?.__origin || 'top-level')
       setLoaded(true)
       setExportsList(Object.keys(mod || {}))
     } catch (e: any) {

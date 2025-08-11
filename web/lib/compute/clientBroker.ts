@@ -21,6 +21,7 @@ export async function loadSdk() {
     try {
       const mod = await import('@0glabs/0g-serving-broker')
       if (!mod?.createZGComputeNetworkBroker) throw new Error('missing createZGComputeNetworkBroker')
+      ;(mod as any).__origin = 'top-level'
       g.__OG_BROKER_SDK__ = mod
       return mod
     } catch (e1) {
@@ -28,6 +29,7 @@ export async function loadSdk() {
       if (process.env.NODE_ENV !== 'production') {
         try {
           const mod2 = await import('@0glabs/0g-serving-broker/lib.esm/index.mjs')
+          ;(mod2 as any).__origin = 'lib.esm (dev fallback)'
           g.__OG_BROKER_SDK__ = mod2
           return mod2
         } catch (e2) {

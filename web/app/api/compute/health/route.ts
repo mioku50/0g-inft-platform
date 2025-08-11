@@ -30,18 +30,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // SDK diagnostics (best-effort)
+    // SDK diagnostics (client-side only - no server import)
     try {
-      const mod: any = await import('@0glabs/0g-serving-broker')
-      // Get package.json version
+      // Get package.json version only
       const packageVersion = require('../../../../package.json').dependencies['@0glabs/0g-serving-broker']
       
       healthStatus.sdk = {
         name: '@0glabs/0g-serving-broker',
         version: packageVersion || '0.2.14',
         sdkVersion: '0.2.14',
-        sdkExports: Object.keys(mod || {}),
-        mainExports: mod.createZGComputeNetworkBroker ? 'available' : 'missing'
+        note: 'SDK can only be tested client-side'
       }
     } catch (e) {
       healthStatus.sdk = { 

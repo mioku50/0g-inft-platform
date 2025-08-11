@@ -11,6 +11,12 @@
     "no-restricted-imports": [
       "error",
       {
+        "paths": [
+          {
+            "name": "@0glabs/0g-serving-broker",
+            "message": "Импортируй SDK только через clientBroker.ts (loadSdk)!"
+          }
+        ],
         "patterns": [
           "@0glabs/0g-serving-broker/*"
         ]

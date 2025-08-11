@@ -158,15 +158,8 @@ export class ChatService {
         fineTuning: fineTuningContract
       })
       
-      // Dynamic import for server-side usage
-      const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
-      
-      const broker = await createZGComputeNetworkBroker(
-        wallet,
-        ledgerContract,
-        inferenceContract,
-        fineTuningContract
-      )
+      // Server-side broker is disabled in non-custodial mode
+      throw new Error('Server-side chat service is disabled. Use client-side chat with connected wallet.')
 
       // Enhanced balance check with rate limiting
       await this.ensureMinBalance(broker)

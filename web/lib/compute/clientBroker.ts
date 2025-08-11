@@ -9,19 +9,87 @@
 import { BrowserProvider } from 'ethers'
 import { BROKER_LOG, LEDGER_LOG } from '@/lib/utils/log'
 
-// Broker module cache
+// HMR-safe SDK loading with globalThis caching
 let BrokerMod: any | null = null
+let loadingPromise: Promise<any> | null = null
 
-async function loadSdk() {
-  if (BrokerMod) return BrokerMod
-  if (typeof window === 'undefined') throw new Error('Broker must run in browser')
-  try {
-    BrokerMod = await import('@0glabs/0g-serving-broker')
+export async function loadSdk() {
+  if (typeof window === 'undefined') {
+    throw new Error('Broker must run in browser')
+  }
+  
+  // If already loading, wait for that promise
+  if (loadingPromise) {
+    console.log('[loadSdk] Waiting for existing load operation...')
+    return await loadingPromise
+  }
+  
+  // Check globalThis cache first (survives HMR)
+  const g = globalThis as any
+  if (g.__OG_BROKER_SDK__) {
+    console.log('[loadSdk] Using cached SDK from globalThis')
+    return g.__OG_BROKER_SDK__
+  }
+  
+  // Check local cache
+  if (BrokerMod) {
+    console.log('[loadSdk] Using local cached SDK')
     return BrokerMod
-  } catch (e: any) {
-    console.error('[ClientBroker] import failed', e)
-    // Пробрасываем оригинальное сообщение, иначе на UI виден только общий текст
-    throw new Error(`@0glabs/0g-serving-broker import failed: ${e?.message || String(e)}`)
+  }
+
+  // Create loading promise to prevent concurrent imports
+  loadingPromise = (async () => {
+    try {
+      console.log('[loadSdk] Loading SDK for first time...')
+      
+      // Import only top-level package (not subpaths)
+      const mod = await import('@0glabs/0g-serving-broker')
+      
+      console.log('[loadSdk] SDK loaded successfully, caching...')
+      
+      // Cache in both globalThis and local variable
+      g.__OG_BROKER_SDK__ = mod
+      BrokerMod = mod
+      
+      return mod
+    } catch (e: any) {
+      console.error('[ClientBroker] import failed', e)
+      
+      // If we get a redefinition error, it means the module was already loaded
+      // In this case, let's try to find it in the module cache
+      if (e?.message?.includes('Cannot redefine property')) {
+        console.warn('[loadSdk] Redefinition error - checking if module is already available...')
+        
+        // Try to access the module that's already loaded
+        try {
+          // Check if the symbol exists in window (webpack might have exposed it)
+          const webpackModules = (window as any).__webpack_require__?.cache || {}
+          for (const moduleId in webpackModules) {
+            const moduleExports = webpackModules[moduleId]?.exports
+            if (moduleExports && typeof moduleExports.createZGComputeNetworkBroker === 'function') {
+              console.log('[loadSdk] Found SDK in webpack cache, using it')
+              g.__OG_BROKER_SDK__ = moduleExports
+              BrokerMod = moduleExports
+              return moduleExports
+            }
+          }
+        } catch (cacheErr) {
+          console.warn('[loadSdk] Could not access webpack cache:', cacheErr)
+        }
+        
+        // If webpack cache approach didn't work, the module might be corrupted
+        throw new Error('SDK module redefinition error - please refresh the page')
+      }
+      
+      throw new Error(`@0glabs/0g-serving-broker import failed: ${e?.message || String(e)}`)
+    }
+  })()
+  
+  try {
+    const result = await loadingPromise
+    return result
+  } finally {
+    loadingPromise = null
   }
 }
 
@@ -42,6 +110,17 @@ async function getEthers() {
     ethersModule = await import('ethers')
   }
   return ethersModule
+}
+
+/**
+ * Clear SDK cache (useful for debugging HMR issues)
+ */
+export function clearSdkCache() {
+  const g = globalThis as any
+  delete g.__OG_BROKER_SDK__
+  BrokerMod = null
+  loadingPromise = null
+  console.log('[ClientBroker] SDK cache cleared')
 }
 
 /**

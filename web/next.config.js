@@ -11,6 +11,12 @@ const nextConfig = {
 
   webpack: (config, { isServer }) => {
     // Никаких принудительных conditionNames — пусть Next сам выберет ESM для browser
+    const existingConditions = config.resolve?.conditionNames || []
+    if (!config.resolve) config.resolve = {}
+    config.resolve.conditionNames = Array.from(new Set([
+      ...existingConditions,
+      ...(isServer ? ['node'] : ['browser', 'import'])
+    ]))
     // Минимальные fallbacks, чтобы не тянуть node-модули в браузер
     config.resolve.fallback = {
       ...config.resolve.fallback,
@@ -28,6 +34,30 @@ const nextConfig = {
       'pino-pretty': false,
       encoding: false,
       lokijs: false,
+      // Fix Coinbase Wallet SDK build issues in Next/Webpack
+      preact: require.resolve('preact'),
+      'eventemitter3': require.resolve('eventemitter3/index.js'),
+      // Map nested preact used by coinbase wallet to our preact
+      '@coinbase/wallet-sdk/node_modules/preact': require.resolve('preact'),
+      '@coinbase/wallet-sdk/node_modules/preact/compat': require.resolve('preact/compat'),
+      '@coinbase/wallet-sdk/node_modules/preact/hooks': require.resolve('preact/hooks'),
+      '@coinbase/wallet-sdk': require.resolve('./lib/shims/coinbase-wallet-sdk.js'),
+      // WalletConnect legacy modal nested preact mapping
+      '@walletconnect/legacy-modal/node_modules/preact': require.resolve('preact'),
+      '@walletconnect/legacy-modal/node_modules/preact/compat': require.resolve('preact/compat'),
+      '@walletconnect/legacy-modal/node_modules/preact/hooks': require.resolve('preact/hooks'),
+      // Browser should not bundle ws
+      ws: false,
+      // Disable WalletConnect packages (not used)
+      '@walletconnect/core': false,
+      '@walletconnect/sign-client': false,
+      '@walletconnect/universal-provider': false,
+      '@walletconnect/ethereum-provider': false,
+      '@walletconnect/legacy-client': false,
+      '@walletconnect/legacy-provider': false,
+      '@walletconnect/legacy-modal': false,
+      '@walletconnect/randombytes': false,
+      '@walletconnect/utils': false,
     }
 
     // Client-side only: Add definitions for SDK compatibility

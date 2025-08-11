@@ -2,7 +2,8 @@
 'use client'
 
 import { WagmiConfig, createConfig, configureChains } from 'wagmi'
-import { RainbowKitProvider, getDefaultWallets } from '@rainbow-me/rainbowkit'
+import { RainbowKitProvider, connectorsForWallets } from '@rainbow-me/rainbowkit'
+import { metaMaskWallet } from '@rainbow-me/rainbowkit/wallets'
 import { jsonRpcProvider } from 'wagmi/providers/jsonRpc'
 import '@rainbow-me/rainbowkit/styles.css'
 import { useEffect, useState } from 'react'
@@ -52,11 +53,15 @@ const { chains, publicClient } = configureChains(
   ]
 )
 
-const { connectors } = getDefaultWallets({
-  appName: '0G INFT Platform',
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '98b3feb7c073aaa813638123c8fdb523',
-  chains,
-})
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '98b3feb7c073aaa813638123c8fdb523'
+const connectors = connectorsForWallets([
+  {
+    groupName: 'Recommended',
+    wallets: [
+      metaMaskWallet({ projectId, chains }),
+    ],
+  },
+])
 
 const wagmiConfig = createConfig({
   autoConnect: true,
@@ -69,6 +74,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    // тихо прогреваем chunk SDK после старта
+    import('@/lib/compute/clientBroker')
+      .then((m) => m.loadSdk?.())
+      .catch(() => {})
   }, [])
 
   if (!mounted) {

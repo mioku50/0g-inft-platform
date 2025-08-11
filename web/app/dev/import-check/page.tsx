@@ -66,6 +66,7 @@ export default function ImportCheck() {
       <p style={{fontSize: 12, color: '#666'}}>
         This page tests HMR-safe SDK loading via clientBroker.ts.
         Should work without "Cannot redefine property" errors.
+        [Updated to test HMR]
       </p>
     </div>
   )

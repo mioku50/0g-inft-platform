@@ -30,6 +30,36 @@ const nextConfig = {
       lokijs: false,
     }
 
+    // Client-side only: Add definitions for SDK compatibility
+    if (!isServer) {
+      // Add webpack DefinePlugin to handle SDK requirements
+      config.plugins = config.plugins || []
+      const webpack = require('webpack')
+      config.plugins.push(
+        new webpack.DefinePlugin({
+          'typeof require': '"undefined"',
+          'global.require': 'undefined'
+        }),
+        // Add ProvidePlugin to provide globals that SDK might expect
+        new webpack.ProvidePlugin({
+          Buffer: ['buffer', 'Buffer'],
+          process: 'process/browser',
+        })
+      )
+      
+      // Ensure proper fallbacks for core modules
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        buffer: require.resolve('buffer'),
+        process: require.resolve('process/browser'),
+        crypto: require.resolve('crypto-browserify'),
+        stream: require.resolve('stream-browserify'),
+        util: require.resolve('util'),
+        path: require.resolve('path-browserify'),
+        os: require.resolve('os-browserify'),
+      }
+    }
+
     return config
   },
 

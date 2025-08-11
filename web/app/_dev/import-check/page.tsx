@@ -1,13 +1,14 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { loadSdk } from '@/lib/compute/clientBroker'
 
 export default function ImportCheckPage() {
   const [out, setOut] = useState('pending...')
-  
+
   useEffect(() => {
     (async () => {
       try {
-        const mod = await import('@0glabs/0g-serving-broker')
+        const mod = await loadSdk()
         setOut('OK: ' + Object.keys(mod).join(', '))
       } catch (e: any) {
         setOut('ERR: ' + (e?.message || String(e)))
@@ -15,21 +16,23 @@ export default function ImportCheckPage() {
       }
     })()
   }, [])
-  
+
   return (
     <div style={{ padding: 16, fontFamily: 'monospace' }}>
       <h2>SDK Import Check</h2>
-      <pre style={{ 
-        background: '#f5f5f5', 
-        padding: 12, 
-        borderRadius: 4,
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word'
-      }}>
+      <pre
+        style={{
+          background: '#f5f5f5',
+          padding: 12,
+          borderRadius: 4,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
+      >
         {out}
       </pre>
       <p style={{ fontSize: 12, color: '#666', marginTop: 16 }}>
-        This page tests direct SDK import. Should show "OK: createZGComputeNetworkBroker, ..." without errors.
+        This page tests SDK loading via loadSdk(). Should show "OK: createZGComputeNetworkBroker, ..." without errors.
       </p>
     </div>
   )

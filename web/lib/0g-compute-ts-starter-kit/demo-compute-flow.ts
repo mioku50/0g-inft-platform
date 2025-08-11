@@ -1,9 +1,10 @@
 #!/usr/bin/env ts-node
 
 import { ethers } from "ethers";
-import { createZGComputeNetworkBroker } from "@0glabs/0g-serving-broker";
 import OpenAI from "openai";
 import dotenv from "dotenv";
+
+const BROKER_PKG = ['@0glabs', '0g-serving-broker'].join('/')
 
 // Load environment variables
 dotenv.config();
@@ -48,6 +49,7 @@ async function testComputeFlow() {
     console.log("-".repeat(30));
     
     console.log("⏳ Creating ZG Compute Network Broker...");
+    const { createZGComputeNetworkBroker } = await import(BROKER_PKG);
     const broker = await createZGComputeNetworkBroker(wallet);
     console.log("✅ Broker created successfully");
 

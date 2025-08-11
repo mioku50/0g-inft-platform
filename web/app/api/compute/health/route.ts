@@ -33,17 +33,18 @@ export async function GET(request: NextRequest) {
     // SDK diagnostics (client-side only - no server import)
     try {
       // Get package.json version only
-      const packageVersion = require('../../../../package.json').dependencies['@0glabs/0g-serving-broker']
-      
+      const SDK_PKG = ['@0glabs', '0g-serving-broker'].join('/')
+      const packageVersion = require('../../../../package.json').dependencies[SDK_PKG]
+
       healthStatus.sdk = {
-        name: '@0glabs/0g-serving-broker',
+        name: SDK_PKG,
         version: packageVersion || '0.2.14',
         sdkVersion: '0.2.14',
         note: 'SDK can only be tested client-side'
       }
     } catch (e) {
-      healthStatus.sdk = { 
-        error: 'unavailable', 
+      healthStatus.sdk = {
+        error: 'unavailable',
         details: (e as Error).message,
         sdkVersion: '0.2.14' // fallback
       }

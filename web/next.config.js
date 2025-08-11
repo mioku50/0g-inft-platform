@@ -22,6 +22,14 @@ const nextConfig = {
       readline: false,
     }
 
+    // Suppress dev warnings from pino-pretty and other unnecessary browser modules
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      'pino-pretty': false,
+      encoding: false,
+      lokijs: false,
+    }
+
     return config
   },
 

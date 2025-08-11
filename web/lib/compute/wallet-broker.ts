@@ -1,6 +1,5 @@
 // lib/compute/wallet-broker.ts
 import { ethers } from 'ethers'
-const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
 import { 
   getRpcUrl,
   getComputeLedgerContract, 
@@ -17,45 +16,10 @@ const EXPECTED_CHAIN_ID = 16601 // Galileo Testnet V3
 
 /**
  * Создает broker с кошельком пользователя (для фронтенда)
- * Требует подключенный кошелек через wagmi/ethers
+ * DISABLED: Use clientBroker.ts for non-custodial operations
  */
 export async function createUserWalletBroker(userSigner: ethers.Signer) {
-  // Validate environment
-  const validation = validateComputeEnvironment()
-  if (!validation.isValid) {
-    throw new Error(`Environment validation failed: ${validation.errors.join(', ')}`)
-  }
-
-  // Проверка подключения кошелька
-  if (!userSigner) {
-    throw new Error('User wallet not connected. Please connect your wallet first.')
-  }
-
-  // Получение адреса пользователя
-  const userAddress = await userSigner.getAddress()
-  console.log('[wallet-broker] Using user wallet:', userAddress)
-
-  // Проверка сети
-  const network = await userSigner.provider?.getNetwork()
-  if (network && Number(network.chainId) !== EXPECTED_CHAIN_ID) {
-    throw new Error(`Wrong network. Please switch to Galileo Testnet V3 (Chain ID: ${EXPECTED_CHAIN_ID})`)
-  }
-
-  // Проверка баланса
-  const balance = await userSigner.provider?.getBalance(userAddress)
-  if (balance && balance < ethers.parseEther('0.001')) {
-    console.warn('[wallet-broker] Low balance detected:', ethers.formatEther(balance), 'OG')
-  }
-
-  // Создание broker с кошельком пользователя
-  const broker = await createZGComputeNetworkBroker(userSigner, {
-    ledgerContract: getComputeLedgerContract(),
-    inferenceContract: getComputeInferenceContract(),
-    servingAddress: SERVING_ADDR
-  })
-
-  console.log('[wallet-broker] Broker created successfully with user wallet')
-  return broker
+  throw new Error('Server-side wallet broker is disabled. Use clientBroker.ts for non-custodial operations.')
 }
 
 /**

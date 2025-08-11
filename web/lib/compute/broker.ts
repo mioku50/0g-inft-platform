@@ -2,13 +2,6 @@ import { Wallet, JsonRpcProvider, ethers, Interface, Contract } from 'ethers'
 // This file is disabled in non-custodial mode
 // All compute operations should use client-side wallet (clientBroker.ts)
 
-export async function getBrokerOrThrow() {
-  throw new Error('Server-side broker is disabled in non-custodial mode. Use clientBroker.ts instead.')
-}
-
-export async function getBroker() {
-  return getBrokerOrThrow()
-}
 import { fromWei } from '@/lib/constants'
 import {
   getRpcUrl,

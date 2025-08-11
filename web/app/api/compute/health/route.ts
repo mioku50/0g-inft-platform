@@ -31,22 +31,10 @@ export async function GET(request: NextRequest) {
     }
 
     // SDK diagnostics (client-side only - no server import)
-    try {
-      // Get package.json version only
-      const packageVersion = require('../../../../package.json').dependencies['@0glabs/0g-serving-broker']
-      
-      healthStatus.sdk = {
-        name: '@0glabs/0g-serving-broker',
-        version: packageVersion || '0.2.14',
-        sdkVersion: '0.2.14',
-        note: 'SDK can only be tested client-side'
-      }
-    } catch (e) {
-      healthStatus.sdk = { 
-        error: 'unavailable', 
-        details: (e as Error).message,
-        sdkVersion: '0.2.14' // fallback
-      }
+    const sdkVersion = process.env.NEXT_PUBLIC_BROKER_SDK_VERSION || '0.2.14'
+    healthStatus.sdk = {
+      version: sdkVersion,
+      note: 'SDK can only be tested client-side'
     }
 
     // Env flags

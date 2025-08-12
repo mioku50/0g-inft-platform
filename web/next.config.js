@@ -10,13 +10,12 @@ const nextConfig = {
   transpilePackages: ['@0glabs/0g-serving-broker'],
 
   webpack: (config, { isServer }) => {
-    // Preserve existing conditions and append environment-specific ones
-    if (!config.resolve) config.resolve = {}
-    const existingConditions = config.resolve.conditionNames || ['import', 'require', 'default']
-    config.resolve.conditionNames = Array.from(new Set([
-      ...existingConditions,
-      ...(isServer ? ['node'] : ['browser'])
-    ]))
+    // Add conditionNames properly without overriding existing ones
+    const names = new Set(config.resolve?.conditionNames ?? [])
+    ;['import', 'module', 'browser', 'default'].forEach(n => names.add(n))
+    if (isServer) names.add('node'); else names.delete('node')
+    config.resolve = config.resolve || {}
+    config.resolve.conditionNames = Array.from(names)
     // Минимальные fallbacks, чтобы не тянуть node-модули в браузер
     config.resolve.fallback = {
       ...config.resolve.fallback,

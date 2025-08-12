@@ -20,18 +20,31 @@ const PLATFORM_PRIVATE_KEY = process.env.OG_STORAGE_PRIVATE_KEY;
 let platformSigner: any = null;
 let registryContract: any = null;
 
-if (!PLATFORM_PRIVATE_KEY) {
-  console.warn('⚠️  OG_STORAGE_PRIVATE_KEY not configured - Agent Model Registry operations will be limited');
-} else {
-  // Rate-limited provider and signer for platform operations
-  platformSigner = createRateLimitedWallet(PLATFORM_PRIVATE_KEY);
-  
-  // Rate-limited contract instance
-  registryContract = createRateLimitedContract(
-    AGENT_MODEL_REGISTRY_ADDRESS,
-    AgentModelRegistryABI,
-    platformSigner
-  );
+/**
+ * Lazy initialization of platform signer and contract
+ */
+async function initializePlatformResources() {
+  if (!PLATFORM_PRIVATE_KEY) {
+    throw new Error('OG_STORAGE_PRIVATE_KEY not configured - Agent Model Registry operations not available');
+  }
+
+  if (!platformSigner) {
+    // Rate-limited provider and signer for platform operations
+    platformSigner = await createRateLimitedWallet(PLATFORM_PRIVATE_KEY);
+    console.log('✅ Platform signer initialized');
+  }
+
+  if (!registryContract) {
+    // Rate-limited contract instance
+    registryContract = await createRateLimitedContract(
+      AGENT_MODEL_REGISTRY_ADDRESS,
+      AgentModelRegistryABI,
+      platformSigner
+    );
+    console.log('✅ Registry contract initialized');
+  }
+
+  return { platformSigner, registryContract };
 }
 
 /**
@@ -61,6 +74,12 @@ export class AgentModelRegistryService {
 
     try {
       console.log(`🔗 Attesting task creation for agent ${tokenId}...`);
+      
+      // Initialize platform resources
+      const { registryContract } = await initializePlatformResources();
+      
+      // Get ethers for validation
+      const ethers = await import('ethers');
       
       // Validate inputs
       if (!ethers.isAddress(userAddress)) {

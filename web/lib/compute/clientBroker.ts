@@ -19,14 +19,24 @@ export async function loadSdk() {
   if (g.__OG_BROKER_SDK__) return g.__OG_BROKER_SDK__
 
   if (!sdkPromise) {
-    sdkPromise = import('@0glabs/0g-serving-broker').then((mod: any) => {
-      if (!mod?.createZGComputeNetworkBroker) {
-        throw new Error('missing createZGComputeNetworkBroker')
+    sdkPromise = (async () => {
+      try {
+        BROKER_LOG('Importing @0glabs/0g-serving-broker')
+        const mod: any = await import('@0glabs/0g-serving-broker')
+        if (!mod?.createZGComputeNetworkBroker) {
+          throw new Error('missing createZGComputeNetworkBroker')
+        }
+        mod.__origin = 'top-level'
+        g.__OG_BROKER_SDK__ = mod
+        BROKER_LOG('SDK loaded')
+        return mod
+      } catch (e) {
+        sdkPromise = null
+        delete g.__OG_BROKER_SDK__
+        BROKER_LOG('Failed to import SDK', (e as Error)?.message)
+        throw e
       }
-      mod.__origin = 'top-level'
-      g.__OG_BROKER_SDK__ = mod
-      return mod
-    })
+    })()
   }
 
   return sdkPromise

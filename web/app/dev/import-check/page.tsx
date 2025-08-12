@@ -27,8 +27,8 @@ export default function ImportCheck() {
   
   const clearCache = async () => {
     try {
-      const { clearSdkCache } = await import('@/lib/compute/clientBroker')
-      clearSdkCache()
+      const { clearBrokerCache } = await import('@/lib/compute/clientBroker')
+      clearBrokerCache()
       setOut('Cache cleared. Click "Test Import" to reload.')
     } catch (e: any) {
       setOut(`Error clearing cache: ${e?.message}`)

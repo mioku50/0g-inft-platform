@@ -16,28 +16,40 @@ export async function loadSdk() {
   if (typeof window === 'undefined') throw new Error('Broker SDK must run in the browser')
 
   const g = globalThis as any
-  if (g.__OG_BROKER_SDK__) return g.__OG_BROKER_SDK__
-
-  if (!sdkPromise) {
-    sdkPromise = (async () => {
-      try {
-        BROKER_LOG('Importing @0glabs/0g-serving-broker')
-        const mod: any = await import('@0glabs/0g-serving-broker')
-        if (!mod?.createZGComputeNetworkBroker) {
-          throw new Error('missing createZGComputeNetworkBroker')
-        }
-        mod.__origin = 'top-level'
-        g.__OG_BROKER_SDK__ = mod
-        BROKER_LOG('SDK loaded')
-        return mod
-      } catch (e) {
-        sdkPromise = null
-        delete g.__OG_BROKER_SDK__
-        BROKER_LOG('Failed to import SDK', (e as Error)?.message)
-        throw e
-      }
-    })()
+  if (g.__OG_BROKER_SDK__) {
+    BROKER_LOG('SDK already loaded from cache')
+    return g.__OG_BROKER_SDK__
   }
+
+  if (sdkPromise) {
+    BROKER_LOG('SDK loading in progress, waiting...')
+    return sdkPromise
+  }
+
+  sdkPromise = (async () => {
+    try {
+      BROKER_LOG('Importing @0glabs/0g-serving-broker')
+      
+      // Use webpack magic comment to create a separate chunk
+      const mod: any = await import(/* webpackChunkName: "0g-serving-broker" */ '@0glabs/0g-serving-broker')
+      
+      if (!mod?.createZGComputeNetworkBroker) {
+        throw new Error('missing createZGComputeNetworkBroker')
+      }
+      
+      // Mark with origin and cache globally
+      mod.__origin = 'top-level'
+      g.__OG_BROKER_SDK__ = mod
+      
+      BROKER_LOG('SDK loaded successfully')
+      return mod
+    } catch (e) {
+      sdkPromise = null
+      delete g.__OG_BROKER_SDK__
+      BROKER_LOG('Failed to import SDK', (e as Error)?.message)
+      throw e
+    }
+  })()
 
   return sdkPromise
 }

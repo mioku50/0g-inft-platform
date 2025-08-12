@@ -77,10 +77,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    // тихо прогреваем chunk SDK после старта
-    import('@/lib/compute/clientBroker')
-      .then((m) => m.loadSdk?.())
-      .catch(() => {})
+    // Temporarily disable SDK pre-warming to avoid HMR conflicts 
+    // TODO: Re-enable once HMR issues are resolved
+    console.log('[Providers] SDK pre-warming disabled for HMR stability')
+    // import('@/lib/compute/clientBroker')
+    //   .then((m) => m.loadSdk?.())
+    //   .catch(() => {})
   }, [])
 
   if (!mounted) {

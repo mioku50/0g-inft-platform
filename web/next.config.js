@@ -58,6 +58,9 @@ const nextConfig = {
       '@walletconnect/randombytes': false,
       '@walletconnect/utils': false,
       ethers: require.resolve('./lib/shims/ethers'),
+      // Handle SWC helpers that cause issues
+      '@swc/helpers/_/_interop_require_default': false,
+      '@swc/helpers/_/_interop_require_wildcard': false,
     }
 
     // Client-side only: Add definitions for SDK compatibility
@@ -77,7 +80,7 @@ const nextConfig = {
         })
       )
       
-      // Ensure proper fallbacks for core modules
+      // Ensure proper fallbacks for core modules and SWC helpers
       config.resolve.fallback = {
         ...config.resolve.fallback,
         buffer: require.resolve('buffer'),
@@ -88,6 +91,9 @@ const nextConfig = {
         events: require.resolve('events'),
         path: require.resolve('path-browserify'),
         os: require.resolve('os-browserify'),
+        // Add SWC helpers fallbacks
+        '@swc/helpers/_/_interop_require_default': false,
+        '@swc/helpers/_/_interop_require_wildcard': false,
       }
     }
 

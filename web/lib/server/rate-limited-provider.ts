@@ -1,7 +1,6 @@
 // lib/server/rate-limited-provider.ts
 // Rate-limited RPC provider to prevent -32005 errors
 
-import { ethers } from 'ethers'
 import pLimit from 'p-limit'
 import { CHAIN_ID, getRpcUrl } from './compute-env'
 
@@ -16,7 +15,16 @@ const BATCH_DELAY_MS = 150         // Additional delay between batches
 const limit = pLimit(MAX_CONCURRENT_REQUESTS)
 
 // Provider singleton
-let providerInstance: ethers.JsonRpcProvider | null = null
+let providerInstance: any | null = null
+let ethersModule: any = null
+
+// Dynamic ethers import for server-side compatibility
+async function getEthers() {
+  if (!ethersModule) {
+    ethersModule = await import('ethers')
+  }
+  return ethersModule
+}
 
 // Request cache for short-term deduplication
 const requestCache = new Map<string, { data: any; timestamp: number }>()
@@ -147,7 +155,8 @@ function cleanCache() {
 /**
  * Create rate-limited provider instance
  */
-function createRateLimitedProvider(): ethers.JsonRpcProvider {
+async function createRateLimitedProvider(): Promise<any> {
+  const ethers = await getEthers()
   const provider = new ethers.JsonRpcProvider(getRpcUrl(), { 
     name: '0g', 
     chainId: CHAIN_ID 
@@ -168,9 +177,9 @@ function createRateLimitedProvider(): ethers.JsonRpcProvider {
 /**
  * Get singleton provider instance with rate limiting
  */
-export function getRateLimitedProvider(): ethers.JsonRpcProvider {
+export async function getRateLimitedProvider(): Promise<any> {
   if (!providerInstance) {
-    providerInstance = createRateLimitedProvider()
+    providerInstance = await createRateLimitedProvider()
     console.log('✅ Created rate-limited RPC provider with throttling')
   }
   return providerInstance
@@ -179,20 +188,22 @@ export function getRateLimitedProvider(): ethers.JsonRpcProvider {
 /**
  * Create a wallet with rate-limited provider
  */
-export function createRateLimitedWallet(privateKey: string): ethers.Wallet {
-  const provider = getRateLimitedProvider()
+export async function createRateLimitedWallet(privateKey: string): Promise<any> {
+  const ethers = await getEthers()
+  const provider = await getRateLimitedProvider()
   return new ethers.Wallet(privateKey, provider)
 }
 
 /**
  * Helper for contract interactions with rate limiting
  */
-export function createRateLimitedContract(
+export async function createRateLimitedContract(
   address: string, 
   abi: any, 
-  signerOrProvider?: ethers.Signer | ethers.Provider
-): ethers.Contract {
-  const providerToUse = signerOrProvider || getRateLimitedProvider()
+  signerOrProvider?: any
+): Promise<any> {
+  const ethers = await getEthers()
+  const providerToUse = signerOrProvider || await getRateLimitedProvider()
   return new ethers.Contract(address, abi, providerToUse)
 }
 

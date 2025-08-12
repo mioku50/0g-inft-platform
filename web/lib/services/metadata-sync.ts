@@ -1,6 +1,5 @@
 // web/lib/services/metadata-sync.ts
 import 'dotenv/config'
-import { ethers } from 'ethers'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import { uploadToStorage } from '@/lib/storage/client-server'
 import { getRateLimitedProvider } from '@/lib/server/rate-limited-provider'
@@ -51,7 +50,8 @@ export class MetadataSyncService {
     
     try {
       // Use rate-limited provider
-      const provider = getRateLimitedProvider()
+      const provider = await getRateLimitedProvider()
+      const ethers = await import('ethers')
       const contract = new ethers.Contract(
         process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS!,
         INFT_ABI,
@@ -127,7 +127,7 @@ export class MetadataSyncService {
     }
   }
 
-  private async processToken(contract: ethers.Contract, tokenId: any, index: number): Promise<{ fixed: boolean; exists?: boolean; downloaded?: boolean; fallback?: boolean; error?: string }> {
+  private async processToken(contract: any, tokenId: any, index: number): Promise<{ fixed: boolean; exists?: boolean; downloaded?: boolean; fallback?: boolean; error?: string }> {
     try {
       let metadataHash = await contract.getEncryptedURI(tokenId)
       

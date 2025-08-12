@@ -10,13 +10,12 @@ const nextConfig = {
   transpilePackages: ['@0glabs/0g-serving-broker'],
 
   webpack: (config, { isServer }) => {
-    // Preserve existing conditions and append environment-specific ones
-    if (!config.resolve) config.resolve = {}
-    const existingConditions = config.resolve.conditionNames || ['import', 'require', 'default']
-    config.resolve.conditionNames = Array.from(new Set([
-      ...existingConditions,
-      ...(isServer ? ['node'] : ['browser'])
-    ]))
+    // Add conditionNames properly without overriding existing ones
+    const names = new Set(config.resolve?.conditionNames ?? [])
+    ;['import', 'module', 'browser', 'default'].forEach(n => names.add(n))
+    if (isServer) names.add('node'); else names.delete('node')
+    config.resolve = config.resolve || {}
+    config.resolve.conditionNames = Array.from(names)
     // Минимальные fallbacks, чтобы не тянуть node-модули в браузер
     config.resolve.fallback = {
       ...config.resolve.fallback,
@@ -59,6 +58,9 @@ const nextConfig = {
       '@walletconnect/randombytes': false,
       '@walletconnect/utils': false,
       ethers: require.resolve('./lib/shims/ethers'),
+      // Handle SWC helpers that cause issues
+      '@swc/helpers/_/_interop_require_default': false,
+      '@swc/helpers/_/_interop_require_wildcard': false,
     }
 
     // Client-side only: Add definitions for SDK compatibility
@@ -78,7 +80,7 @@ const nextConfig = {
         })
       )
       
-      // Ensure proper fallbacks for core modules
+      // Ensure proper fallbacks for core modules and SWC helpers
       config.resolve.fallback = {
         ...config.resolve.fallback,
         buffer: require.resolve('buffer'),
@@ -89,6 +91,9 @@ const nextConfig = {
         events: require.resolve('events'),
         path: require.resolve('path-browserify'),
         os: require.resolve('os-browserify'),
+        // Add SWC helpers fallbacks
+        '@swc/helpers/_/_interop_require_default': false,
+        '@swc/helpers/_/_interop_require_wildcard': false,
       }
     }
 
@@ -100,6 +105,10 @@ const nextConfig = {
   // ВАЖНО: убрать broker из serverComponentsExternalPackages — он не нужен на сервере
   experimental: {
     serverComponentsExternalPackages: [],
+    // Try to handle SWC compilation issues
+    swcTraceProfiling: false,
+    // Force external handling of problematic packages
+    esmExternals: 'loose',
   },
 }
 

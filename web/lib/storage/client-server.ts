@@ -1,6 +1,5 @@
 import 'dotenv/config'
 import { ZgFile, Indexer } from '@0glabs/0g-ts-sdk'
-import { ethers } from 'ethers'
 import * as fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
@@ -34,6 +33,9 @@ const client = {
     if (!privateKey) throw new Error('OG_STORAGE_PRIVATE_KEY not configured')
     const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
     const evmRpc = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
+    
+    // Dynamic import for server compatibility
+    const ethers = await import('ethers')
     const provider = new ethers.JsonRpcProvider(evmRpc)
     const wallet = new ethers.Wallet(privateKey, provider)
 

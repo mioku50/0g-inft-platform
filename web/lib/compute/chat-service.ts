@@ -160,19 +160,6 @@ export class ChatService {
       
       // Server-side broker is disabled in non-custodial mode
       throw new Error('Server-side chat service is disabled. Use client-side chat with connected wallet.')
-
-      // Enhanced balance check with rate limiting
-      await this.ensureMinBalance(broker)
-
-      // Cache the broker with signer address
-      brokerCache = { 
-        broker, 
-        timestamp: now,
-        signerAddress: wallet.address
-      }
-      
-      console.log(`[ChatService] Broker cached for ${wallet.address}`)
-      return broker
     } catch (error: any) {
       console.error('[ChatService] Broker initialization failed:', error)
       throw new Error(`Failed to initialize broker: ${error.message}`)

@@ -10,12 +10,12 @@ const nextConfig = {
   transpilePackages: ['@0glabs/0g-serving-broker'],
 
   webpack: (config, { isServer }) => {
-    // Никаких принудительных conditionNames — пусть Next сам выберет ESM для browser
-    const existingConditions = config.resolve?.conditionNames || []
+    // Preserve existing conditions and append environment-specific ones
     if (!config.resolve) config.resolve = {}
+    const existingConditions = config.resolve.conditionNames || ['import', 'require', 'default']
     config.resolve.conditionNames = Array.from(new Set([
       ...existingConditions,
-      ...(isServer ? ['node'] : ['browser', 'import'])
+      ...(isServer ? ['node'] : ['browser'])
     ]))
     // Минимальные fallbacks, чтобы не тянуть node-модули в браузер
     config.resolve.fallback = {
@@ -58,6 +58,7 @@ const nextConfig = {
       '@walletconnect/legacy-modal': false,
       '@walletconnect/randombytes': false,
       '@walletconnect/utils': false,
+      ethers: require.resolve('./lib/shims/ethers'),
     }
 
     // Client-side only: Add definitions for SDK compatibility
@@ -85,6 +86,7 @@ const nextConfig = {
         crypto: require.resolve('crypto-browserify'),
         stream: require.resolve('stream-browserify'),
         util: require.resolve('util'),
+        events: require.resolve('events'),
         path: require.resolve('path-browserify'),
         os: require.resolve('os-browserify'),
       }

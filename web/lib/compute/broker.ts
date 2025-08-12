@@ -384,8 +384,8 @@ export async function addAccountWithDeposit(
       console.log('[fine] addAccount:start', { user, provider, value: value.toString() })
       
       // Get broker instance to use SDK methods
-      const broker = await getBroker()
-      if (!broker || !broker.fineTuning) {
+      const broker: any = await (getBroker() as any)
+      if (!broker?.fineTuning) {
         throw new Error('Broker not available or fineTuning module missing')
       }
       

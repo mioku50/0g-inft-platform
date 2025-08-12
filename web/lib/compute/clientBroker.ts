@@ -9,39 +9,27 @@
 import { BrowserProvider } from 'ethers'
 import { BROKER_LOG, LEDGER_LOG } from '@/lib/utils/log'
 
-// HMR-safe SDK loading with global cache and parallel import protection
-let __sdkLoading: Promise<any> | null = null
+// HMR-safe SDK loading with global cache
+let sdkPromise: Promise<any> | null = null
 
 export async function loadSdk() {
-  const g = (globalThis as any)
-  if (g.__OG_BROKER_SDK__) return g.__OG_BROKER_SDK__
-  if (__sdkLoading) return __sdkLoading
+  if (typeof window === 'undefined') {
+    throw new Error('Broker SDK must run in the browser')
+  }
 
-  __sdkLoading = (async () => {
-    try {
-      const mod = await import('@0glabs/0g-serving-broker')
+  const g = globalThis as any
+  if (g.__OG_BROKER_SDK__) return g.__OG_BROKER_SDK__
+
+  if (!sdkPromise) {
+    sdkPromise = import('@0glabs/0g-serving-broker').then((mod: any) => {
       if (!mod?.createZGComputeNetworkBroker) throw new Error('missing createZGComputeNetworkBroker')
       ;(mod as any).__origin = 'top-level'
       g.__OG_BROKER_SDK__ = mod
       return mod
-    } catch (e1) {
-      // dev-fallback: только в DEV
-      if (process.env.NODE_ENV !== 'production') {
-        try {
-          const mod2 = await import('@0glabs/0g-serving-broker/lib.esm/index.mjs')
-          ;(mod2 as any).__origin = 'lib.esm (dev fallback)'
-          g.__OG_BROKER_SDK__ = mod2
-          return mod2
-        } catch (e2) {
-          console.error('[SDK] both imports failed', { e1, e2 })
-          throw e1
-        }
-      }
-      throw e1
-    }
-  })().finally(() => { __sdkLoading = null })
+    })
+  }
 
-  return __sdkLoading
+  return sdkPromise
 }
 
 // Broker cache by wallet address  
@@ -69,7 +57,7 @@ async function getEthers() {
 export function clearSdkCache() {
   const g = globalThis as any
   delete g.__OG_BROKER_SDK__
-  __sdkLoading = null
+  sdkPromise = null
   console.log('[ClientBroker] SDK cache cleared')
 }
 

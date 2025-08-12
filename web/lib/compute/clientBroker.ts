@@ -9,21 +9,21 @@
 import { BrowserProvider } from 'ethers'
 import { BROKER_LOG, LEDGER_LOG } from '@/lib/utils/log'
 
-// HMR-safe SDK loading with global cache
+// HMR-safe loader
 let sdkPromise: Promise<any> | null = null
 
 export async function loadSdk() {
-  if (typeof window === 'undefined') {
-    throw new Error('Broker SDK must run in the browser')
-  }
+  if (typeof window === 'undefined') throw new Error('Broker SDK must run in the browser')
 
   const g = globalThis as any
   if (g.__OG_BROKER_SDK__) return g.__OG_BROKER_SDK__
 
   if (!sdkPromise) {
     sdkPromise = import('@0glabs/0g-serving-broker').then((mod: any) => {
-      if (!mod?.createZGComputeNetworkBroker) throw new Error('missing createZGComputeNetworkBroker')
-      ;(mod as any).__origin = 'top-level'
+      if (!mod?.createZGComputeNetworkBroker) {
+        throw new Error('missing createZGComputeNetworkBroker')
+      }
+      mod.__origin = 'top-level'
       g.__OG_BROKER_SDK__ = mod
       return mod
     })
@@ -52,16 +52,6 @@ async function getEthers() {
 }
 
 /**
- * Clear SDK cache (useful for debugging HMR issues)
- */
-export function clearSdkCache() {
-  const g = globalThis as any
-  delete g.__OG_BROKER_SDK__
-  sdkPromise = null
-  console.log('[ClientBroker] SDK cache cleared')
-}
-
-/**
  * Get or create a client-side broker instance using the injected wallet
  * This is a singleton per wallet address
  */
@@ -74,7 +64,7 @@ export async function getClientBroker() {
   try {
     // Check if we have an injected wallet
     if (!(window as any).ethereum) {
-      throw new Error('Подключите кошелёк')
+      throw new Error('No injected wallet')
     }
 
     // Get ethers module
@@ -85,7 +75,7 @@ export async function getClientBroker() {
 
     // Create browser provider
     const provider = new BrowserProvider((window as any).ethereum)
-    
+
     // Get the signer and current address
     const signer = await provider.getSigner()
     const currentAddress = await signer.getAddress()
@@ -96,14 +86,9 @@ export async function getClientBroker() {
       return cachedBroker
     }
 
-    // Dynamically import the broker module with error handling
-    let mod: any
-    try {
-      mod = await loadSdk()
-    } catch (e) {
-      console.error('[SDK] import failed', e)
-      throw new Error('Failed to import @0glabs/0g-serving-broker')
-    }
+    // Dynamically import the broker module
+    const mod: any = await loadSdk()
+    BROKER_LOG('SDK loaded, origin=', (mod as any).__origin)
     const { createZGComputeNetworkBroker } = mod
 
     // Log SDK version
@@ -128,12 +113,12 @@ export async function getClientBroker() {
 /**
  * Clear cached broker for specific address or all
  */
-export function clearBrokerCache(address?: string) {
-  if (address) {
-    brokerCache.delete(address)
-  } else {
-    brokerCache.clear()
-  }
+export function clearBrokerCache(addr?: string) {
+  if (addr) brokerCache.delete(addr)
+  else brokerCache.clear()
+  const g = globalThis as any
+  delete g.__OG_BROKER_SDK__
+  sdkPromise = null
 }
 
 /**

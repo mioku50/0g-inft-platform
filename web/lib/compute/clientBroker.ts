@@ -30,15 +30,23 @@ export async function loadSdk() {
     try {
       BROKER_LOG('Importing @0glabs/0g-serving-broker')
       
-      // Use webpack magic comment to create a separate chunk
+      // Try to work around the SWC helper issue by setting up polyfills first
+      if (typeof globalThis.process === 'undefined') {
+        (globalThis as any).process = { env: {} }
+      }
+      
+      // Use the main entry point and let webpack handle the proper loading
       const mod: any = await import(/* webpackChunkName: "0g-serving-broker" */ '@0glabs/0g-serving-broker')
       
       if (!mod?.createZGComputeNetworkBroker) {
-        throw new Error('missing createZGComputeNetworkBroker')
+        // Check if the function is nested or has a different name
+        BROKER_LOG('Available exports:', Object.keys(mod))
+        throw new Error('missing createZGComputeNetworkBroker in main export')
       }
       
       // Mark with origin and cache globally
       mod.__origin = 'top-level'
+      mod.version = '0.2.14' // Hardcode version since package.json might not be accessible
       g.__OG_BROKER_SDK__ = mod
       
       BROKER_LOG('SDK loaded successfully')
@@ -46,7 +54,22 @@ export async function loadSdk() {
     } catch (e) {
       sdkPromise = null
       delete g.__OG_BROKER_SDK__
-      BROKER_LOG('Failed to import SDK', (e as Error)?.message)
+      BROKER_LOG('Failed to import SDK', (e as Error)?.message, (e as Error)?.stack)
+      
+      // For now, return a mock object to allow development to continue
+      if (process.env.NODE_ENV === 'development') {
+        BROKER_LOG('Returning mock SDK for development')
+        const mockSdk = {
+          __origin: 'mock-for-development',
+          version: '0.2.14-mock',
+          createZGComputeNetworkBroker: () => {
+            throw new Error('Mock SDK - real functionality not available')
+          }
+        }
+        g.__OG_BROKER_SDK__ = mockSdk
+        return mockSdk
+      }
+      
       throw e
     }
   })()

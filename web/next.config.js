@@ -105,6 +105,10 @@ const nextConfig = {
   // ВАЖНО: убрать broker из serverComponentsExternalPackages — он не нужен на сервере
   experimental: {
     serverComponentsExternalPackages: [],
+    // Try to handle SWC compilation issues
+    swcTraceProfiling: false,
+    // Force external handling of problematic packages
+    esmExternals: 'loose',
   },
 }
 

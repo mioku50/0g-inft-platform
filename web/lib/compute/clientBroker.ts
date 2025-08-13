@@ -157,6 +157,7 @@ export async function getClientBroker() {
 
 /**
  * Clear cached broker for specific address or all
+ * Очистка кэша брокера на accountsChanged/chainChanged
  */
 export function clearBrokerCache(addr?: string) {
   if (addr) brokerCache.delete(addr)
@@ -167,7 +168,37 @@ export function clearBrokerCache(addr?: string) {
 }
 
 /**
+ * Setup wallet event listeners for automatic cache clearing
+ */
+export function setupWalletEventListeners() {
+  if (typeof window === 'undefined') return;
+  
+  const ethereum = (window as any).ethereum;
+  if (!ethereum) return;
+
+  // Remove existing listeners to avoid duplicates
+  ethereum.removeAllListeners('accountsChanged');
+  ethereum.removeAllListeners('chainChanged');
+  
+  // Add new listeners
+  ethereum.on('accountsChanged', (accounts: string[]) => {
+    console.log('[ClientBroker] Account changed, clearing cache');
+    clearBrokerCache();
+    acknowledgeCache.clear();
+  });
+  
+  ethereum.on('chainChanged', (chainId: string) => {
+    console.log('[ClientBroker] Chain changed, clearing cache');
+    clearBrokerCache();
+    acknowledgeCache.clear();
+  });
+}
+
+/**
  * Check if client broker is available (wallet connected)
+ * Переписать isClientBrokerAvailable():
+ * Если есть isConnected === true → true.
+ * В противном случае сделать прямой eip-1193 запрос
  */
 export async function isClientBrokerAvailable(): Promise<boolean> {
   // SSR guard
@@ -176,10 +207,22 @@ export async function isClientBrokerAvailable(): Promise<boolean> {
   }
 
   try {
+    // Check if ethereum provider exists
     if (!(window as any).ethereum) {
       return false
     }
 
+    // First try direct eip-1193 request for better compatibility
+    try {
+      const accounts = await (window as any).ethereum.request({ method: 'eth_accounts' });
+      if (Array.isArray(accounts) && accounts.length > 0) {
+        return true;
+      }
+    } catch (eipError) {
+      console.warn('[isClientBrokerAvailable] EIP-1193 request failed:', eipError);
+    }
+
+    // Fallback to ethers BrowserProvider method
     const provider = new BrowserProvider((window as any).ethereum)
     const accounts = await provider.listAccounts()
     return accounts.length > 0

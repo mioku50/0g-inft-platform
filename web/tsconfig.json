@@ -31,6 +31,7 @@
     "lib/0g-compute-ts-starter-kit/**/*",
     "lib/0g-serving-broker/**/*",
     "lib/0g-serving-contract/**/*",
-    "lib/0g-serving-user-broker/**/*"
+    "lib/0g-serving-user-broker/**/*",
+    "scripts/claude-debug.ts"
   ]
 }

@@ -16,6 +16,15 @@ const nextConfig = {
     if (isServer) names.add('node'); else names.delete('node')
     config.resolve = config.resolve || {}
     config.resolve.conditionNames = Array.from(names)
+    
+    // Жёстко экстернализовать 0g-ts-sdk на сервере
+    if (isServer) {
+      config.externals = config.externals || [];
+      config.externals.push({
+        '@0glabs/0g-ts-sdk': 'commonjs @0glabs/0g-ts-sdk',
+      });
+    }
+    
     // Минимальные fallbacks, чтобы не тянуть node-модули в браузер
     config.resolve.fallback = {
       ...config.resolve.fallback,
@@ -57,7 +66,8 @@ const nextConfig = {
       '@walletconnect/legacy-modal': false,
       '@walletconnect/randombytes': false,
       '@walletconnect/utils': false,
-      ethers: require.resolve('./lib/shims/ethers'),
+      // ВАЖНО: alias на 'ethers' → shim должен быть ТОЛЬКО в браузерной сборке!
+      ...(isServer ? {} : { ethers: require.resolve('./lib/shims/ethers') }),
       // Handle SWC helpers that cause issues
       '@swc/helpers/_/_interop_require_default': false,
       '@swc/helpers/_/_interop_require_wildcard': false,
@@ -102,9 +112,9 @@ const nextConfig = {
 
   images: { domains: ['api.dicebear.com', 'ipfs.io'] },
 
-  // ВАЖНО: убрать broker из serverComponentsExternalPackages — он не нужен на сервере
+  // ВАЖНО: изолировать @0glabs/0g-ts-sdk и ethers на сервере
   experimental: {
-    serverComponentsExternalPackages: [],
+    serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk', 'ethers'],
     // Try to handle SWC compilation issues
     swcTraceProfiling: false,
     // Force external handling of problematic packages

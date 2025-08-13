@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAccount } from 'wagmi'
+import { useAccount, useNetwork } from 'wagmi'
 import { ethers } from 'ethers'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,10 @@ interface LedgerInfo {
 
 export function LedgerBalance({ className = '', compact = false }: LedgerBalanceProps) {
   const { address, isConnected } = useAccount()
+  const { chain } = useNetwork()
   const { toast } = useToast()
+  
+  const chainId = chain?.id
   
   const [ledgerInfo, setLedgerInfo] = useState<LedgerInfo | null>(null)
   const [loading, setLoading] = useState(false)
@@ -44,7 +47,7 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
       setLedgerInfo(null)
       setError(null)
     }
-  }, [isClient, isConnected, address])
+  }, [isClient, isConnected, address, chainId]) // Include chainId in dependencies
 
   const loadLedgerInfo = async () => {
     if (typeof window === 'undefined') return
@@ -53,14 +56,26 @@ export function LedgerBalance({ className = '', compact = false }: LedgerBalance
     setError(null)
     
     try {
-      const walletAvailable = await isClientBrokerAvailable()
+      // Чёткая логика: не тот chain → «Wrong network», нет аккаунтов → «Connect wallet»
+      if (isConnected && chainId !== 16601) {
+        setError('Wrong network (switch to Galileo)')
+        return
+      }
+      
+      if (!isConnected) {
+        setError('Connect wallet')
+        return
+      }
+
+      // Use both wagmi state and fallback detection
+      const walletAvailable = isConnected || await isClientBrokerAvailable()
       if (!walletAvailable) {
         setError('Wallet not connected')
         return
       }
 
       const broker = await getClientBroker()
-      const currentAddress = await getCurrentWalletAddress()
+      const currentAddress = address || await getCurrentWalletAddress()
 
       if (!currentAddress) {
         setError('Unable to get wallet address')

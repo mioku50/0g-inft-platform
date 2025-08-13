@@ -1,5 +1,6 @@
 import 'dotenv/config'
-import { ZgFile, Indexer } from '@0glabs/0g-ts-sdk'
+// ❌ было: import { ZgFile, Indexer } from '@0glabs/0g-ts-sdk'
+// ✅ стало: динамические импорты
 import * as fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
@@ -16,6 +17,7 @@ const METADATA_DIR = path.join(__dirname, '..', '..', 'data', 'metadata')
 // Minimal wrapper mimicking the Storage SDK client
 const client = {
   async hashAndExists(buffer: Buffer) {
+    const { ZgFile } = await import('@0glabs/0g-ts-sdk');
     const tempDir = path.join(process.cwd(), 'tmp')
     await fs.mkdir(tempDir, { recursive: true })
     const tempFile = path.join(tempDir, `h-${Date.now()}`)
@@ -29,13 +31,14 @@ const client = {
     return { root, exists }
   },
   async upload(buffer: Buffer, fileName: string) {
+    const { ZgFile, Indexer } = await import('@0glabs/0g-ts-sdk');
     const privateKey = process.env.OG_STORAGE_PRIVATE_KEY
     if (!privateKey) throw new Error('OG_STORAGE_PRIVATE_KEY not configured')
     const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
     const evmRpc = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
     
-    // Dynamic import for server compatibility
-    const ethers = await import('ethers')
+    // Гарантия «настоящего» ethers в серверном коде
+    const ethers = await import('ethers');           // full v6
     const provider = new ethers.JsonRpcProvider(evmRpc)
     const wallet = new ethers.Wallet(privateKey, provider)
 
@@ -107,6 +110,7 @@ export async function downloadFromStorage(
     return fs.readFile(file, 'utf-8')
   }
 
+  const { Indexer } = await import('@0glabs/0g-ts-sdk');
   const indexerRpc = process.env.NEXT_PUBLIC_0G_STORAGE_URL || 'https://indexer-storage-testnet-turbo.0g.ai'
   const tempDir = path.join(process.cwd(), 'tmp')
   await fs.mkdir(tempDir, { recursive: true })

@@ -80,8 +80,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // SDK pre-warming with delayed execution to avoid HMR conflicts
     const warmupTimer = setTimeout(() => {
       import('@/lib/compute/clientBroker')
-        .then((m) => m.loadSdk?.())
-        .then(() => console.log('[Providers] SDK pre-warmed successfully'))
+        .then((m) => {
+          // Setup wallet event listeners for cache clearing
+          m.setupWalletEventListeners?.()
+          // Pre-warm SDK
+          return m.loadSdk?.()
+        })
+        .then(() => console.log('[Providers] SDK pre-warmed and wallet listeners setup successfully'))
         .catch((e) => console.log('[Providers] SDK pre-warm failed:', e.message))
     }, 1000) // 1 second delay to let the app settle
 

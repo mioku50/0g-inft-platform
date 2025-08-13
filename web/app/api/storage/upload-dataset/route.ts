@@ -1,8 +1,8 @@
 export const runtime = 'nodejs'
 
 import { hashAndExists } from '@/lib/storage/client-server'
-import { ZgFile, Indexer } from '@0glabs/0g-ts-sdk'
-import { ethers } from 'ethers'
+// ❌ было: import { ZgFile, Indexer } from '@0glabs/0g-ts-sdk'
+// ✅ стало: динамические импорты
 import * as fs from 'fs/promises'
 import path from 'path'
 import { watchForIndexing } from '@/lib/storage/indexing-watcher'
@@ -138,6 +138,7 @@ async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
   let alreadyExists = false
   
   try {
+    const { ZgFile } = await import('@0glabs/0g-ts-sdk');
     const zgFile = await ZgFile.fromFilePath(tempFile)
     const [tree] = await zgFile.merkleTree()
     networkRoot = tree!.rootHash() as string
@@ -179,10 +180,13 @@ async function uploadToNetworkStorage(file: File): Promise<UploadResult> {
     }
     
     // Step 3: Upload to Turbo indexer with retry logic
+    // не тянуть shim
+    const ethers = await import('ethers');           // full v6
     const provider = new ethers.JsonRpcProvider(evmRpc)
     const wallet = new ethers.Wallet(privateKey, provider)
     
     // Create Turbo indexer instance (no fallback to Standard per requirements)
+    const { Indexer } = await import('@0glabs/0g-ts-sdk');
     const turboIndexer = new Indexer(turboIndexerRpc)
     
     console.log('[upload-dataset] Uploading to Turbo indexer with retry logic...')

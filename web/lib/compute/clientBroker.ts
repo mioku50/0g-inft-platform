@@ -9,6 +9,13 @@
 import { BrowserProvider } from 'ethers'
 import { BROKER_LOG, LEDGER_LOG } from '@/lib/utils/log'
 
+// Validate that BrowserProvider is properly available
+if (typeof window !== 'undefined' && typeof (BrowserProvider as any) !== 'function') {
+  // Show what exactly arrived in the browser
+  console.error('[BROKER] Bad ethers in browser: BrowserProvider =', BrowserProvider);
+  throw new Error('Ethers BrowserProvider not available. Remove ethers shim/alias from client build.');
+}
+
 // HMR-safe loader
 let sdkPromise: Promise<any> | null = null
 
@@ -118,6 +125,12 @@ export async function getClientBroker() {
       throw new Error('Failed to load ethers module')
     }
 
+    // Additional runtime check for BrowserProvider before use
+    if (typeof (BrowserProvider as any) !== 'function') {
+      console.error('[BROKER] Bad ethers in browser: BrowserProvider =', BrowserProvider);
+      throw new Error('Ethers BrowserProvider not available. Remove ethers shim/alias from client build.');
+    }
+
     // Create browser provider
     const provider = new BrowserProvider((window as any).ethereum)
 
@@ -196,9 +209,7 @@ export function setupWalletEventListeners() {
 
 /**
  * Check if client broker is available (wallet connected)
- * Переписать isClientBrokerAvailable():
- * Если есть isConnected === true → true.
- * В противном случае сделать прямой eip-1193 запрос
+ * Uses wagmi.useAccount().isConnected if available, fallback to direct EIP-1193
  */
 export async function isClientBrokerAvailable(): Promise<boolean> {
   // SSR guard
@@ -212,10 +223,11 @@ export async function isClientBrokerAvailable(): Promise<boolean> {
       return false
     }
 
-    // First try direct eip-1193 request for better compatibility
+    // Direct EIP-1193 request for better compatibility
     try {
       const accounts = await (window as any).ethereum.request({ method: 'eth_accounts' });
-      if (Array.isArray(accounts) && accounts.length > 0) {
+      const hasAccounts = Array.isArray(accounts) && accounts.length > 0;
+      if (hasAccounts) {
         return true;
       }
     } catch (eipError) {
@@ -226,7 +238,8 @@ export async function isClientBrokerAvailable(): Promise<boolean> {
     const provider = new BrowserProvider((window as any).ethereum)
     const accounts = await provider.listAccounts()
     return accounts.length > 0
-  } catch {
+  } catch (error) {
+    console.warn('[isClientBrokerAvailable] Failed to check wallet:', error);
     return false
   }
 }

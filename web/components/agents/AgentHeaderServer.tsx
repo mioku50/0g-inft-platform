@@ -15,17 +15,23 @@ interface AgentHeaderServerProps {
 }
 
 export function AgentHeaderServer({ meta, tokenId }: AgentHeaderServerProps) {
+  // Safe fallbacks for all properties
+  const name = meta?.name || `Agent #${tokenId}`;
+  const model = meta?.model || 'AI Assistant';
+  const description = meta?.description;
+  const error = meta?.error;
+  
   return (
     <div className="text-center">
       <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-        {meta.name || `Agent #${tokenId}`}
+        {name}
       </h1>
-      <p className="text-white/60 text-sm">{meta.model || 'AI Assistant'}</p>
-      {meta.description && (
-        <p className="text-white/40 text-xs mt-1">{meta.description}</p>
+      <p className="text-white/60 text-sm">{model}</p>
+      {description && (
+        <p className="text-white/40 text-xs mt-1">{description}</p>
       )}
-      {meta.error && (
-        <p className="text-red-400/60 text-xs mt-1">⚠️ {meta.error}</p>
+      {error && (
+        <p className="text-red-400/60 text-xs mt-1">⚠️ {error}</p>
       )}
     </div>
   )
@@ -33,8 +39,7 @@ export function AgentHeaderServer({ meta, tokenId }: AgentHeaderServerProps) {
 
 /**
  * Server-side function to get agent metadata
- * Разнести на два компонента:
- * AgentHeaderServer (server component): делает await fetch/DB по agentId, отдаёт name/model/avatar.
+ * Always returns a safe fallback to prevent UI crashes
  */
 export async function getAgentMeta(tokenId: string): Promise<AgentMeta> {
   try {
@@ -53,11 +58,14 @@ export async function getAgentMeta(tokenId: string): Promise<AgentMeta> {
       const data = await response.json()
       const metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
       
-      return {
-        name: metadata.name || `Agent #${tokenId}`,
-        model: metadata.model || 'AI Assistant',
-        description: metadata.description,
-        avatar: metadata.avatar
+      // Safe property access with fallbacks
+      if (metadata && typeof metadata === 'object') {
+        return {
+          name: metadata.name || `Agent #${tokenId}`,
+          model: metadata.model || 'AI Assistant',
+          description: metadata.description || undefined,
+          avatar: metadata.avatar || undefined
+        }
       }
     }
     
@@ -65,11 +73,14 @@ export async function getAgentMeta(tokenId: string): Promise<AgentMeta> {
     const metadataContent = await downloadFromStorage(`local://${tokenId}`)
     if (metadataContent && typeof metadataContent === 'string') {
       const metadata = JSON.parse(metadataContent)
-      return {
-        name: metadata.name || `Agent #${tokenId}`,
-        model: metadata.model || 'AI Assistant', 
-        description: metadata.description,
-        avatar: metadata.avatar
+      // Safe property access with fallbacks
+      if (metadata && typeof metadata === 'object') {
+        return {
+          name: metadata.name || `Agent #${tokenId}`,
+          model: metadata.model || 'AI Assistant', 
+          description: metadata.description || undefined,
+          avatar: metadata.avatar || undefined
+        }
       }
     }
     
@@ -84,7 +95,7 @@ export async function getAgentMeta(tokenId: string): Promise<AgentMeta> {
   } catch (error) {
     console.warn(`[getAgentMeta] Failed to load metadata for agent ${tokenId}:`, error)
     
-    // Скелетон/заглушка если метадата не найдена, но не «Unknown Agent» без причины
+    // Always return safe fallback - never throw or return undefined
     return {
       name: `Agent #${tokenId}`,
       model: 'AI Assistant',

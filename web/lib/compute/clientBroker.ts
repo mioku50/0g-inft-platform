@@ -1,183 +1,134 @@
 'use client'
 
-/**
- * Client-side broker for non-custodial 0G Compute operations
- * Uses injected wallet (MetaMask, WalletConnect, etc.) via ethers BrowserProvider
- */
-
-// Only import ethers statically as it's safe for SSR
 import { BrowserProvider } from 'ethers'
-import { BROKER_LOG, LEDGER_LOG } from '@/lib/utils/log'
+import { BROKER_LOG } from '@/lib/utils/log'
 
-// Validate that BrowserProvider is properly available
-if (typeof window !== 'undefined' && typeof (BrowserProvider as any) !== 'function') {
-  // Show what exactly arrived in the browser
-  console.error('[BROKER] Bad ethers in browser: BrowserProvider =', BrowserProvider);
-  throw new Error('Ethers BrowserProvider not available. Remove ethers shim/alias from client build.');
-}
-
-// HMR-safe loader
+const G = globalThis as any
 let sdkPromise: Promise<any> | null = null
 
 export async function loadSdk() {
-  if (typeof window === 'undefined') throw new Error('Broker SDK must run in the browser')
-
-  const g = globalThis as any
-  if (g.__OG_BROKER_SDK__) {
-    BROKER_LOG('SDK already loaded from cache')
-    return g.__OG_BROKER_SDK__
+  if (typeof window === 'undefined') {
+    throw new Error('Broker SDK must run in the browser')
   }
+  if (G.__OG_BROKER_SDK__) return G.__OG_BROKER_SDK__
+  if (sdkPromise) return sdkPromise
 
-  if (sdkPromise) {
-    BROKER_LOG('SDK loading in progress, waiting...')
-    return sdkPromise
-  }
-
-  sdkPromise = (async () => {
-    try {
-      BROKER_LOG('Importing @0glabs/0g-serving-broker')
-      
-      // Try to work around the SWC helper issue by setting up polyfills first
-      if (typeof globalThis.process === 'undefined') {
-        (globalThis as any).process = { env: {} }
-      }
-      
-      // Use the main entry point and let webpack handle the proper loading
-      const mod: any = await import(/* webpackChunkName: "0g-serving-broker" */ '@0glabs/0g-serving-broker')
-      
-      if (!mod?.createZGComputeNetworkBroker) {
-        // Check if the function is nested or has a different name
-        BROKER_LOG('Available exports:', Object.keys(mod))
-        throw new Error('missing createZGComputeNetworkBroker in main export')
-      }
-      
-      // Mark with origin and cache globally
-      mod.__origin = 'top-level'
-      mod.version = '0.2.14' // Hardcode version since package.json might not be accessible
-      g.__OG_BROKER_SDK__ = mod
-      
-      BROKER_LOG('SDK loaded successfully')
-      return mod
-    } catch (e) {
-      sdkPromise = null
-      delete g.__OG_BROKER_SDK__
-      BROKER_LOG('Failed to import SDK', (e as Error)?.message, (e as Error)?.stack)
-      
-      // For now, return a mock object to allow development to continue
-      if (process.env.NODE_ENV === 'development') {
-        BROKER_LOG('Returning mock SDK for development')
-        const mockSdk = {
-          __origin: 'mock-for-development',
-          version: '0.2.14-mock',
-          createZGComputeNetworkBroker: () => {
-            throw new Error('Mock SDK - real functionality not available')
-          }
-        }
-        g.__OG_BROKER_SDK__ = mockSdk
-        return mockSdk
-      }
-      
-      throw e
+  sdkPromise = import('@0glabs/0g-serving-broker').then((mod: any) => {
+    if (typeof mod?.createZGComputeNetworkBroker !== 'function') {
+      throw new Error('SDK import ok but required export missing')
     }
-  })()
+    G.__OG_BROKER_SDK__ = mod
+    BROKER_LOG('SDK loaded (real)')
+    return mod
+  })
 
   return sdkPromise
 }
 
-// Broker cache by wallet address  
-const brokerCache = new Map<string, any>()
-let ethersModule: any = null
+export async function getClientBroker() {
+  if (typeof window === 'undefined') throw new Error('Broker must run in browser')
+  if (!(window as any).ethereum) throw new Error('No injected wallet found')
 
-// Provider acknowledgment cache
-const acknowledgeCache = new Map<string, number>()
-const ACKNOWLEDGE_TTL_MIN = parseInt(process.env.NEXT_PUBLIC_BROKER_ACK_TTL_MIN || '30')
-const ACKNOWLEDGE_TTL = ACKNOWLEDGE_TTL_MIN * 60 * 1000 // Convert to milliseconds
-
-/**
- * Get ethers module dynamically to avoid SSR issues
- */
-async function getEthers() {
-  if (!ethersModule && typeof window !== 'undefined') {
-    ethersModule = await import('ethers')
+  // Валидация ethers в браузере
+  if (typeof (BrowserProvider as any) !== 'function') {
+    throw new Error('Ethers BrowserProvider not available')
   }
-  return ethersModule
+
+  const { createZGComputeNetworkBroker } = await loadSdk()
+  const provider = new BrowserProvider((window as any).ethereum)
+  const signer = await provider.getSigner()
+  return await createZGComputeNetworkBroker(signer)
+}
+
+// На всякий случай экспорт очистки кэша
+export function clearBrokerCache() {
+  delete (globalThis as any).__OG_BROKER_SDK__
+  sdkPromise = null
 }
 
 /**
- * Get or create a client-side broker instance using the injected wallet
- * This is a singleton per wallet address
+ * Check if client broker is available (wallet connected)
  */
-export async function getClientBroker() {
-  // SSR guard
-  if (typeof window === 'undefined') {
-    throw new Error('Broker must run in browser')
-  }
+export async function isClientBrokerAvailable(): Promise<boolean> {
+  if (typeof window === 'undefined') return false
 
   try {
-    // Check if we have an injected wallet
-    if (!(window as any).ethereum) {
-      throw new Error('No injected wallet')
-    }
+    if (!(window as any).ethereum) return false
 
-    // Get ethers module
-    const ethers = await getEthers()
-    if (!ethers) {
-      throw new Error('Failed to load ethers module')
-    }
-
-    // Additional runtime check for BrowserProvider before use
-    if (typeof (BrowserProvider as any) !== 'function') {
-      console.error('[BROKER] Bad ethers in browser: BrowserProvider =', BrowserProvider);
-      throw new Error('Ethers BrowserProvider not available. Remove ethers shim/alias from client build.');
-    }
-
-    // Create browser provider
-    const provider = new BrowserProvider((window as any).ethereum)
-
-    // Get the signer and current address
-    const signer = await provider.getSigner()
-    const currentAddress = await signer.getAddress()
-
-    // Return cached broker if we have one for this address
-    const cachedBroker = brokerCache.get(currentAddress)
-    if (cachedBroker) {
-      return cachedBroker
-    }
-
-    // Dynamically import the broker module
-    const mod: any = await loadSdk()
-    BROKER_LOG('SDK loaded, origin=', (mod as any).__origin)
-    const { createZGComputeNetworkBroker } = mod
-
-    // Log SDK version
-    const sdkVersion = (mod && (mod as any).version) || 'unknown'
-    BROKER_LOG(`[BROKER] SDK v${sdkVersion} loaded`)
-
-    // Create new broker instance
-    BROKER_LOG('Creating new broker for address:', currentAddress)
-    const broker = await createZGComputeNetworkBroker(signer)
-
-    // Cache the broker by address
-    brokerCache.set(currentAddress, broker)
-
-    return broker
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('[ClientBroker] Failed to create broker:', error)
-    throw new Error(`Failed to initialize client broker: ${(error as Error).message}`)
+    const accounts = await (window as any).ethereum.request({ method: 'eth_accounts' });
+    return Array.isArray(accounts) && accounts.length > 0;
+  } catch {
+    return false
   }
 }
 
 /**
- * Clear cached broker for specific address or all
- * Очистка кэша брокера на accountsChanged/chainChanged
+ * Get current wallet address if available
  */
-export function clearBrokerCache(addr?: string) {
-  if (addr) brokerCache.delete(addr)
-  else brokerCache.clear()
-  const g = globalThis as any
-  delete g.__OG_BROKER_SDK__
-  sdkPromise = null
+export async function getCurrentWalletAddress(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+
+  try {
+    if (!(window as any).ethereum) return null
+
+    const provider = new BrowserProvider((window as any).ethereum)
+    const signer = await provider.getSigner()
+    return await signer.getAddress()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Ensure ledger exists for the current user
+ */
+export async function ensureLedger(): Promise<boolean> {
+  try {
+    const broker = await getClientBroker()
+    const ledgerInfo = await broker.ledger.getLedger()
+    return true // If we get here, ledger exists
+  } catch {
+    return false // Ledger doesn't exist or other error
+  }
+}
+
+/**
+ * Prepare a compute request with client-side signing
+ */
+export async function prepareComputeRequest(
+  providerAddress: string, 
+  payload: any
+): Promise<{
+  endpoint: string
+  method: string
+  headers: Record<string, string>
+  body: string
+}> {
+  const broker = await getClientBroker()
+  
+  // Get service metadata
+  const { endpoint, model } = await broker.inference.getServiceMetadata(providerAddress)
+  
+  // Prepare the message content for billing
+  const content = typeof payload === 'object' && payload.messages 
+    ? payload.messages.map((m: any) => m.content).join(' ')
+    : JSON.stringify(payload)
+  
+  // Get request headers with billing information
+  const headers = await broker.inference.getRequestHeaders(providerAddress, content)
+  
+  return {
+    endpoint: `${endpoint}/chat/completions`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers
+    },
+    body: JSON.stringify({
+      ...payload,
+      model: model
+    })
+  }
 }
 
 /**
@@ -190,220 +141,15 @@ export function setupWalletEventListeners() {
   if (!ethereum) return;
 
   // Remove existing listeners to avoid duplicates
-  ethereum.removeAllListeners('accountsChanged');
-  ethereum.removeAllListeners('chainChanged');
+  ethereum.removeAllListeners?.('accountsChanged');
+  ethereum.removeAllListeners?.('chainChanged');
   
   // Add new listeners
-  ethereum.on('accountsChanged', (accounts: string[]) => {
-    console.log('[ClientBroker] Account changed, clearing cache');
+  ethereum.on?.('accountsChanged', () => {
     clearBrokerCache();
-    acknowledgeCache.clear();
   });
   
-  ethereum.on('chainChanged', (chainId: string) => {
-    console.log('[ClientBroker] Chain changed, clearing cache');
+  ethereum.on?.('chainChanged', () => {
     clearBrokerCache();
-    acknowledgeCache.clear();
   });
-}
-
-/**
- * Check if client broker is available (wallet connected)
- * Uses wagmi.useAccount().isConnected if available, fallback to direct EIP-1193
- */
-export async function isClientBrokerAvailable(): Promise<boolean> {
-  // SSR guard
-  if (typeof window === 'undefined') {
-    return false
-  }
-
-  try {
-    // Check if ethereum provider exists
-    if (!(window as any).ethereum) {
-      return false
-    }
-
-    // Direct EIP-1193 request for better compatibility
-    try {
-      const accounts = await (window as any).ethereum.request({ method: 'eth_accounts' });
-      const hasAccounts = Array.isArray(accounts) && accounts.length > 0;
-      if (hasAccounts) {
-        return true;
-      }
-    } catch (eipError) {
-      console.warn('[isClientBrokerAvailable] EIP-1193 request failed:', eipError);
-    }
-
-    // Fallback to ethers BrowserProvider method
-    const provider = new BrowserProvider((window as any).ethereum)
-    const accounts = await provider.listAccounts()
-    return accounts.length > 0
-  } catch (error) {
-    console.warn('[isClientBrokerAvailable] Failed to check wallet:', error);
-    return false
-  }
-}
-
-/**
- * Get current wallet address if available
- */
-export async function getCurrentWalletAddress(): Promise<string | null> {
-  // SSR guard
-  if (typeof window === 'undefined') {
-    return null
-  }
-
-  try {
-    if (!(window as any).ethereum) {
-      return null
-    }
-
-    const provider = new BrowserProvider((window as any).ethereum)
-    const signer = await provider.getSigner()
-    return await signer.getAddress()
-  } catch {
-    return null
-  }
-}
-
-/**
- * Get ledger balance for the current user
- */
-export async function getLedgerBalance(userAddress?: string): Promise<number> {
-  try {
-    const broker = await getClientBroker()
-    const ledger = await broker.ledger.getLedger()
-    const ethers = await getEthers()
-    const balanceWei = ledger.balance
-    const balanceOG = (ethers as any).formatEther(balanceWei)
-    
-    LEDGER_LOG('Ledger balance:', balanceOG, 'OG')
-    return parseFloat(balanceOG) || 0
-    
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('[ClientBroker] Failed to get ledger balance:', error)
-    // Return 0 if ledger doesn't exist or other error
-    return 0
-  }
-}
-
-/**
- * Ensure ledger exists for the current user
- * Creates a ledger account if it doesn't exist
- */
-export async function ensureLedger(userAddress?: string): Promise<boolean> {
-  try {
-    const broker = await getClientBroker()
-    const address = userAddress || (await getCurrentWalletAddress())
-    
-    if (!address) {
-      throw new Error('No wallet address available')
-    }
-
-    LEDGER_LOG('Ensuring ledger for address:', address)
-    
-    // Check if ledger already exists
-    try {
-      const ledgerInfo = await broker.ledger.getLedger()
-      if (ledgerInfo && ledgerInfo.balance) {
-        LEDGER_LOG('Ledger already exists')
-        return true
-      }
-    } catch (error) {
-      // Ledger doesn't exist, we'll create it
-      LEDGER_LOG('Ledger not found, creating new one')
-    }
-
-    // Create ledger with initial balance (0.01 OG)  
-    const ethers = await getEthers()
-    LEDGER_LOG('Creating new ledger with 0.01 OG initial balance...')
-    await broker.ledger.addLedger((ethers as any).parseEther('0.01'))
-    
-    LEDGER_LOG('Ledger created successfully with balance: 0.01 OG')
-    return true
-    
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('[ClientBroker] Failed to ensure ledger:', error)
-    throw new Error(`Failed to ensure ledger: ${(error as Error).message}`)
-  }
-}
-
-/**
- * Prepare a compute request with client-side signing
- * Returns prepared request data that can be sent to the proxy
- */
-export async function prepareComputeRequest(
-  providerAddress: string, 
-  payload: any
-): Promise<{
-  endpoint: string
-  method: string
-  headers: Record<string, string>
-  body: string
-}> {
-  try {
-    const broker = await getClientBroker()
-    
-    BROKER_LOG('Preparing compute request for provider:', providerAddress)
-    
-    // Acknowledge provider if not already done (cached for 30 min)
-    await acknowledgeProviderIfNeeded(broker, providerAddress)
-    
-    // Get service metadata
-    const { endpoint, model } = await broker.inference.getServiceMetadata(providerAddress)
-    
-    // Prepare the message content for billing
-    const content = typeof payload === 'object' && payload.messages 
-      ? payload.messages.map((m: any) => m.content).join(' ')
-      : JSON.stringify(payload)
-    
-    // Get request headers with billing information
-    const headers = await broker.inference.getRequestHeaders(providerAddress, content)
-    
-    BROKER_LOG('Request prepared successfully')
-    
-    return {
-      endpoint: `${endpoint}/chat/completions`,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers
-      },
-      body: JSON.stringify({
-        ...payload,
-        model: model
-      })
-    }
-    
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error('[ClientBroker] Failed to prepare request:', error)
-    throw new Error(`Failed to prepare compute request: ${(error as Error).message}`)
-  }
-}
-
-/**
- * Acknowledge provider if not already done (with caching)
- */
-async function acknowledgeProviderIfNeeded(broker: any, providerAddress: string): Promise<void> {
-  const now = Date.now()
-  const lastAck = acknowledgeCache.get(providerAddress)
-  
-  if (lastAck && (now - lastAck) < ACKNOWLEDGE_TTL) {
-    BROKER_LOG('Provider already acknowledged (cached)')
-    return
-  }
-  
-  try {
-    BROKER_LOG('Acknowledging provider:', providerAddress)
-    await broker.inference.acknowledgeProviderSigner(providerAddress)
-    acknowledgeCache.set(providerAddress, now)
-    BROKER_LOG('Provider acknowledged successfully')
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.warn('[ClientBroker] Failed to acknowledge provider (may already be acknowledged):', (error as any)?.message || error)
-    // Don't throw here as provider might already be acknowledged
-  }
 }

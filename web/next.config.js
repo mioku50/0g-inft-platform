@@ -115,7 +115,7 @@ const nextConfig = {
 
   // Изолировать @0glabs/0g-ts-sdk и ethers на сервере
   experimental: {
-    serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk', 'ethers'],
+    serverComponentsExternalPackages: ['@0glabs/0g-serving-broker','@0glabs/0g-ts-sdk','ethers'],
     // Try to handle SWC compilation issues
     swcTraceProfiling: false,
     // Force external handling of problematic packages

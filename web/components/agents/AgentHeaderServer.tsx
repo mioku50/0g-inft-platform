@@ -1,13 +1,7 @@
 // components/agents/AgentHeaderServer.tsx
-import { downloadFromStorage } from '@/lib/storage/client-server'
+import { headers } from 'next/headers'
 
-interface AgentMeta {
-  name: string
-  model: string
-  description?: string
-  avatar?: string
-  error?: string
-}
+type AgentMeta = { name: string; model: string; avatar?: string | null }
 
 interface AgentHeaderServerProps {
   meta: AgentMeta
@@ -18,8 +12,6 @@ export function AgentHeaderServer({ meta, tokenId }: AgentHeaderServerProps) {
   // Safe fallbacks for all properties
   const name = meta?.name || `Agent #${tokenId}`;
   const model = meta?.model || 'AI Assistant';
-  const description = meta?.description;
-  const error = meta?.error;
   
   return (
     <div className="text-center">
@@ -27,80 +19,23 @@ export function AgentHeaderServer({ meta, tokenId }: AgentHeaderServerProps) {
         {name}
       </h1>
       <p className="text-white/60 text-sm">{model}</p>
-      {description && (
-        <p className="text-white/40 text-xs mt-1">{description}</p>
-      )}
-      {error && (
-        <p className="text-red-400/60 text-xs mt-1">⚠️ {error}</p>
-      )}
     </div>
   )
 }
 
-/**
- * Server-side function to get agent metadata
- * Always returns a safe fallback to prevent UI crashes
- */
-export async function getAgentMeta(tokenId: string): Promise<AgentMeta> {
+export async function getAgentMeta(id: string): Promise<AgentMeta> {
   try {
-    // Try to get metadata from storage API
-    const response = await fetch(`${process.env.NEXT_PUBLIC_RPC_URL}/api/storage/retrieve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        tokenId: tokenId,
-        // Try common fallback patterns
-        rootHash: `local://${tokenId}` 
-      }),
-    })
-    
-    if (response.ok) {
-      const data = await response.json()
-      const metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
-      
-      // Safe property access with fallbacks
-      if (metadata && typeof metadata === 'object') {
-        return {
-          name: metadata.name || `Agent #${tokenId}`,
-          model: metadata.model || 'AI Assistant',
-          description: metadata.description || undefined,
-          avatar: metadata.avatar || undefined
-        }
-      }
-    }
-    
-    // Fallback: try direct storage download
-    const metadataContent = await downloadFromStorage(`local://${tokenId}`)
-    if (metadataContent && typeof metadataContent === 'string') {
-      const metadata = JSON.parse(metadataContent)
-      // Safe property access with fallbacks
-      if (metadata && typeof metadata === 'object') {
-        return {
-          name: metadata.name || `Agent #${tokenId}`,
-          model: metadata.model || 'AI Assistant', 
-          description: metadata.description || undefined,
-          avatar: metadata.avatar || undefined
-        }
-      }
-    }
-    
-    // Fallback to basic agent info
+    // относительный fetch в app-router работает на сервере
+    const res = await fetch(`/agents/metadata/${id}.json`, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`meta http ${res.status}`)
+    const meta = (await res.json()) as AgentMeta
     return {
-      name: `Agent #${tokenId}`,
-      model: 'AI Assistant',
-      description: 'Metadata not available',
-      error: 'metadata_not_found'
+      name: meta?.name || `Agent #${id}`,
+      model: meta?.model || 'Unknown',
+      avatar: meta?.avatar ?? undefined,
     }
-    
-  } catch (error) {
-    console.warn(`[getAgentMeta] Failed to load metadata for agent ${tokenId}:`, error)
-    
-    // Always return safe fallback - never throw or return undefined
-    return {
-      name: `Agent #${tokenId}`,
-      model: 'AI Assistant',
-      description: 'Unable to load agent details',
-      error: 'load_failed'
-    }
+  } catch (e) {
+    console.warn('[getAgentMeta] fallback:', (e as Error).message)
+    return { name: `Agent #${id}`, model: 'Unknown', avatar: undefined }
   }
 }

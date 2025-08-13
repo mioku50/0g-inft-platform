@@ -17,11 +17,12 @@ const nextConfig = {
     config.resolve = config.resolve || {}
     config.resolve.conditionNames = Array.from(names)
     
-    // Жёстко экстернализовать 0g-ts-sdk на сервере
+    // Строго экстернализовать 0g-ts-sdk и ethers на сервере
     if (isServer) {
       config.externals = config.externals || [];
       config.externals.push({
         '@0glabs/0g-ts-sdk': 'commonjs @0glabs/0g-ts-sdk',
+        'ethers': 'commonjs ethers',
       });
     }
     
@@ -66,8 +67,8 @@ const nextConfig = {
       '@walletconnect/legacy-modal': false,
       '@walletconnect/randombytes': false,
       '@walletconnect/utils': false,
-      // ВАЖНО: alias на 'ethers' → shim должен быть ТОЛЬКО в браузерной сборке!
-      ...(isServer ? {} : { ethers: require.resolve('./lib/shims/ethers') }),
+      // УДАЛЕНО: ethers shim alias - используем реальный ethers@6 в браузере
+      // Теперь import { BrowserProvider } from 'ethers' будет использовать настоящий ethers
       // Handle SWC helpers that cause issues
       '@swc/helpers/_/_interop_require_default': false,
       '@swc/helpers/_/_interop_require_wildcard': false,
@@ -112,7 +113,7 @@ const nextConfig = {
 
   images: { domains: ['api.dicebear.com', 'ipfs.io'] },
 
-  // ВАЖНО: изолировать @0glabs/0g-ts-sdk и ethers на сервере
+  // Изолировать @0glabs/0g-ts-sdk и ethers на сервере
   experimental: {
     serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk', 'ethers'],
     // Try to handle SWC compilation issues

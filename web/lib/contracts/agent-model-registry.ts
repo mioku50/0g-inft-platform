@@ -17,19 +17,32 @@ const AGENT_MODEL_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_MODEL_REGISTR
 
 const PLATFORM_PRIVATE_KEY = process.env.OG_COMPUTE_PRIVATE_KEY;
 
-if (!PLATFORM_PRIVATE_KEY) {
-  throw new Error('OG_COMPUTE_PRIVATE_KEY environment variable required for platform operations');
+// Allow the module to load without private key for read-only operations
+let platformSigner: any = null;
+let registryContract: any = null;
+
+function getContract() {
+  if (!registryContract) {
+    if (!PLATFORM_PRIVATE_KEY) {
+      // For read-only operations, create contract without signer
+      const provider = getRateLimitedProvider();
+      registryContract = createRateLimitedContract(
+        AGENT_MODEL_REGISTRY_ADDRESS,
+        AgentModelRegistryABI,
+        provider
+      );
+    } else {
+      // For write operations, create with signer
+      platformSigner = createRateLimitedWallet(PLATFORM_PRIVATE_KEY);
+      registryContract = createRateLimitedContract(
+        AGENT_MODEL_REGISTRY_ADDRESS,
+        AgentModelRegistryABI,
+        platformSigner
+      );
+    }
+  }
+  return registryContract;
 }
-
-// Rate-limited provider and signer for platform operations
-const platformSigner = createRateLimitedWallet(PLATFORM_PRIVATE_KEY);
-
-// Rate-limited contract instance
-const registryContract = createRateLimitedContract(
-  AGENT_MODEL_REGISTRY_ADDRESS,
-  AgentModelRegistryABI,
-  platformSigner
-);
 
 /**
  * Platform service for interacting with AgentModelRegistry
@@ -205,28 +218,67 @@ export class AgentModelRegistryService {
    * Get active model for an agent with safe error handling
    */
   static async getActiveModel(tokenId: number): Promise<string> {
-    return safeContractCall(
-      () => registryContract.getActiveModel(tokenId),
-      '0x0000000000000000000000000000000000000000000000000000000000000000',
-      `getActiveModel(${tokenId})`
-    )
+    try {
+      console.log(`[registry] Getting active model for token ${tokenId}...`)
+      
+      const contract = getContract()
+      
+      // Use ethers v6 staticCall syntax
+      const model = await contract.getActiveModel.staticCall(tokenId)
+      
+      console.log(`[registry] Active model for token ${tokenId}:`, model)
+      return model
+      
+    } catch (error: any) {
+      console.log(`[registry] getActiveModel(${tokenId}) failed (this is normal if no model is set):`, error.message)
+      
+      // Revert means no active model is assigned - this is not an error
+      if (error.message.includes('execution reverted') || error.message.includes('require(false)')) {
+        console.log(`[registry] No active model set for token ${tokenId} - returning default`)
+        return '0x0000000000000000000000000000000000000000000000000000000000000000'
+      }
+      
+      // Other errors should be logged but not crash the app
+      console.warn(`[registry] Unexpected error in getActiveModel(${tokenId}):`, error.message)
+      return '0x0000000000000000000000000000000000000000000000000000000000000000'
+    }
   }
 
   /**
    * Get candidate model for an agent with safe error handling
+   * Uses ethers v6 staticCall syntax and properly handles revert as "no model"
    */
   static async getCandidateModel(tokenId: number): Promise<{ modelRoot: string; hasCandidate: boolean }> {
-    return safeContractCall(
-      async () => {
-        const [modelRoot, hasCandidate] = await registryContract.getCandidateModel(tokenId)
-        return { modelRoot, hasCandidate }
-      },
-      {
+    try {
+      console.log(`[registry] Getting candidate model for token ${tokenId}...`)
+      
+      const contract = getContract()
+      
+      // Use ethers v6 staticCall syntax
+      const [modelRoot, hasCandidate] = await contract.getCandidateModel.staticCall(tokenId)
+      
+      console.log(`[registry] Candidate model for token ${tokenId}:`, { modelRoot, hasCandidate })
+      return { modelRoot, hasCandidate }
+      
+    } catch (error: any) {
+      console.log(`[registry] getCandidateModel(${tokenId}) failed (this is normal if no model is set):`, error.message)
+      
+      // Revert means no candidate model is assigned - this is not an error
+      if (error.message.includes('execution reverted') || error.message.includes('require(false)')) {
+        console.log(`[registry] No candidate model set for token ${tokenId} - returning default`)
+        return {
+          modelRoot: '0x0000000000000000000000000000000000000000000000000000000000000000',
+          hasCandidate: false
+        }
+      }
+      
+      // Other errors should be logged but not crash the app
+      console.warn(`[registry] Unexpected error in getCandidateModel(${tokenId}):`, error.message)
+      return {
         modelRoot: '0x0000000000000000000000000000000000000000000000000000000000000000',
         hasCandidate: false
-      },
-      `getCandidateModel(${tokenId})`
-    )
+      }
+    }
   }
 
   /**

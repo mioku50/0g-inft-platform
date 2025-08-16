@@ -65,7 +65,17 @@ export class ChatService {
   private privateKey: string | undefined
 
   constructor(privateKey?: string) {
+    // Enforce custodial mode
+    const useCustodial = process.env.USE_NONCUSTODIAL_INFERENCE !== 'true'
+    if (!useCustodial && typeof window !== 'undefined') {
+      throw new Error('Non-custodial inference is disabled. Server-side only mode enforced.')
+    }
+    
     this.privateKey = privateKey
+    
+    if (!this.privateKey) {
+      throw new Error('ChatService requires OG_COMPUTE_PRIVATE_KEY for custodial mode')
+    }
   }
 
   async processChat(request: ChatRequest): Promise<ChatResponse> {
@@ -80,12 +90,14 @@ export class ChatService {
     const errors: string[] = []
 
     try {
-      // 1. Инициализация брокера с кэшем
+      console.log('🚀 [ChatService] Starting custodial inference request...')
+      
+      // 1. Broker initialization with cache
       const brokerStart = Date.now()
       const broker = await this.getBrokerSafe()
       timing.initBroker = Date.now() - brokerStart
 
-      // 2. Обнаружение сервисов
+      // 2. Service discovery
       const discoveryStart = Date.now()
       const services = await this.discoverServices(broker)
       timing.discovery = Date.now() - discoveryStart
@@ -161,10 +173,23 @@ export class ChatService {
   private async ensureMinBalance(broker: any): Promise<void> {
     try {
       const ledgerInfo = await broker.ledger.getLedger()
-      const balance = this.safeBigIntToNumber(ledgerInfo.balance)
+      
+      // Use safe balance parsing to handle null/undefined values
+      let balance = 0
+      try {
+        if (ledgerInfo && ledgerInfo.balance !== null && ledgerInfo.balance !== undefined) {
+          balance = Number(ethers.formatEther(ledgerInfo.balance))
+        } else {
+          console.warn('Ledger balance is null/undefined, assuming 0')
+        }
+      } catch (e: any) {
+        console.warn('Balance parsing error (non-critical):', e.message)
+        balance = 0
+      }
+      
       const minBalance = 0.02
       
-      console.log(`Ledger balance: ${ethers.formatEther(ledgerInfo.balance)} OG`)
+      console.log(`Ledger balance: ${balance} OG`)
       
       if (balance < minBalance) {
         console.log('Low balance, adding funds...')
@@ -174,12 +199,22 @@ export class ChatService {
       }
     } catch (error: any) {
       console.log('Balance check error (non-critical):', error.message)
-      // Не прерываем работу при ошибках баланса
+      // Don't interrupt service on balance errors
     }
   }
 
   private safeBigIntToNumber(value: any): number {
     try {
+      // Handle null/undefined values
+      if (value === null || value === undefined) {
+        return 0
+      }
+      
+      // Handle string null/undefined
+      if (typeof value === 'string' && (value === 'null' || value === 'undefined' || value === '')) {
+        return 0
+      }
+      
       if (typeof value === 'bigint') {
         return Number(ethers.formatEther(value))
       }
@@ -194,27 +229,86 @@ export class ChatService {
   }
 
   private async discoverServices(broker: any): Promise<any[]> {
+    console.log('🔍 [Discovery] Starting provider discovery...')
+    
     try {
+      // Try to get services from the broker
       const services = await broker.inference.listService()
-      console.log(`Found ${services.length} services`)
+      console.log(`🔍 [Discovery] Found ${services.length} services from broker`)
       
-      // Приоритизируем официальные провайдеры
+      // If no services found via broker, try fallback providers from env
+      if (services.length === 0) {
+        console.log('🔍 [Discovery] No services from broker, trying env fallback...')
+        return this.getFallbackProviders()
+      }
+      
+      // Filter and validate services
+      const validServices = []
+      for (const service of services) {
+        try {
+          // Basic validation
+          if (service.provider && service.url) {
+            console.log(`✅ [Discovery] Valid service: ${service.provider} -> ${service.url}`)
+            validServices.push(service)
+          } else {
+            console.warn(`⚠️ [Discovery] Invalid service missing provider/url:`, service)
+          }
+        } catch (e: any) {
+          console.warn(`⚠️ [Discovery] Error validating service:`, e.message)
+        }
+      }
+      
+      if (validServices.length === 0) {
+        console.log('🔍 [Discovery] No valid services found, using fallback providers')
+        return this.getFallbackProviders()
+      }
+      
+      // Prioritize official providers
       const officialProviders = [
         '0xf07240Efa67755B5311bc75784a061eDB47165Dd', // llama-3.3-70b-instruct
         '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'  // deepseek-r1-70b
       ]
       
-      const list = [...services]
-      return list.sort((a: any, b: any) => {
+      const sorted = validServices.sort((a: any, b: any) => {
         const aIsOfficial = officialProviders.includes(a.provider)
         const bIsOfficial = officialProviders.includes(b.provider)
         if (aIsOfficial && !bIsOfficial) return -1
         if (!aIsOfficial && bIsOfficial) return 1
         return 0
       })
+      
+      console.log(`✅ [Discovery] Returning ${sorted.length} validated services`)
+      return sorted
+      
     } catch (error: any) {
-      throw new Error(`Service discovery failed: ${error.message}`)
+      console.error('❌ [Discovery] Service discovery failed:', error.message)
+      console.log('🔍 [Discovery] Falling back to env providers')
+      return this.getFallbackProviders()
     }
+  }
+
+  private getFallbackProviders(): any[] {
+    // Get providers from environment as fallback
+    const envProviders = (process.env.OG_PROVIDERS ?? process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER ?? '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+    
+    if (envProviders.length === 0) {
+      // Use default provider from env
+      const defaultProvider = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER || '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
+      envProviders.push(defaultProvider)
+    }
+    
+    console.log(`🔍 [Discovery] Using ${envProviders.length} fallback providers:`, envProviders)
+    
+    return envProviders.map((provider, index) => ({
+      provider,
+      url: `https://compute-testnet.0g.ai`, // Default 0G compute URL
+      models: ['llama-3.3-70b-instruct'],
+      pricePerToken: '1000000',
+      index
+    }))
   }
 
   private async raceProviders(

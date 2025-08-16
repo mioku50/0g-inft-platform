@@ -57,6 +57,20 @@ module.exports = {
   				'3': 'hsl(var(--chart-3))',
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
+  			},
+  			// 0G Brand Colors
+  			'0g': {
+  				'50': '#f8f6ff',
+  				'100': '#f0ecff',
+  				'200': '#e3ddff',
+  				'300': '#cfc2ff',
+  				'400': '#b599ff',
+  				'500': '#9a6eff',
+  				'600': '#8b5cf6', // Main purple
+  				'700': '#7c3aed',
+  				'800': '#6b21dc',
+  				'900': '#5b21b6',
+  				'950': '#341070'
   			}
   		},
   		borderRadius: {

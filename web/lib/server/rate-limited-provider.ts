@@ -165,7 +165,7 @@ export function createRateLimitedContract(
 }
 
 /**
- * Safe contract call with automatic retries
+ * Safe contract call with automatic retries and BigNumberish safety
  */
 export async function safeContractCall<T>(
   contractMethod: () => Promise<T>,
@@ -173,10 +173,63 @@ export async function safeContractCall<T>(
   methodName: string = 'contract method'
 ): Promise<T> {
   try {
-    return await contractMethod()
+    const result = await contractMethod()
+    
+    // Handle BigNumberish values safely
+    if (result && typeof result === 'object' && 'toString' in result) {
+      // This is likely a BigNumber or BigInt, ensure it's valid
+      try {
+        if (result.toString() === 'null' || result.toString() === 'undefined') {
+          console.warn(`${methodName} returned null/undefined BigNumber, using fallback`)
+          return fallbackValue
+        }
+      } catch (e) {
+        // If toString() fails, it's not a BigNumber
+      }
+    }
+    
+    return result
   } catch (error: any) {
     console.warn(`${methodName} failed:`, error.message)
     return fallbackValue
+  }
+}
+
+/**
+ * Safe balance parsing that handles null/undefined BigNumberish values
+ */
+export function safeParseBalance(value: any, defaultValue: string = '0'): string {
+  try {
+    if (value === null || value === undefined) {
+      console.warn('[balance] Received null/undefined balance, using default:', defaultValue)
+      return defaultValue
+    }
+    
+    if (typeof value === 'string' && (value === 'null' || value === 'undefined' || value === '')) {
+      console.warn('[balance] Received string null/undefined balance, using default:', defaultValue)
+      return defaultValue
+    }
+    
+    // Try to parse with ethers
+    return ethers.formatEther(value)
+  } catch (error: any) {
+    console.warn('[balance] Failed to parse balance value:', value, 'Error:', error.message)
+    return defaultValue
+  }
+}
+
+/**
+ * Safe amount parsing for BigNumberish values
+ */
+export function safeParseEther(value: string | number): bigint {
+  try {
+    if (!value || value === 'null' || value === 'undefined') {
+      return BigInt(0)
+    }
+    return ethers.parseEther(value.toString())
+  } catch (error: any) {
+    console.warn('[parseEther] Failed to parse value:', value, 'Error:', error.message)
+    return BigInt(0)
   }
 }
 

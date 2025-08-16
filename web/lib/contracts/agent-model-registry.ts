@@ -17,19 +17,32 @@ const AGENT_MODEL_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_MODEL_REGISTR
 
 const PLATFORM_PRIVATE_KEY = process.env.OG_COMPUTE_PRIVATE_KEY;
 
-if (!PLATFORM_PRIVATE_KEY) {
-  throw new Error('OG_COMPUTE_PRIVATE_KEY environment variable required for platform operations');
+// Allow the module to load without private key for read-only operations
+let platformSigner: any = null;
+let registryContract: any = null;
+
+function getContract() {
+  if (!registryContract) {
+    if (!PLATFORM_PRIVATE_KEY) {
+      // For read-only operations, create contract without signer
+      const provider = getRateLimitedProvider();
+      registryContract = createRateLimitedContract(
+        AGENT_MODEL_REGISTRY_ADDRESS,
+        AgentModelRegistryABI,
+        provider
+      );
+    } else {
+      // For write operations, create with signer
+      platformSigner = createRateLimitedWallet(PLATFORM_PRIVATE_KEY);
+      registryContract = createRateLimitedContract(
+        AGENT_MODEL_REGISTRY_ADDRESS,
+        AgentModelRegistryABI,
+        platformSigner
+      );
+    }
+  }
+  return registryContract;
 }
-
-// Rate-limited provider and signer for platform operations
-const platformSigner = createRateLimitedWallet(PLATFORM_PRIVATE_KEY);
-
-// Rate-limited contract instance
-const registryContract = createRateLimitedContract(
-  AGENT_MODEL_REGISTRY_ADDRESS,
-  AgentModelRegistryABI,
-  platformSigner
-);
 
 /**
  * Platform service for interacting with AgentModelRegistry
@@ -67,7 +80,11 @@ export class AgentModelRegistryService {
       const trainingParamsHashBytes32 = trainingParamsHash.startsWith('0x') ? trainingParamsHash : ethers.keccak256(ethers.toUtf8Bytes(trainingParamsHash));
       
       // Call contract method (platform pays gas)
-      const tx = await registryContract.attestTask(
+      const contract = getContract()
+      if (!PLATFORM_PRIVATE_KEY) {
+        throw new Error('OG_COMPUTE_PRIVATE_KEY required for write operations')
+      }
+      const tx = await contract.attestTask(
         tokenId,
         userAddress,
         providerAddress,
@@ -126,7 +143,11 @@ export class AgentModelRegistryService {
       const logRootBytes32 = logRoot.startsWith('0x') ? logRoot : ethers.keccak256(ethers.toUtf8Bytes(logRoot));
       
       // Call contract method (platform pays gas)
-      const tx = await registryContract.attestDelivery(
+      const contract = getContract()
+      if (!PLATFORM_PRIVATE_KEY) {
+        throw new Error('OG_COMPUTE_PRIVATE_KEY required for write operations')
+      }
+      const tx = await contract.attestDelivery(
         tokenId,
         userAddress,
         providerAddress,
@@ -176,7 +197,11 @@ export class AgentModelRegistryService {
       const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot));
       
       // Call contract method (platform pays gas)
-      const tx = await registryContract.setActiveModel(
+      const contract = getContract()
+      if (!PLATFORM_PRIVATE_KEY) {
+        throw new Error('OG_COMPUTE_PRIVATE_KEY required for write operations')
+      }
+      const tx = await contract.setActiveModel(
         tokenId,
         modelRootBytes32,
         byAddress
@@ -205,64 +230,107 @@ export class AgentModelRegistryService {
    * Get active model for an agent with safe error handling
    */
   static async getActiveModel(tokenId: number): Promise<string> {
-    return safeContractCall(
-      () => registryContract.getActiveModel(tokenId),
-      '0x0000000000000000000000000000000000000000000000000000000000000000',
-      `getActiveModel(${tokenId})`
-    )
+    try {
+      console.log(`[registry] Getting active model for token ${tokenId}...`)
+      
+      const contract = getContract()
+      
+      // Use ethers v6 staticCall syntax
+      const model = await contract.getActiveModel.staticCall(tokenId)
+      
+      console.log(`[registry] Active model for token ${tokenId}:`, model)
+      return model
+      
+    } catch (error: any) {
+      console.log(`[registry] getActiveModel(${tokenId}) failed (this is normal if no model is set):`, error.message)
+      
+      // Revert means no active model is assigned - this is not an error
+      if (error.message.includes('execution reverted') || error.message.includes('require(false)')) {
+        console.log(`[registry] No active model set for token ${tokenId} - returning default`)
+        return '0x0000000000000000000000000000000000000000000000000000000000000000'
+      }
+      
+      // Other errors should be logged but not crash the app
+      console.warn(`[registry] Unexpected error in getActiveModel(${tokenId}):`, error.message)
+      return '0x0000000000000000000000000000000000000000000000000000000000000000'
+    }
   }
 
   /**
    * Get candidate model for an agent with safe error handling
+   * Uses ethers v6 staticCall syntax and properly handles revert as "no model"
    */
   static async getCandidateModel(tokenId: number): Promise<{ modelRoot: string; hasCandidate: boolean }> {
-    return safeContractCall(
-      async () => {
-        const [modelRoot, hasCandidate] = await registryContract.getCandidateModel(tokenId)
-        return { modelRoot, hasCandidate }
-      },
-      {
+    try {
+      console.log(`[registry] Getting candidate model for token ${tokenId}...`)
+      
+      const contract = getContract()
+      
+      // Use ethers v6 staticCall syntax
+      const [modelRoot, hasCandidate] = await contract.getCandidateModel.staticCall(tokenId)
+      
+      console.log(`[registry] Candidate model for token ${tokenId}:`, { modelRoot, hasCandidate })
+      return { modelRoot, hasCandidate }
+      
+    } catch (error: any) {
+      console.log(`[registry] getCandidateModel(${tokenId}) failed (this is normal if no model is set):`, error.message)
+      
+      // Revert means no candidate model is assigned - this is not an error
+      if (error.message.includes('execution reverted') || error.message.includes('require(false)')) {
+        console.log(`[registry] No candidate model set for token ${tokenId} - returning default`)
+        return {
+          modelRoot: '0x0000000000000000000000000000000000000000000000000000000000000000',
+          hasCandidate: false
+        }
+      }
+      
+      // Other errors should be logged but not crash the app
+      console.warn(`[registry] Unexpected error in getCandidateModel(${tokenId}):`, error.message)
+      return {
         modelRoot: '0x0000000000000000000000000000000000000000000000000000000000000000',
         hasCandidate: false
-      },
-      `getCandidateModel(${tokenId})`
-    )
+      }
+    }
   }
 
   /**
    * Get all model versions for an agent with safe error handling
    */
   static async getModelVersions(tokenId: number): Promise<any[]> {
-    return safeContractCall(
-      () => registryContract.getModelVersions(tokenId),
-      [],
-      `getModelVersions(${tokenId})`
-    )
+    try {
+      const contract = getContract()
+      return await contract.getModelVersions.staticCall(tokenId)
+    } catch (error: any) {
+      console.warn(`getModelVersions(${tokenId}) failed:`, error.message)
+      return []
+    }
   }
 
   /**
    * Check if a model was delivered for an agent with safe error handling
    */
   static async isModelDelivered(tokenId: number, modelRoot: string): Promise<boolean> {
-    return safeContractCall(
-      () => {
-        const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot))
-        return registryContract.isModelDelivered(tokenId, modelRootBytes32)
-      },
-      false,
-      `isModelDelivered(${tokenId}, ${modelRoot.slice(0, 10)}...)`
-    )
+    try {
+      const contract = getContract()
+      const modelRootBytes32 = modelRoot.startsWith('0x') ? modelRoot : ethers.keccak256(ethers.toUtf8Bytes(modelRoot))
+      return await contract.isModelDelivered.staticCall(tokenId, modelRootBytes32)
+    } catch (error: any) {
+      console.warn(`isModelDelivered(${tokenId}, ${modelRoot.slice(0, 10)}...) failed:`, error.message)
+      return false
+    }
   }
 
   /**
    * Check if a task was processed with safe error handling
    */
   static async isTaskProcessed(taskId: string): Promise<boolean> {
-    return safeContractCall(
-      () => registryContract.isTaskProcessed(taskId),
-      false,
-      `isTaskProcessed(${taskId})`
-    )
+    try {
+      const contract = getContract()
+      return await contract.isTaskProcessed.staticCall(taskId)
+    } catch (error: any) {
+      console.warn(`isTaskProcessed(${taskId}) failed:`, error.message)
+      return false
+    }
   }
 
   /**
@@ -290,20 +358,22 @@ export class AgentModelRegistryService {
       }
       
       // Try to get owner with safe fallback
-      const owner = await safeContractCall(
-        () => registryContract.owner?.(),
-        null,
-        'contract.owner()'
-      )
+      let owner = null
+      try {
+        const contract = getContract()
+        owner = await contract.owner?.staticCall?.()
+      } catch (error: any) {
+        console.warn('Contract owner() call failed:', error.message)
+      }
       
       if (!owner) {
         console.warn('⚠️  Contract owner() method not available or failed');
         return true; // Allow operation but warn
       }
       
-      const expectedOwner = platformSigner.address;
+      const expectedOwner = platformSigner?.address || 'unknown';
       
-      if (owner.toLowerCase() !== expectedOwner.toLowerCase()) {
+      if (typeof owner === 'string' && owner.toLowerCase() !== expectedOwner.toLowerCase()) {
         console.error(`❌ Contract owner mismatch. Expected: ${expectedOwner}, Got: ${owner}`);
         return false;
       }
@@ -325,34 +395,6 @@ export function calculateTrainingParamsHash(params: any): string {
 
 export function calculateMetricsHash(metrics: any): string {
   return ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(metrics)));
-}
-
-// Event listeners for real-time updates (optional)
-export class AgentModelRegistryEvents {
-  
-  static setupEventListeners() {
-    // Listen for TaskCreated events
-    registryContract.on('TaskCreated', (tokenId, user, provider, datasetRoot, pretrainedHash, trainingParamsHash, taskId, timestamp) => {
-      console.log(`🎉 TaskCreated event: Agent ${tokenId}, Task ${taskId}`);
-      // Emit to frontend via WebSocket/SSE if needed
-    });
-
-    // Listen for ModelDelivered events
-    registryContract.on('ModelDelivered', (tokenId, user, provider, modelRoot, metricsHash, logRoot, taskId, timestamp) => {
-      console.log(`🎉 ModelDelivered event: Agent ${tokenId}, Task ${taskId}`);
-      // Update database and notify frontend
-    });
-
-    // Listen for ModelActivated events
-    registryContract.on('ModelActivated', (tokenId, modelRoot, by, timestamp) => {
-      console.log(`🎉 ModelActivated event: Agent ${tokenId}`);
-      // Update database and notify frontend
-    });
-  }
-
-  static removeEventListeners() {
-    registryContract.removeAllListeners();
-  }
 }
 
 export default AgentModelRegistryService;

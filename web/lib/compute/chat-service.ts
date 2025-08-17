@@ -106,6 +106,12 @@ export class ChatService {
         return this.createFallbackResponse(timing, errors, 'No services found')
       }
 
+      // Log the ackEligible providers for debugging
+      console.log(`🔍 Found ${services.length} broker services, ackEligible: ${services.length}`)
+      services.forEach((service, i) => {
+        console.log(`  ${i + 1}. ${service.provider} (${service.model || 'unknown model'})`)
+      })
+
       // 3. Параллельный запуск запросов к провайдерам
       const providerStart = Date.now()
       const result = await this.raceProviders(broker, services, request, timing)
@@ -231,84 +237,169 @@ export class ChatService {
   private async discoverServices(broker: any): Promise<any[]> {
     console.log('🔍 [Discovery] Starting provider discovery...')
     
+    let brokerServices: any[] = []
+    let envServices: any[] = []
+    
+    // 1. Try to get services from the broker
     try {
-      // Try to get services from the broker
       const services = await broker.inference.listService()
       console.log(`🔍 [Discovery] Found ${services.length} services from broker`)
-      
-      // If no services found via broker, try fallback providers from env
-      if (services.length === 0) {
-        console.log('🔍 [Discovery] No services from broker, trying env fallback...')
-        return this.getFallbackProviders()
-      }
-      
-      // Filter and validate services
-      const validServices = []
-      for (const service of services) {
-        try {
-          // Basic validation
-          if (service.provider && service.url) {
-            console.log(`✅ [Discovery] Valid service: ${service.provider} -> ${service.url}`)
-            validServices.push(service)
-          } else {
-            console.warn(`⚠️ [Discovery] Invalid service missing provider/url:`, service)
-          }
-        } catch (e: any) {
-          console.warn(`⚠️ [Discovery] Error validating service:`, e.message)
-        }
-      }
-      
-      if (validServices.length === 0) {
-        console.log('🔍 [Discovery] No valid services found, using fallback providers')
-        return this.getFallbackProviders()
-      }
-      
-      // Prioritize official providers
-      const officialProviders = [
-        '0xf07240Efa67755B5311bc75784a061eDB47165Dd', // llama-3.3-70b-instruct
-        '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'  // deepseek-r1-70b
-      ]
-      
-      const sorted = validServices.sort((a: any, b: any) => {
-        const aIsOfficial = officialProviders.includes(a.provider)
-        const bIsOfficial = officialProviders.includes(b.provider)
-        if (aIsOfficial && !bIsOfficial) return -1
-        if (!aIsOfficial && bIsOfficial) return 1
-        return 0
+      brokerServices = services || []
+    } catch (error: any) {
+      console.error('❌ [Discovery] Broker service discovery failed:', error.message)
+    }
+    
+    // 2. Parse providers from environment
+    try {
+      envServices = this.parseProvidersFromEnv()
+      console.log(`🔍 [Discovery] Parsed ${envServices.length} providers from env`)
+    } catch (error: any) {
+      console.error('❌ [Discovery] Env provider parsing failed:', error.message)
+    }
+    
+    // 3. Find ackEligible providers (exist in both broker and env)
+    const brokerProviderAddresses = new Set(
+      brokerServices.map(s => s.provider?.toLowerCase()).filter(Boolean)
+    )
+    
+    const ackEligible = envServices.filter(envProvider => {
+      return brokerProviderAddresses.has(envProvider.provider.toLowerCase())
+    })
+    
+    console.log(`🔍 Found ${brokerServices.length} broker services, ${envServices.length} env services, ackEligible: ${ackEligible.length}`)
+    
+    // 4. If we have eligible providers, use them; otherwise fall back to env providers
+    if (ackEligible.length > 0) {
+      // Enrich env providers with broker metadata
+      const enriched = ackEligible.map(envProvider => {
+        const brokerService = brokerServices.find(
+          bs => bs.provider?.toLowerCase() === envProvider.provider.toLowerCase()
+        )
+        return brokerService ? { ...brokerService, ...envProvider } : envProvider
       })
       
-      console.log(`✅ [Discovery] Returning ${sorted.length} validated services`)
-      return sorted
-      
-    } catch (error: any) {
-      console.error('❌ [Discovery] Service discovery failed:', error.message)
-      console.log('🔍 [Discovery] Falling back to env providers')
-      return this.getFallbackProviders()
+      console.log(`✅ [Discovery] Using ${enriched.length} ackEligible providers`)
+      return this.prioritizeOfficialProviders(enriched)
     }
+    
+    // 5. Fallback: use env providers even if not found in broker
+    if (envServices.length > 0) {
+      console.log(`⚠️ [Discovery] No ackEligible providers found, using ${envServices.length} env providers as fallback`)
+      return this.prioritizeOfficialProviders(envServices)
+    }
+    
+    // 6. Last resort: use broker services if any
+    if (brokerServices.length > 0) {
+      console.log(`⚠️ [Discovery] No env providers, using ${brokerServices.length} broker services`)
+      return this.prioritizeOfficialProviders(brokerServices)
+    }
+    
+    console.log('❌ [Discovery] No services found from any source')
+    return []
   }
 
-  private getFallbackProviders(): any[] {
-    // Get providers from environment as fallback
-    const envProviders = (process.env.OG_PROVIDERS ?? process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER ?? '')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean)
+  /**
+   * Parse OG_PROVIDERS from environment variables
+   * Supports both JSON array and CSV formats:
+   * 
+   * JSON: OG_PROVIDERS='[{"provider":"0xABC...","service":"0xSERVICE..."},{"provider":"0xDEF...","service":"0xSERVICE2..."}]'
+   * CSV: OG_PROVIDERS=0xABC...:0xSERVICE...,0xDEF...:0xSERVICE2...
+   * Simple: OG_PROVIDERS=0xABC...,0xDEF...
+   */
+  private parseProvidersFromEnv(): any[] {
+    const envVar = process.env.OG_PROVIDERS || process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER || ''
     
-    if (envProviders.length === 0) {
-      // Use default provider from env
-      const defaultProvider = process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER || '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
-      envProviders.push(defaultProvider)
+    if (!envVar) {
+      console.log('[Discovery] No OG_PROVIDERS found in env, using defaults')
+      return [
+        {
+          provider: '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
+          url: 'https://compute-testnet.0g.ai',
+          model: 'llama-3.3-70b-instruct',
+          serviceType: 'inference',
+          source: 'default'
+        },
+        {
+          provider: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3',
+          url: 'https://compute-testnet.0g.ai',
+          model: 'deepseek-r1-70b',
+          serviceType: 'inference',
+          source: 'default'
+        }
+      ]
     }
+
+    const trimmed = envVar.trim()
     
-    console.log(`🔍 [Discovery] Using ${envProviders.length} fallback providers:`, envProviders)
+    // Try JSON format first
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (Array.isArray(parsed)) {
+          console.log('[Discovery] Parsed JSON format OG_PROVIDERS')
+          return parsed.map((item: any) => ({
+            provider: item.provider,
+            service: item.service || 'inference',
+            url: item.url || 'https://compute-testnet.0g.ai',
+            model: item.model || 'unknown',
+            serviceType: 'inference',
+            source: 'env-json'
+          }))
+        }
+      } catch (e: any) {
+        console.warn('[Discovery] Failed to parse JSON format, trying CSV:', e.message)
+      }
+    }
+
+    // CSV format: provider:service,provider:service or just provider,provider
+    const providers: any[] = []
+    const entries = trimmed.split(',').map(s => s.trim()).filter(Boolean)
     
-    return envProviders.map((provider, index) => ({
-      provider,
-      url: `https://compute-testnet.0g.ai`, // Default 0G compute URL
-      models: ['llama-3.3-70b-instruct'],
-      pricePerToken: '1000000',
-      index
-    }))
+    for (const entry of entries) {
+      if (entry.includes(':')) {
+        // Format: provider:service
+        const [provider, service] = entry.split(':').map(s => s.trim())
+        if (provider && service) {
+          providers.push({
+            provider,
+            service,
+            url: 'https://compute-testnet.0g.ai',
+            model: 'unknown',
+            serviceType: 'inference',
+            source: 'env-csv-with-service'
+          })
+        }
+      } else {
+        // Format: just provider address
+        if (entry.startsWith('0x') && entry.length >= 40) {
+          providers.push({
+            provider: entry,
+            url: 'https://compute-testnet.0g.ai',
+            model: 'unknown',
+            serviceType: 'inference',
+            source: 'env-csv-simple'
+          })
+        }
+      }
+    }
+
+    console.log(`[Discovery] Parsed CSV format: ${providers.length} providers`)
+    return providers
+  }
+
+  private prioritizeOfficialProviders(services: any[]): any[] {
+    const officialProviders = [
+      '0xf07240Efa67755B5311bc75784a061eDB47165Dd', // llama-3.3-70b-instruct
+      '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'  // deepseek-r1-70b
+    ]
+    
+    return services.sort((a: any, b: any) => {
+      const aIsOfficial = officialProviders.includes(a.provider)
+      const bIsOfficial = officialProviders.includes(b.provider)
+      if (aIsOfficial && !bIsOfficial) return -1
+      if (!aIsOfficial && bIsOfficial) return 1
+      return 0
+    })
   }
 
   private async raceProviders(
@@ -446,8 +537,29 @@ export class ChatService {
       return
     }
 
+    // Check if ACK_REQUIRED flag is set (default true for strict mode)
+    const ackRequired = process.env.ACK_REQUIRED !== 'false'
+
     try {
       console.log('Acknowledging provider...')
+      
+      // Before acknowledging, optionally verify the service exists
+      // This helps prevent ServiceNotExist errors
+      if (ackRequired) {
+        try {
+          // Try to get service metadata as a pre-check
+          const metadata = await broker.inference.getServiceMetadata(providerAddress)
+          console.log(`Service metadata check passed for ${providerAddress}: ${metadata.model}`)
+        } catch (metaError: any) {
+          if (metaError.message.includes('ServiceNotExist')) {
+            console.warn(`⚠️ Provider ${providerAddress} service does not exist, skipping acknowledge`)
+            return // Skip this provider gracefully
+          }
+          // For other errors, proceed with acknowledge attempt
+          console.warn(`Service metadata check failed (non-critical): ${metaError.message}`)
+        }
+      }
+      
       const ackTx = await broker.inference.acknowledgeProviderSigner(providerAddress)
       if (ackTx && (ackTx as any).hash) {
         console.log(`Acknowledge tx: ${(ackTx as any).hash}`)
@@ -464,11 +576,26 @@ export class ChatService {
       console.log('Provider acknowledged successfully!')
       
     } catch (ackError: any) {
-      if (ackError.message.includes('already acknowledged')) {
+      const errorMsg = ackError.message || ackError.toString()
+      
+      if (errorMsg.includes('already acknowledged')) {
         console.log('Provider already acknowledged')
         acknowledgeCache.set(providerAddress, now)
+      } else if (errorMsg.includes('ServiceNotExist')) {
+        if (ackRequired) {
+          console.error(`❌ ServiceNotExist error for ${providerAddress}`)
+          throw new Error(`Service does not exist for provider ${providerAddress}`)
+        } else {
+          console.warn(`⚠️ ServiceNotExist for ${providerAddress}, but ACK_REQUIRED=false, skipping gracefully`)
+          return // Skip this provider gracefully
+        }
       } else {
-        throw new Error(`Acknowledge failed: ${ackError.message}`)
+        if (ackRequired) {
+          throw new Error(`Acknowledge failed: ${errorMsg}`)
+        } else {
+          console.warn(`⚠️ Acknowledge failed for ${providerAddress}: ${errorMsg}, but ACK_REQUIRED=false, skipping`)
+          return // Skip this provider gracefully
+        }
       }
     }
   }

@@ -18,11 +18,11 @@ import { jsonRpcProvider } from 'wagmi/providers/jsonRpc';
 import type { Chain } from 'wagmi';
 import '@rainbow-me/rainbowkit/styles.css';
 
-// Define 0G Newton Testnet
-const ogNewton: Chain = {
-  id: 16600,
-  name: '0G Newton Testnet',
-  network: '0g-newton-testnet',
+// Define 0G Galileo Testnet v3
+const ogGalileo: Chain = {
+  id: 16601,
+  name: '0G Galileo Testnet v3',
+  network: '0g-galileo-testnet-v3',
   nativeCurrency: {
     decimals: 18,
     name: 'A0GI',
@@ -47,7 +47,7 @@ const ogNewton: Chain = {
 
 // Configure chains with better caching
 const { chains, publicClient, webSocketPublicClient } = configureChains(
-  [ogNewton],
+  [ogGalileo],
   [
     jsonRpcProvider({
       rpc: (chain) => ({

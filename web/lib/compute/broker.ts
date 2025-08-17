@@ -231,7 +231,7 @@ function generateDiagnostics(method: string, params: any[], value?: bigint, erro
 
 function formatTxUrl(hash: string): string | null {
   const rpcUrl = getRpcUrl()
-  if (rpcUrl.includes('galileo')) {
+  if (rpcUrl.includes('galileo') || rpcUrl.includes('evmrpc-testnet.0g.ai')) {
     return `https://chainscan-galileo.0g.ai/tx/${hash}`
   }
   return `https://explorer.0g.ai/tx/${hash}`

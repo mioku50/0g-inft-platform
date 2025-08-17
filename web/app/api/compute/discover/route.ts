@@ -75,13 +75,13 @@ export async function GET() {
 
     // 3. Find intersection - providers that exist in both broker and env
     const brokerProviderAddresses = new Set(
-      result.brokerServices.map(s => s.provider.toLowerCase())
+      result.brokerServices.map(s => s.provider?.toLowerCase?.() || '').filter(Boolean)
     )
     
-    result.ackEligible = result.envServices.filter(envProvider => {
+    // prefer intersection; if none, fall back to env to keep UI usable
+    const eligible = result.envServices.filter(envProvider => {
       const hasService = brokerProviderAddresses.has(envProvider.provider.toLowerCase())
       if (hasService) {
-        // Enrich with broker metadata
         const brokerService = result.brokerServices.find(
           bs => bs.provider.toLowerCase() === envProvider.provider.toLowerCase()
         )
@@ -91,6 +91,8 @@ export async function GET() {
       }
       return hasService
     })
+
+    result.ackEligible = eligible.length > 0 ? eligible : result.envServices
 
     console.log(`[discover] Discovery completed: ${result.brokerServices.length} broker, ${result.envServices.length} env, ${result.ackEligible.length} eligible`)
 

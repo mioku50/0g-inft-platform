@@ -90,6 +90,11 @@ export class ChatService {
     const errors: string[] = []
 
     try {
+      // Graceful fallback if server key is not configured
+      if (!this.privateKey) {
+        return this.createFallbackResponse(timing, ['OG_COMPUTE_PRIVATE_KEY not set'], 'Missing server key')
+      }
+
       console.log('🚀 [ChatService] Starting custodial inference request...')
       
       // 1. Broker initialization with cache

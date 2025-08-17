@@ -400,10 +400,10 @@ export default function ChatPage() {
               <Activity className="w-5 h-5 text-yellow-400 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-yellow-300 font-medium text-sm">
-                  ⚠ Running in Local Mode
+                  ⚠ Not using a remote 0G provider
                 </p>
                 <p className="text-yellow-200 text-xs mt-1">
-                  No 0G providers available. Check OG_PROVIDERS configuration and network connectivity.
+                  Fallback mode is active. Ensure OG_PROVIDERS and OG_COMPUTE_PRIVATE_KEY are set and /api/compute/discover shows providers ≥ 1.
                 </p>
               </div>
             </div>

@@ -28,6 +28,22 @@ const OFFICIAL_CONTRACTS = {
   fineTuning: getFineTuningServingAddress()
 }
 
+// Официальные провайдеры 0G для Galileo testnet
+const OFFICIAL_PROVIDERS = [
+  {
+    address: '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
+    model: 'llama-3.3-70b-instruct',
+    url: 'https://serving-broker-1.0g-newton-testnet-sepolia.0g.ai',
+    description: 'State-of-the-art 70B parameter model'
+  },
+  {
+    address: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3',
+    model: 'deepseek-r1-70b',
+    url: 'https://serving-broker-2.0g-newton-testnet-sepolia.0g.ai',
+    description: 'Advanced reasoning model'
+  }
+]
+
 // Тайм-ауты
 const TOTAL_TIMEOUT = 20000 // 20 секунд общий
 const PROVIDER_TIMEOUT = 15000 // 15 секунд на провайдера
@@ -85,14 +101,17 @@ export class ChatService {
       const broker = await this.getBrokerSafe()
       timing.initBroker = Date.now() - brokerStart
 
-      // 2. Обнаружение сервисов
-      const discoveryStart = Date.now()
-      const services = await this.discoverServices(broker)
-      timing.discovery = Date.now() - discoveryStart
+      // 2. Попробуем работать напрямую с известными провайдерами
+      console.log('Using known official providers for Galileo testnet')
+      const services = OFFICIAL_PROVIDERS.map(p => ({
+        provider: p.address,
+        model: p.model,
+        url: p.url,
+        serviceType: 'inference',
+        verifiability: 'TeeML'
+      }))
 
-      if (services.length === 0) {
-        return this.createFallbackResponse(timing, errors, 'No services found')
-      }
+      console.log(`Working with ${services.length} official providers`)
 
       // 3. Параллельный запуск запросов к провайдерам
       const providerStart = Date.now()
@@ -113,13 +132,30 @@ export class ChatService {
 
       // Все провайдеры упали
       timing.totalTTFB = Date.now() - startTime
-      return this.createFallbackResponse(timing, errors, 'All providers failed', services.length)
+      errors.push('All providers failed to respond')
+      
+      return {
+        success: false,
+        response: 'Unable to connect to AI services. Please check your configuration and try again.',
+        model: 'error',
+        provider: 'none',
+        isRealAI: false,
+        metadata: { timing, servicesFound: services.length, errors }
+      }
 
     } catch (error: any) {
       timing.totalTTFB = Date.now() - startTime
       errors.push(error.message)
       console.error('ChatService error:', error)
-      return this.createFallbackResponse(timing, errors, 'Service error', 0)
+      
+      return {
+        success: false,
+        response: `Service error: ${error.message}`,
+        model: 'error',
+        provider: 'none',
+        isRealAI: false,
+        metadata: { timing, servicesFound: 0, errors }
+      }
     }
   }
 
@@ -252,54 +288,6 @@ export class ChatService {
     }
   }
 
-  private async discoverServices(broker: any): Promise<any[]> {
-    try {
-      console.log('Discovering services from contract...')
-      const services = await broker.inference.listService()
-      
-      if (!services || !Array.isArray(services)) {
-        console.log('Invalid services response, got:', typeof services)
-        return []
-      }
-      
-      console.log(`Found ${services.length} services`)
-      
-      if (services.length === 0) {
-        console.log('No services found in contract')
-        return []
-      }
-      
-      // Log service details for debugging
-      services.forEach((service: any, index: number) => {
-        console.log(`Service ${index + 1}:`, {
-          provider: service.provider,
-          model: service.model,
-          serviceType: service.serviceType,
-          verifiability: service.verifiability
-        })
-      })
-      
-      // Prioritize official providers
-      const officialProviders = [
-        '0xf07240Efa67755B5311bc75784a061eDB47165Dd', // llama-3.3-70b-instruct
-        '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'  // deepseek-r1-70b
-      ]
-      
-      const list = [...services]
-      return list.sort((a: any, b: any) => {
-        const aIsOfficial = officialProviders.includes(a.provider)
-        const bIsOfficial = officialProviders.includes(b.provider)
-        if (aIsOfficial && !bIsOfficial) return -1
-        if (!aIsOfficial && bIsOfficial) return 1
-        return 0
-      })
-    } catch (error: any) {
-      console.error('Service discovery error:', error)
-      // Don't throw - return empty array to allow graceful fallback
-      return []
-    }
-  }
-
   private async raceProviders(
     broker: any, 
     services: any[], 
@@ -333,99 +321,127 @@ export class ChatService {
     try {
       console.log(`Trying provider: ${service.model} at ${service.provider}`)
 
-      // 1. Acknowledge provider with better error handling
-      const ackStart = Date.now()
-      try {
-        await this.acknowledgeProviderSafe(broker, service.provider)
-        timing.ack += Date.now() - ackStart
-      } catch (ackError: any) {
-        if (ackError.message.includes('ServiceNotExist')) {
-          console.log(`Skipping provider ${service.provider}: service not registered`)
-          throw ackError
-        }
-        // For other ack errors, continue anyway
-        console.log('Acknowledge failed but continuing:', ackError.message)
-        timing.ack += Date.now() - ackStart
+      // 1. Get service metadata - для официальных провайдеров используем известные URL
+      const metadata = {
+        endpoint: service.url,
+        model: service.model
       }
-
-      // 2. Get service metadata
-      const metadata = await broker.inference.getServiceMetadata(service.provider)
       console.log(`Service endpoint: ${metadata.endpoint}`)
 
-      // 3. Generate headers
-      const headers = await broker.inference.getRequestHeaders(service.provider, request.message)
-
-      // 4. Prepare request
-      const requestBody = {
-        messages: [
-          { 
-            role: 'system' as const, 
-            content: `You are ${request.agentMetadata.name}. ${request.agentMetadata.description}` 
-          },
-          { role: 'user' as const, content: request.message }
-        ],
-        model: metadata.model,
-        stream: false as const
-      }
-
-      // 5. Try OpenAI SDK first
+      // 2. Try direct request without acknowledgment first
       try {
-        const openai = new OpenAI({
-          baseURL: metadata.endpoint,
-          apiKey: ''
-        })
+        // Generate headers
+        const headers = await broker.inference.getRequestHeaders(service.provider, request.message)
 
-        const completion = await openai.chat.completions.create(requestBody, {
-          headers: headers,
-          signal: controller.signal
-        })
-
-        const aiResponse = completion.choices[0].message.content
-
-        // 6. Process response (verification)
-        try {
-          const isValid = await broker.inference.processResponse(
-            service.provider,
-            aiResponse,
-            completion.id
-          )
-          console.log(`✅ Success with ${service.model}, valid: ${isValid}`)
-        } catch (e) {
-          console.log('Process response error (non-critical):', (e as any).message)
-        }
-
-        return {
-          response: aiResponse,
+        // Prepare request
+        const requestBody = {
+          messages: [
+            { 
+              role: 'system' as const, 
+              content: `You are ${request.agentMetadata.name}. ${request.agentMetadata.description}` 
+            },
+            { role: 'user' as const, content: request.message }
+          ],
           model: metadata.model,
-          provider: service.provider
+          stream: false as const
         }
 
-      } catch (sdkError: any) {
-        console.log(`OpenAI SDK failed, trying fetch: ${sdkError.message}`)
-        
-        // 7. Fallback to fetch
-        const response = await fetch(`${metadata.endpoint}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            ...headers,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal
-        })
+        // Try OpenAI SDK first
+        try {
+          const openai = new OpenAI({
+            baseURL: metadata.endpoint,
+            apiKey: ''
+          })
 
-        if (response.ok) {
-          const data = await response.json()
-          console.log(`✅ Success with fetch for ${service.model}`)
-          
+          const completion = await openai.chat.completions.create(requestBody, {
+            headers: headers,
+            signal: controller.signal
+          })
+
+          const aiResponse = completion.choices[0].message.content
+
+          // Process response (verification)
+          try {
+            const isValid = await broker.inference.processResponse(
+              service.provider,
+              aiResponse,
+              completion.id
+            )
+            console.log(`✅ Success with ${service.model}, valid: ${isValid}`)
+          } catch (e) {
+            console.log('Process response error (non-critical):', (e as any).message)
+          }
+
           return {
-            response: data.choices[0].message.content,
+            response: aiResponse,
             model: metadata.model,
             provider: service.provider
           }
-        } else {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+
+        } catch (sdkError: any) {
+          console.log(`OpenAI SDK failed: ${sdkError.message}`)
+          
+          // If it's an auth error, try to acknowledge
+          if (sdkError.message.includes('acknowledge') || sdkError.message.includes('unauthorized')) {
+            console.log('Attempting to acknowledge provider...')
+            const ackStart = Date.now()
+            try {
+              await this.acknowledgeProviderSafe(broker, service.provider)
+              timing.ack += Date.now() - ackStart
+              
+              // Retry after acknowledgment
+              const newHeaders = await broker.inference.getRequestHeaders(service.provider, request.message)
+              const openai = new OpenAI({
+                baseURL: metadata.endpoint,
+                apiKey: ''
+              })
+
+              const completion = await openai.chat.completions.create(requestBody, {
+                headers: newHeaders,
+                signal: controller.signal
+              })
+
+              const aiResponse = completion.choices[0].message.content
+              
+              return {
+                response: aiResponse,
+                model: metadata.model,
+                provider: service.provider
+              }
+            } catch (retryError: any) {
+              console.log('Retry after acknowledge failed:', retryError.message)
+              throw retryError
+            }
+          }
+          
+          // For other errors, try direct fetch
+          console.log('Trying direct fetch...')
+          const response = await fetch(`${metadata.endpoint}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              ...headers,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal
+          })
+
+          if (response.ok) {
+            const data = await response.json()
+            console.log(`✅ Success with fetch for ${service.model}`)
+            
+            return {
+              response: data.choices[0].message.content,
+              model: metadata.model,
+              provider: service.provider
+            }
+          } else {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
         }
+      } catch (error: any) {
+        console.log(`Direct request failed: ${error.message}`)
+        throw error
       }
 
     } catch (error: any) {
@@ -475,43 +491,9 @@ export class ChatService {
         return
       }
       
-      if (ackError.message.includes('ServiceNotExist') || 
-          ackError.message.includes('service not exist')) {
-        console.log('Service does not exist for provider:', providerAddress)
-        // Don't cache failed acknowledges, but don't throw error
-        throw new Error(`ServiceNotExist: ${providerAddress}`)
-      }
-      
       // For other errors, still try to continue
       console.log('Acknowledge failed but continuing:', ackError.message)
       throw ackError
-    }
-  }
-
-  private createFallbackResponse(
-    timing: TimingMetrics, 
-    errors: string[], 
-    reason: string,
-    servicesFound: number = 0
-  ): ChatResponse {
-    return {
-      success: true,
-      response: `I'm currently experiencing connectivity issues with the 0G Compute Network.
-
-🔄 **Status Report:**
-- Services discovered: ${servicesFound}
-- Issue: ${reason}
-- Errors: ${errors.slice(0, 3).join(', ')}
-
-I'm operating in local mode for now. How can I help you?`,
-      model: 'local-fallback',
-      provider: 'local',
-      isRealAI: false,
-      metadata: {
-        timing,
-        servicesFound,
-        errors: errors.slice(0, 5) // Ограничиваем количество ошибок
-      }
     }
   }
 }

@@ -8,6 +8,7 @@ export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { ChatService } from '@/lib/compute/chat-service'
+import { DirectChatService } from '@/lib/compute/direct-chat-service'
 import { getPrivateKey } from '@/lib/server/compute-env'
 
 export async function POST(request: NextRequest) {
@@ -35,11 +36,31 @@ export async function POST(request: NextRequest) {
     console.log('Message:', message)
     console.log('Agent:', agentMetadata.name)
 
-    // Создаем ChatService и обрабатываем запрос
-    const chatService = new ChatService(getPrivateKey())
-    const result = await chatService.processChat({ message, agentMetadata })
+    // Попробуем сначала использовать полную интеграцию с 0G SDK
+    try {
+      const chatService = new ChatService(getPrivateKey())
+      const result = await chatService.processChat({ message, agentMetadata })
 
-    console.log('=== Chat Response ===')
+      // Если получили успешный ответ с реальным AI, возвращаем его
+      if (result.success && result.isRealAI) {
+        console.log('=== Chat Response (0G SDK) ===')
+        console.log('Success:', result.success)
+        console.log('Model:', result.model)
+        console.log('Provider:', result.provider)
+        console.log('Is Real AI:', result.isRealAI)
+        console.log('TTFB:', result.metadata.timing.totalTTFB + 'ms')
+        
+        return NextResponse.json(result)
+      }
+    } catch (sdkError: any) {
+      console.log('0G SDK error, falling back to direct service:', sdkError.message)
+    }
+
+    // Если 0G SDK не сработал, используем прямой сервис
+    const directService = new DirectChatService()
+    const result = await directService.processChat({ message, agentMetadata })
+
+    console.log('=== Chat Response (Direct) ===')
     console.log('Success:', result.success)
     console.log('Model:', result.model)
     console.log('Provider:', result.provider)

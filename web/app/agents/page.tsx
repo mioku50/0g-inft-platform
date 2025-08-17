@@ -76,15 +76,15 @@ const AgentCard = React.memo(({
 }) => {
   return (
     <Card 
-      className="bg-white/80 backdrop-blur border-purple-200 hover:shadow-xl transition-all duration-300 overflow-hidden"
+      className="bg-white border-gray-200 hover:shadow-lg transition-all duration-300 overflow-hidden"
     >
       <div className="p-6">
         {/* Agent Image */}
-        <div className="h-48 bg-gradient-to-br from-purple-100 to-pink-100 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
+        <div className="h-48 bg-gray-100 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
           <AgentAvatar agent={agent} size="large" />
           
           {agent.status === 'listed' && (
-            <Badge className="absolute top-2 right-2 bg-purple-600 text-white">
+            <Badge className="absolute top-2 right-2 bg-gray-900 text-white">
               <ShoppingCart className="w-3 h-3 mr-1" />
               Listed
             </Badge>
@@ -97,10 +97,10 @@ const AgentCard = React.memo(({
         </h3>
         
         <div className="flex gap-2 mb-3">
-          <Badge variant="outline" className="border-purple-300 text-purple-700">
+          <Badge variant="outline" className="border-gray-300 text-gray-700">
             #{agent.tokenId}
           </Badge>
-          <Badge className="bg-purple-100 text-purple-700 border-0">
+          <Badge className="bg-gray-100 text-gray-700 border-0">
             {agent.metadata?.model || 'Unknown'}
           </Badge>
         </div>
@@ -142,8 +142,8 @@ const AgentCard = React.memo(({
         
         {/* Listing info */}
         {agent.status === 'listed' && agent.listingInfo && (
-          <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
-            <p className="text-sm text-purple-900">
+          <div className="mb-4 p-3 bg-gray-100 rounded-lg border border-gray-200">
+            <p className="text-sm text-gray-900">
               Listed for: <span className="font-bold">{formatEther(agent.listingInfo.price)} OG</span>
             </p>
           </div>
@@ -155,13 +155,13 @@ const AgentCard = React.memo(({
             <>
               <div className="grid grid-cols-2 gap-2">
                 <Link href={`/agent/${agent.tokenId}/chat`}>
-                  <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                  <Button variant="outline" size="sm" className="w-full border-gray-200 hover:bg-gray-50 text-gray-700">
                     <MessageCircle className="h-4 w-4 mr-1" />
                     Chat
                   </Button>
                 </Link>
                 <Link href={`/agents/${agent.tokenId}/fine-tune`}>
-                  <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                  <Button variant="outline" size="sm" className="w-full border-gray-200 hover:bg-gray-50 text-gray-700">
                     <Brain className="h-4 w-4 mr-1" />
                     Fine-tune
                   </Button>
@@ -173,7 +173,7 @@ const AgentCard = React.memo(({
                   onClick={() => onClone(agent)}
                   variant="outline"
                   size="sm"
-                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
+                  className="w-full border-gray-200 hover:bg-gray-50 text-gray-700"
                 >
                   <Copy className="h-4 w-4 mr-1" />
                   Clone
@@ -182,7 +182,7 @@ const AgentCard = React.memo(({
                   onClick={() => onTransfer(agent)}
                   variant="outline"
                   size="sm"
-                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
+                  className="w-full border-gray-200 hover:bg-gray-50 text-gray-700"
                 >
                   <Send className="h-4 w-4 mr-1" />
                   Transfer
@@ -194,7 +194,7 @@ const AgentCard = React.memo(({
                   onClick={() => onPrompt(agent)}
                   variant="outline"
                   size="sm"
-                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
+                  className="w-full border-gray-200 hover:bg-gray-50 text-gray-700"
                 >
                   <Settings className="h-4 w-4 mr-1" />
                   Prompt
@@ -202,7 +202,7 @@ const AgentCard = React.memo(({
                 <Button 
                   onClick={() => onList(agent)}
                   size="sm"
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                  className="w-full bg-gray-900 hover:bg-gray-800 text-white"
                 >
                   <ShoppingCart className="h-4 w-4 mr-1" />
                   List
@@ -214,7 +214,7 @@ const AgentCard = React.memo(({
           {agent.status === 'listed' && (
             <>
               <Link href={`/agent/${agent.tokenId}/chat`} className="block">
-                <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                <Button variant="outline" size="sm" className="w-full border-gray-200 hover:bg-gray-50 text-gray-700">
                   <MessageCircle className="h-4 w-4 mr-2" />
                   Chat
                 </Button>
@@ -554,10 +554,10 @@ export default function AgentsPage() {
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="p-6 bg-white/70 backdrop-blur rounded-full inline-block mb-6">
-            <Bot className="w-24 h-24 text-purple-600" />
+          <div className="p-6 bg-white rounded-full inline-block mb-6 shadow-lg">
+            <Bot className="w-24 h-24 text-gray-600" />
           </div>
           <h1 className="text-4xl font-bold text-gray-900 mb-4">Connect Your Wallet</h1>
           <p className="text-gray-600">Please connect your wallet to explore your AI agents</p>
@@ -568,9 +568,9 @@ export default function AgentsPage() {
 
   if (loading && agents.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="h-16 w-16 animate-spin text-purple-600 mx-auto mb-4" />
+          <Loader2 className="h-16 w-16 animate-spin text-gray-600 mx-auto mb-4" />
           <p className="text-gray-700">Loading your AI agents...</p>
         </div>
       </div>
@@ -578,13 +578,13 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100">
+    <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto py-10 px-4">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-white/70 backdrop-blur rounded-xl">
-              <Bot className="h-10 w-10 text-purple-600" />
+            <div className="p-3 bg-white rounded-xl shadow-sm">
+              <Bot className="h-10 w-10 text-gray-600" />
             </div>
             <div>
               <h1 className="text-4xl font-bold text-gray-900">
@@ -599,7 +599,7 @@ export default function AgentsPage() {
               onClick={handleRefresh} 
               variant="outline"
               disabled={refreshing}
-              className="bg-white/70 backdrop-blur border-purple-200 text-gray-700 hover:bg-white/90"
+              className="bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
             >
               <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
               Refresh
@@ -616,16 +616,16 @@ export default function AgentsPage() {
         {/* Agents Grid */}
         {agents.length === 0 ? (
           <div className="text-center py-20">
-            <Card className="max-w-md mx-auto bg-white/80 backdrop-blur border-purple-200 p-12">
-              <div className="mb-6 inline-block p-4 bg-purple-100 rounded-full">
-                <Sparkles className="w-16 h-16 text-purple-600" />
+            <Card className="max-w-md mx-auto bg-white border-gray-200 p-12 shadow-sm">
+              <div className="mb-6 inline-block p-4 bg-gray-100 rounded-full">
+                <Sparkles className="w-16 h-16 text-gray-600" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-4">No agents yet</h2>
               <p className="text-gray-600 mb-8">
                 Create your first AI agent to get started!
               </p>
               <Link href="/mint">
-                <Button size="lg" className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
+                <Button size="lg" className="bg-gray-900 hover:bg-gray-800 text-white">
                   <Bot className="mr-2 h-5 w-5" />
                   Create Your First Agent
                 </Button>

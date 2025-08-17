@@ -53,18 +53,35 @@ export async function GET() {
 
     // Test broker initialization and provider discovery
     let providersFound = 0
+    let ackEligible = 0
     let brokerError = null
+    let lastAckOkAt = null
     
     try {
       const broker = await getBrokerOrThrow()
       console.log('[health] Broker initialized successfully')
       
-      // Try to discover services
-      if (broker.inference && typeof broker.inference.getServiceMetadata === 'function') {
+      // Try to discover services using the same logic as chat service
+      if (broker.inference && typeof broker.inference.listService === 'function') {
         try {
-          // This is just a test call to see if discovery works
-          // In real implementation, we'd enumerate actual providers
-          providersFound = 1 // Placeholder - will be updated with real discovery
+          const services = await broker.inference.listService()
+          providersFound = services.length
+          
+          // Also count ackEligible providers (from env that exist in broker)
+          const envProviders = parseProvidersFromEnv()
+          const brokerProviderAddresses = new Set(
+            services.map((s: any) => s.provider?.toLowerCase()).filter(Boolean)
+          )
+          
+          const eligible = envProviders.filter(envProvider => 
+            brokerProviderAddresses.has(envProvider.provider.toLowerCase())
+          )
+          ackEligible = eligible.length
+          
+          if (ackEligible > 0) {
+            lastAckOkAt = new Date().toISOString()
+          }
+          
         } catch (e: any) {
           console.warn('[health] Service discovery failed:', e.message)
         }
@@ -85,11 +102,16 @@ export async function GET() {
       contracts,
       walletAddress,
       serverBalance: `${serverBalance} OG`,
-      providersFound,
+      providers: {
+        brokerDiscovered: providersFound,
+        envEligible: ackEligible,
+        lastAckOkAt
+      },
       ethersVersion,
       environment: {
         hasPrivateKey: !!privateKey,
-        nodeVersion: process.version
+        nodeVersion: process.version,
+        ackRequired: process.env.ACK_REQUIRED !== 'false'
       },
       errors: brokerError ? [brokerError] : []
     }
@@ -97,6 +119,7 @@ export async function GET() {
     console.log('[health] Health check completed:', {
       chainId,
       providersFound,
+      ackEligible,
       serverBalance: `${serverBalance} OG`,
       hasErrors: healthStatus.errors.length > 0
     })
@@ -117,4 +140,51 @@ export async function GET() {
       { status: 500 }
     )
   }
+}
+
+/**
+ * Parse OG_PROVIDERS from environment variables
+ * Same logic as in chat-service.ts and discover endpoint
+ */
+function parseProvidersFromEnv(): any[] {
+  const envVar = process.env.OG_PROVIDERS || process.env.NEXT_PUBLIC_FINE_TUNE_PROVIDER || ''
+  
+  if (!envVar) {
+    return [
+      { provider: '0xf07240Efa67755B5311bc75784a061eDB47165Dd' },
+      { provider: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3' }
+    ]
+  }
+
+  const trimmed = envVar.trim()
+  
+  // Try JSON format first
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) {
+        return parsed.map((item: any) => ({
+          provider: item.provider,
+          service: item.service || 'inference'
+        }))
+      }
+    } catch (e) {
+      // Fall through to CSV parsing
+    }
+  }
+
+  // CSV format
+  const providers: any[] = []
+  const entries = trimmed.split(',').map(s => s.trim()).filter(Boolean)
+  
+  for (const entry of entries) {
+    if (entry.includes(':')) {
+      const [provider] = entry.split(':').map(s => s.trim())
+      if (provider) providers.push({ provider })
+    } else if (entry.startsWith('0x') && entry.length >= 40) {
+      providers.push({ provider: entry })
+    }
+  }
+
+  return providers
 }

@@ -74,14 +74,14 @@ const AgentCard: React.FC<AgentCardProps> = ({
   enableTransfer = false, 
   enableClone = false 
 }) => {
+  const [openSale, setOpenSale] = React.useState(false)
+  const [openTransfer, setOpenTransfer] = React.useState(false)
+  const [openClone, setOpenClone] = React.useState(false)
+
   if (isLoading) return <AgentCardSkeleton />
 
   const { metadata } = agent
   const fallback = `https://api.dicebear.com/7.x/bottts/svg?seed=agent-${agent.tokenId}`
-
-  const [openSale, setOpenSale] = React.useState(false)
-  const [openTransfer, setOpenTransfer] = React.useState(false)
-  const [openClone, setOpenClone] = React.useState(false)
 
   const avatarUrl = metadata?.image && metadata.image.trim().length > 8 ? metadata.image : fallback
 

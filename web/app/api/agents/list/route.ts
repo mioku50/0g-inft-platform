@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 
     // Load token metadata with enhanced batching
     const metadataLoaders = tokenIds.map(tokenId => 
-      () => loadTokenMetadataSafe(contract, tokenId)
+      () => loadTokenMetadataSafe(contract, parseInt(tokenId.toString(), 10))
     )
     
     const agents = await batchContractCalls(metadataLoaders, {
@@ -154,7 +154,7 @@ async function getTokensByOwner(
   
   // Filter out null results and convert to strings
   return tokens
-    .filter(token => token !== null)
+    .filter((token): token is bigint => token !== null)
     .map(token => token.toString())
 }
 
@@ -192,6 +192,6 @@ async function getAllTokens(
   
   // Filter out null results and convert to strings
   return tokens
-    .filter(token => token !== null)
+    .filter((token): token is bigint => token !== null)
     .map(token => token.toString())
 }

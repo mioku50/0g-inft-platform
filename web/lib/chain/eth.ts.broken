@@ -67,7 +67,7 @@ export async function withRetry<T>(
   options: { tries?: number; baseMs?: number } = {}
 ): Promise<T> {
   const { tries = 3, baseMs = 100 } = options
-  let lastError: Error | undefined
+  let lastError: Error
   
   for (let attempt = 1; attempt <= tries; attempt++) {
     try {
@@ -104,7 +104,7 @@ export async function withRetry<T>(
     }
   }
   
-  throw lastError || new Error('Unknown error in withRetry')
+  throw lastError
 }
 
 /**
@@ -258,3 +258,99 @@ export async function loadTokenMetadataSafe(contract: ethers.Contract, tokenId: 
     }
   }
 }
+    
+    // Execute batch with rate limiting
+    const batchResults = await Promise.all(
+      batch.map(call => limit(call))
+    )
+    
+    results.push(...batchResults)
+    
+    // Delay between batches (except for the last one)
+    if (i + batchSize < calls.length) {
+      await new Promise(resolve => setTimeout(resolve, delayBetweenBatches))
+    }
+  }
+  
+  return results
+}
+
+/**
+ * Safe token metadata loader with fallbacks
+ */
+export async function loadTokenMetadataSafe(
+  contract: ethers.Contract,
+  tokenId: string | number
+): Promise<{
+  id: string
+  owner: string | null
+  metadataHash: string | null
+  tokenURI: string | null
+  name?: string
+  description?: string
+  image?: string
+  error?: string
+}> {
+  const id = tokenId.toString()
+  
+  try {
+    // Use enhanced calls for basic token info
+    const [owner, metadataHash, tokenURI] = await Promise.all([
+      staticCallSafe(contract, 'ownerOf', tokenId),
+      staticCallSafe(contract, 'getEncryptedURI', tokenId),
+      staticCallSafe(contract, 'tokenURI', tokenId)
+    ])
+    
+    // Try to parse metadata from tokenURI if available
+    let metadata: any = {}
+    if (tokenURI && typeof tokenURI === 'string') {
+      try {
+        // Handle IPFS URIs
+        if (tokenURI.startsWith('ipfs://')) {
+          // For now, just note that it's IPFS - actual fetching would need HTTP gateway
+          metadata.source = 'ipfs'
+        } else if (tokenURI.startsWith('http')) {
+          // Could fetch HTTP URIs, but skip for now to avoid external deps
+          metadata.source = 'http'
+        } else if (tokenURI.startsWith('data:')) {
+          // Handle data URIs
+          const base64Data = tokenURI.split(',')[1]
+          if (base64Data) {
+            const decoded = Buffer.from(base64Data, 'base64').toString()
+            metadata = JSON.parse(decoded)
+          }
+        }
+      } catch (e) {
+        console.warn(`[loadTokenMetadataSafe] Failed to parse metadata for token ${id}:`, e)
+      }
+    }
+    
+    return {
+      id,
+      owner,
+      metadataHash,
+      tokenURI,
+      name: metadata.name || `Agent #${id}`,
+      description: metadata.description || 'AI Agent',
+      image: metadata.image || null
+    }
+    
+  } catch (error: any) {
+    console.error(`[loadTokenMetadataSafe] Failed to load token ${id}:`, error.message)
+    
+    return {
+      id,
+      owner: null,
+      metadataHash: null,
+      tokenURI: null,
+      name: `Agent #${id}`,
+      description: 'Failed to load metadata',
+      error: error.message
+    }
+  }
+}
+
+/**
+ * Enhanced provider instance
+ */
+export { enhancedProvider as default }

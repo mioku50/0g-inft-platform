@@ -107,11 +107,22 @@ export async function GET() {
         envEligible: ackEligible,
         lastAckOkAt
       },
+      rpc: {
+        backoffCount: 0, // Would be tracked in enhanced provider
+        rateLimitHits: 0 // Would be tracked in enhanced provider
+      },
+      cache: {
+        hit: 0, // Would be tracked in cache implementation
+        miss: 0 // Would be tracked in cache implementation
+      },
       ethersVersion,
       environment: {
         hasPrivateKey: !!privateKey,
         nodeVersion: process.version,
-        ackRequired: process.env.ACK_REQUIRED !== 'false'
+        ackRequired: process.env.ACK_REQUIRED !== 'false',
+        enableSale: process.env.ENABLE_SALE === 'true',
+        enableTransfer: process.env.ENABLE_TRANSFER === 'true',
+        enableClone: process.env.ENABLE_CLONE === 'true'
       },
       errors: brokerError ? [brokerError] : []
     }

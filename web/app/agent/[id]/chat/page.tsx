@@ -211,7 +211,10 @@ export default function ChatPage() {
             provider: data.provider,
             model: data.model,
             ttfb: data.metadata?.timing?.totalTTFB,
-            isRealAI: data.isRealAI
+            isRealAI: data.isRealAI,
+            servicesFound: data.metadata?.servicesFound || 0,
+            timing: data.metadata?.timing,
+            errors: data.metadata?.errors || []
           })
         }
       } else {
@@ -322,7 +325,7 @@ export default function ChatPage() {
       {showSettings && providerInfo && (
         <div className="relative z-10 bg-black/40 backdrop-blur-xl border-b border-white/10">
           <div className="container mx-auto px-4 py-3">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
               <div className="flex items-center space-x-2">
                 <Network className="w-4 h-4 text-0g-400" />
                 <span className="text-0g-300">Provider:</span>
@@ -344,6 +347,64 @@ export default function ChatPage() {
                 <Bot className="w-4 h-4 text-0g-400" />
                 <span className="text-0g-300">Model:</span>
                 <span className="text-white">{providerInfo.model}</span>
+              </div>
+            </div>
+            
+            {/* Additional diagnostic info */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs border-t border-white/10 pt-3">
+              <div className="flex items-center space-x-2">
+                <span className="text-0g-300">Services Found:</span>
+                <span className="text-white">{providerInfo.servicesFound || 0}</span>
+              </div>
+              
+              {providerInfo.timing && (
+                <>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-0g-300">Init:</span>
+                    <span className="text-white">{providerInfo.timing.initBroker || 0}ms</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-0g-300">Discovery:</span>
+                    <span className="text-white">{providerInfo.timing.discovery || 0}ms</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-0g-300">Ack:</span>
+                    <span className="text-white">{providerInfo.timing.ack || 0}ms</span>
+                  </div>
+                </>
+              )}
+            </div>
+            
+            {/* Error information */}
+            {providerInfo.errors && providerInfo.errors.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-red-500/20">
+                <div className="text-red-300 text-xs">
+                  <span className="font-medium">Errors:</span>
+                  <div className="mt-1 space-y-1">
+                    {providerInfo.errors.slice(0, 3).map((error: string, i: number) => (
+                      <div key={i} className="text-red-400 font-mono">{error}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Fallback Warning Banner */}
+      {providerInfo && !providerInfo.isRealAI && (
+        <div className="relative z-10 bg-yellow-500/10 border-l-4 border-yellow-500 backdrop-blur-xl">
+          <div className="container mx-auto px-4 py-3">
+            <div className="flex items-center space-x-3">
+              <Activity className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-yellow-300 font-medium text-sm">
+                  ⚠ Running in Local Mode
+                </p>
+                <p className="text-yellow-200 text-xs mt-1">
+                  No 0G providers available. Check OG_PROVIDERS configuration and network connectivity.
+                </p>
               </div>
             </div>
           </div>

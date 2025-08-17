@@ -58,8 +58,13 @@ module.exports = {
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
   			},
-  			// 0G Brand Colors
-  			'0g': {
+  			// Enhanced 0G Brand Colors - Light Blue-Purple Theme
+  			'og': {
+  				'primary': '#8EC5FF',     // Light blue
+  				'secondary': '#B98AFF',   // Light purple
+  				'accent': '#7EA8FF',      // Accent blue
+  				'surface': 'rgba(255,255,255,0.08)',  // Glass surface
+  				'onSurface': '#F4F7FF',   // High contrast text
   				'50': '#f8f6ff',
   				'100': '#f0ecff',
   				'200': '#e3ddff',
@@ -71,6 +76,12 @@ module.exports = {
   				'800': '#6b21dc',
   				'900': '#5b21b6',
   				'950': '#341070'
+  			},
+  			// Glassmorphism utilities
+  			glass: {
+  				'light': 'rgba(255,255,255,0.08)',
+  				'medium': 'rgba(255,255,255,0.12)',
+  				'heavy': 'rgba(255,255,255,0.16)'
   			}
   		},
   		borderRadius: {

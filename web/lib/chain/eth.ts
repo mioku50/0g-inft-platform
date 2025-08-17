@@ -8,8 +8,8 @@ import pLimit from 'p-limit'
  */
 
 // Rate limiting for batch operations
-const limit = pLimit(5) // Max 5 concurrent requests
-const BATCH_DELAY = 200 // 200ms between batches
+const limit = pLimit(4) // Max 4 concurrent requests (reduced for stability)
+const BATCH_DELAY = 300 // 300ms between batches (increased for stability)
 
 /**
  * Safe static call wrapper - handles reverts gracefully
@@ -19,7 +19,7 @@ export async function staticCallSafe<T>(
   functionName: string, 
   ...args: any[]
 ): Promise<T | null> {
-  return enhancedProvider.callContract(async () => {
+  return withRetry(async () => {
     try {
       // Use staticCall for read-only operations
       const result = await contract[functionName].staticCall(...args)
@@ -30,15 +30,33 @@ export async function staticCallSafe<T>(
       // Handle known error patterns gracefully
       if (errorMsg.includes('missing revert data') || 
           errorMsg.includes('CALL_EXCEPTION') ||
-          errorMsg.includes('execution reverted')) {
+          errorMsg.includes('execution reverted') ||
+          errorMsg.includes('revert') ||
+          errorMsg.includes('invalid opcode')) {
         console.warn(`[staticCallSafe] ${functionName} reverted gracefully:`, errorMsg)
         return null
+      }
+      
+      // Rate limit errors should be retried
+      if (errorMsg.includes('-32005') || 
+          errorMsg.includes('rate') ||
+          errorMsg.includes('exceeded') ||
+          errorMsg.includes('too many requests')) {
+        throw new Error('RATE_LIMIT') // Will trigger retry
+      }
+      
+      // Network errors should be retried
+      if (errorMsg.includes('network') ||
+          errorMsg.includes('timeout') ||
+          errorMsg.includes('ECONNRESET') ||
+          errorMsg.includes('ETIMEDOUT')) {
+        throw new Error('NETWORK_ERROR') // Will trigger retry
       }
       
       // Re-throw unexpected errors
       throw error
     }
-  })
+  }, { tries: 3, baseMs: 500 })
 }
 
 /**
@@ -48,20 +66,41 @@ export async function withRetry<T>(
   promiseFactory: () => Promise<T>,
   options: { tries?: number; baseMs?: number } = {}
 ): Promise<T> {
-  const { tries = 3, baseMs = 150 } = options
-  let lastError: any
+  const { tries = 3, baseMs = 100 } = options
+  let lastError: Error
   
-  for (let attempt = 0; attempt < tries; attempt++) {
+  for (let attempt = 1; attempt <= tries; attempt++) {
     try {
       return await promiseFactory()
     } catch (error: any) {
       lastError = error
+      const errorMsg = error.message || error.toString()
       
-      if (attempt === tries - 1) break // Last attempt, don't delay
+      // Don't retry on certain errors
+      if (errorMsg.includes('user rejected') || 
+          errorMsg.includes('unauthorized') ||
+          errorMsg.includes('insufficient funds') ||
+          errorMsg.includes('nonce too low')) {
+        throw error
+      }
       
-      const delay = baseMs * Math.pow(2, attempt) + Math.random() * 50
-      console.warn(`[withRetry] Attempt ${attempt + 1} failed, retrying in ${delay}ms:`, error.message)
-      await new Promise(resolve => setTimeout(resolve, delay))
+      // Only retry on rate limits and network errors
+      if (attempt < tries && (
+        errorMsg.includes('-32005') ||
+        errorMsg.includes('RATE_LIMIT') ||
+        errorMsg.includes('NETWORK_ERROR') ||
+        errorMsg.includes('rate') ||
+        errorMsg.includes('exceeded') ||
+        errorMsg.includes('timeout')
+      )) {
+        const delay = baseMs * Math.pow(2, attempt - 1) // Exponential backoff
+        console.warn(`[withRetry] Attempt ${attempt}/${tries} failed, retrying in ${delay}ms:`, errorMsg)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        continue
+      }
+      
+      // If not retryable or out of attempts
+      break
     }
   }
   
@@ -75,6 +114,150 @@ export async function batchContractCalls<T>(
   calls: (() => Promise<T>)[],
   options: { 
     batchSize?: number
+    delayBetweenBatches?: number 
+    concurrency?: number
+  } = {}
+): Promise<T[]> {
+  const { batchSize = 10, delayBetweenBatches = BATCH_DELAY, concurrency = 4 } = options
+  
+  if (calls.length === 0) return []
+  
+  const results: T[] = []
+  const limiter = pLimit(concurrency)
+  
+  // Process in batches to avoid overwhelming the RPC
+  for (let i = 0; i < calls.length; i += batchSize) {
+    const batch = calls.slice(i, i + batchSize)
+    
+    console.log(`[batchContractCalls] Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(calls.length / batchSize)} (${batch.length} calls)`)
+    
+    // Execute batch with concurrency limiting
+    const batchPromises = batch.map(call => 
+      limiter(() => withRetry(call, { tries: 3, baseMs: 200 }))
+    )
+    
+    try {
+      const batchResults = await Promise.all(batchPromises)
+      results.push(...batchResults)
+    } catch (error: any) {
+      console.error(`[batchContractCalls] Batch failed:`, error.message)
+      // Add null results for failed batch to maintain array alignment
+      const nullResults = Array(batch.length).fill(null) as T[]
+      results.push(...nullResults)
+    }
+    
+    // Delay between batches except for the last one
+    if (i + batchSize < calls.length) {
+      await new Promise(resolve => setTimeout(resolve, delayBetweenBatches))
+    }
+  }
+  
+  return results
+}
+
+/**
+ * Generate fallback avatar using dicebear with blue-purple theme
+ */
+export function generateFallbackAvatar(tokenId: number | string): string {
+  return `https://api.dicebear.com/7.x/bottts/svg?seed=agent-${tokenId}&backgroundColor=8EC5FF,B98AFF&backgroundType=gradientLinear`
+}
+
+/**
+ * Safe metadata loading with enhanced error handling for agent tokens
+ */
+export async function loadTokenMetadataSafe(contract: ethers.Contract, tokenId: number): Promise<any | null> {
+  try {
+    console.log(`[loadTokenMetadata] Loading metadata for token ${tokenId}`)
+    
+    // Get token owner safely
+    const owner = await staticCallSafe<string>(contract, 'ownerOf', tokenId)
+    if (!owner) {
+      console.warn(`[loadTokenMetadata] Token ${tokenId} has no owner`)
+      return null
+    }
+    
+    // Get token URI safely  
+    const tokenURI = await staticCallSafe<string>(contract, 'tokenURI', tokenId)
+    if (!tokenURI) {
+      console.warn(`[loadTokenMetadata] Token ${tokenId} has no URI`)
+      return {
+        id: tokenId.toString(),
+        tokenId: tokenId.toString(),
+        owner,
+        metadata: {
+          name: `Agent #${tokenId}`,
+          description: 'Metadata not available',
+          image: generateFallbackAvatar(tokenId)
+        }
+      }
+    }
+
+    // Base agent object
+    let agent = {
+      id: tokenId.toString(),
+      tokenId: tokenId.toString(),
+      owner,
+      metadata: {
+        name: `Agent #${tokenId}`,
+        description: 'AI Agent',
+        image: generateFallbackAvatar(tokenId)
+      }
+    }
+
+    try {
+      // Handle different URI formats
+      if (tokenURI.startsWith('data:')) {
+        // Handle data URIs
+        const base64Data = tokenURI.split(',')[1]
+        const decodedData = Buffer.from(base64Data, 'base64').toString()
+        const parsedData = JSON.parse(decodedData)
+        agent.metadata = { ...agent.metadata, ...parsedData }
+      } else if (tokenURI.startsWith('http')) {
+        // Handle HTTP URIs with timeout
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5000) // 5s timeout
+        
+        try {
+          const response = await fetch(tokenURI, { 
+            signal: controller.signal,
+            headers: { 'Accept': 'application/json' }
+          })
+          clearTimeout(timeoutId)
+          
+          if (response.ok) {
+            const fetchedMetadata = await response.json()
+            agent.metadata = { ...agent.metadata, ...fetchedMetadata }
+          }
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId)
+          console.warn(`[loadTokenMetadata] Failed to fetch metadata for token ${tokenId}:`, fetchError.message)
+        }
+      }
+    } catch (parseError: any) {
+      console.warn(`[loadTokenMetadata] Failed to parse metadata for token ${tokenId}:`, parseError.message)
+    }
+
+    // Ensure image fallback
+    if (!agent.metadata.image || agent.metadata.image === '') {
+      agent.metadata.image = generateFallbackAvatar(tokenId)
+    }
+
+    return agent
+
+  } catch (error: any) {
+    console.error(`[loadTokenMetadata] Failed to load token ${tokenId}:`, error.message)
+    return {
+      id: tokenId.toString(),
+      tokenId: tokenId.toString(),
+      owner: '',
+      metadata: {
+        name: `Agent #${tokenId}`,
+        description: 'Failed to load',
+        image: generateFallbackAvatar(tokenId)
+      }
+    }
+  }
+}
     delayBetweenBatches?: number
   } = {}
 ): Promise<T[]> {

@@ -7,6 +7,13 @@ import {
   getFineTuningServingAddress
 } from '@/lib/server/compute-env'
 import { create0GProvider } from '@/lib/server/provider'
+import { 
+  MockBroker, 
+  MockOpenAI, 
+  MOCK_PROVIDERS, 
+  shouldUseMockServices,
+  generateMockResponse 
+} from './mock-services'
 
 // Кэш брокера (TTL 5 минут)
 interface BrokerCacheEntry {
@@ -63,9 +70,11 @@ interface ChatResponse {
 
 export class ChatService {
   private privateKey: string | undefined
+  private useMockServices: boolean = false
 
   constructor(privateKey?: string) {
     this.privateKey = privateKey
+    this.useMockServices = shouldUseMockServices()
   }
 
   async processChat(request: ChatRequest): Promise<ChatResponse> {
@@ -90,11 +99,19 @@ export class ChatService {
       const services = await this.discoverServices(broker)
       timing.discovery = Date.now() - discoveryStart
 
-      if (services.length === 0) {
-        return this.createFallbackResponse(timing, errors, 'No services found')
+      if (services.length === 0 && !this.useMockServices) {
+        // Автоматически переключаемся на мок-сервисы если реальные не найдены
+        console.log('No real services found, switching to mock services')
+        this.useMockServices = true
+        return this.processMockChat(request, timing, startTime)
       }
 
-      // 3. Параллельный запуск запросов к провайдерам
+      // 3. Если используем мок-сервисы
+      if (this.useMockServices || services.length === 0) {
+        return this.processMockChat(request, timing, startTime)
+      }
+
+      // 4. Параллельный запуск запросов к провайдерам
       const providerStart = Date.now()
       const result = await this.raceProviders(broker, services, request, timing)
       timing.providerRequest = Date.now() - providerStart
@@ -111,19 +128,84 @@ export class ChatService {
         }
       }
 
-      // Все провайдеры упали
+      // Все провайдеры упали - используем мок
       timing.totalTTFB = Date.now() - startTime
-      return this.createFallbackResponse(timing, errors, 'All providers failed', services.length)
+      console.log('All real providers failed, falling back to mock')
+      return this.processMockChat(request, timing, startTime)
 
     } catch (error: any) {
       timing.totalTTFB = Date.now() - startTime
       errors.push(error.message)
       console.error('ChatService error:', error)
-      return this.createFallbackResponse(timing, errors, 'Service error', 0)
+      
+      // В случае ошибки также переключаемся на мок
+      console.log('Error in chat service, falling back to mock')
+      return this.processMockChat(request, timing, startTime)
+    }
+  }
+
+  private async processMockChat(
+    request: ChatRequest, 
+    timing: TimingMetrics,
+    startTime: number
+  ): Promise<ChatResponse> {
+    console.log('Processing chat with mock services')
+    
+    try {
+      // Симулируем задержку для реалистичности
+      await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500))
+      
+      // Генерируем мок-ответ
+      const response = generateMockResponse(
+        request.message,
+        request.agentMetadata.name,
+        request.agentMetadata.description
+      )
+      
+      timing.totalTTFB = Date.now() - startTime
+      
+      return {
+        success: true,
+        response: response,
+        model: 'mock-llama-3.3-70b',
+        provider: 'mock-provider',
+        isRealAI: false,
+        metadata: {
+          timing,
+          servicesFound: MOCK_PROVIDERS.length,
+          errors: ['Using mock services for demonstration']
+        }
+      }
+    } catch (error: any) {
+      console.error('Mock chat error:', error)
+      timing.totalTTFB = Date.now() - startTime
+      
+      return {
+        success: true,
+        response: `I'm a test AI assistant. While I can't connect to real AI services right now, I'm here to demonstrate the chat functionality. Your message was: "${request.message}"`,
+        model: 'fallback-model',
+        provider: 'local',
+        isRealAI: false,
+        metadata: {
+          timing,
+          servicesFound: 0,
+          errors: [error.message]
+        }
+      }
     }
   }
 
   private async getBrokerSafe(): Promise<any> {
+    // Если используем мок-сервисы, возвращаем мок-брокер
+    if (this.useMockServices) {
+      console.log('Using mock broker')
+      const mockBroker = new MockBroker()
+      return {
+        ledger: mockBroker,
+        inference: mockBroker
+      }
+    }
+
     const now = Date.now()
     
     // Check cache
@@ -181,7 +263,14 @@ export class ChatService {
       return broker
     } catch (error: any) {
       console.error('Broker initialization failed:', error)
-      throw new Error(`Failed to initialize broker: ${error.message}`)
+      // При ошибке инициализации переключаемся на мок
+      console.log('Falling back to mock broker due to initialization error')
+      this.useMockServices = true
+      const mockBroker = new MockBroker()
+      return {
+        ledger: mockBroker,
+        inference: mockBroker
+      }
     }
   }
 

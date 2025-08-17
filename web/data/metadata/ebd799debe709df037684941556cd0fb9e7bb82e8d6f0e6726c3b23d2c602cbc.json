@@ -1,0 +1,17 @@
+{
+  "name": "Local Test Agent",
+  "description": "A locally created AI agent for testing purposes",
+  "model": "llama-3.3-70b-instruct",
+  "personality": "helpful",
+  "capabilities": {
+    "reasoning": true,
+    "coding": true,
+    "conversation": true
+  },
+  "skills": ["general", "coding", "conversation"],
+  "image": "https://api.dicebear.com/7.x/bottts/svg?seed=localagent",
+  "tokenId": "local-1",
+  "rootHash": "local://ebd799debe709df037684941556cd0fb9e7bb82e8d6f0e6726c3b23d2c602cbc",
+  "created": "2025-01-29T12:00:00Z",
+  "status": "active"
+}

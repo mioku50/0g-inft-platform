@@ -9,6 +9,13 @@ const nextConfig = {
   env: {
     OG_STORAGE_PRIVATE_KEY: process.env.OG_STORAGE_PRIVATE_KEY || '',
     OG_COMPUTE_PRIVATE_KEY: process.env.OG_COMPUTE_PRIVATE_KEY || '',
+    ENABLE_SALE: process.env.ENABLE_SALE || process.env.NEXT_PUBLIC_ENABLE_SALE || 'false',
+    ENABLE_TRANSFER: process.env.ENABLE_TRANSFER || process.env.NEXT_PUBLIC_ENABLE_TRANSFER || 'false',
+    ENABLE_CLONE: process.env.ENABLE_CLONE || process.env.NEXT_PUBLIC_ENABLE_CLONE || 'false',
+    NEXT_PUBLIC_ENABLE_SALE: process.env.NEXT_PUBLIC_ENABLE_SALE || process.env.ENABLE_SALE || 'false',
+    NEXT_PUBLIC_ENABLE_TRANSFER: process.env.NEXT_PUBLIC_ENABLE_TRANSFER || process.env.ENABLE_TRANSFER || 'false',
+    NEXT_PUBLIC_ENABLE_CLONE: process.env.NEXT_PUBLIC_ENABLE_CLONE || process.env.ENABLE_CLONE || 'false',
+    NEXT_PUBLIC_ENABLE_FINE_TUNE: process.env.NEXT_PUBLIC_ENABLE_FINE_TUNE || 'false',
   },
   webpack: (config, { isServer }) => {
     // Add polyfills for Node.js modules

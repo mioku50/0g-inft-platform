@@ -126,7 +126,7 @@ export class ChatService {
   private async getBrokerSafe(): Promise<any> {
     const now = Date.now()
     
-    // Проверяем кэш
+    // Check cache
     if (brokerCache && (now - brokerCache.timestamp) < BROKER_TTL) {
       console.log('Using cached broker')
       return brokerCache.broker
@@ -137,7 +137,31 @@ export class ChatService {
     try {
       const provider = create0GProvider()
       if (!this.privateKey) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
-      const wallet = new ethers.Wallet(this.privateKey, provider)
+      
+      // Validate private key format
+      const cleanKey = this.privateKey.startsWith('0x') ? this.privateKey : `0x${this.privateKey}`
+      if (!/^0x[a-fA-F0-9]{64}$/.test(cleanKey)) {
+        throw new Error('Invalid private key format')
+      }
+      
+      const wallet = new ethers.Wallet(cleanKey, provider)
+      console.log(`Wallet address: ${wallet.address}`)
+      
+      // Test network connectivity
+      try {
+        if (wallet.provider) {
+          const balance = await wallet.provider.getBalance(wallet.address)
+          console.log(`Wallet balance: ${ethers.formatEther(balance)} OG`)
+        }
+      } catch (networkError: any) {
+        console.log('Network check failed (non-critical):', networkError.message)
+      }
+      
+      console.log('Creating broker with contracts:', {
+        ledger: OFFICIAL_CONTRACTS.ledger,
+        inference: OFFICIAL_CONTRACTS.inference,
+        fineTuning: OFFICIAL_CONTRACTS.fineTuning
+      })
       
       const broker = await createZGComputeNetworkBroker(
         wallet,
@@ -146,14 +170,17 @@ export class ChatService {
         OFFICIAL_CONTRACTS.fineTuning
       )
 
-      // Проверяем и пополняем баланс безопасно
+      console.log('Broker created successfully')
+
+      // Check and top up balance safely
       await this.ensureMinBalance(broker)
 
-      // Кэшируем брокер
+      // Cache broker
       brokerCache = { broker, timestamp: now }
       
       return broker
     } catch (error: any) {
+      console.error('Broker initialization failed:', error)
       throw new Error(`Failed to initialize broker: ${error.message}`)
     }
   }
@@ -161,11 +188,26 @@ export class ChatService {
   private async ensureMinBalance(broker: any): Promise<void> {
     try {
       const ledgerInfo = await broker.ledger.getLedger()
-      const balance = this.safeBigIntToNumber(ledgerInfo.balance)
+      
+      // Check if ledgerInfo and balance exist
+      if (!ledgerInfo) {
+        console.log('No ledger info found, creating account...')
+        const initialAmount = ethers.parseEther('0.05')
+        await broker.ledger.addLedger(initialAmount)
+        console.log('New ledger account created with 0.05 OG')
+        return
+      }
+
+      // Safely handle balance - check for null/undefined
+      let balance = 0
+      if (ledgerInfo.balance !== null && ledgerInfo.balance !== undefined) {
+        balance = this.safeBigIntToNumber(ledgerInfo.balance)
+        console.log(`Ledger balance: ${ethers.formatEther(ledgerInfo.balance)} OG`)
+      } else {
+        console.log('Ledger balance is null/undefined, treating as 0')
+      }
+      
       const minBalance = 0.02
-      
-      console.log(`Ledger balance: ${ethers.formatEther(ledgerInfo.balance)} OG`)
-      
       if (balance < minBalance) {
         console.log('Low balance, adding funds...')
         const addAmount = ethers.parseEther('0.05')
@@ -174,19 +216,36 @@ export class ChatService {
       }
     } catch (error: any) {
       console.log('Balance check error (non-critical):', error.message)
-      // Не прерываем работу при ошибках баланса
+      // Don't break on balance errors, continue with service discovery
     }
   }
 
   private safeBigIntToNumber(value: any): number {
     try {
+      // Handle null and undefined values
+      if (value === null || value === undefined) {
+        console.log('BigInt conversion: value is null/undefined, returning 0')
+        return 0
+      }
+      
       if (typeof value === 'bigint') {
         return Number(ethers.formatEther(value))
       }
-      if (typeof value === 'string') {
+      if (typeof value === 'string' && value !== '') {
         return Number(ethers.formatEther(BigInt(value)))
       }
-      return Number(ethers.formatEther(BigInt(value?.toString?.() ?? '0')))
+      if (typeof value === 'number') {
+        return Number(ethers.formatEther(BigInt(value)))
+      }
+      
+      // Try to convert using toString() method
+      const strValue = value?.toString?.()
+      if (strValue && strValue !== '0' && strValue !== '') {
+        return Number(ethers.formatEther(BigInt(strValue)))
+      }
+      
+      console.log('BigInt conversion: falling back to 0 for value:', value)
+      return 0
     } catch (error) {
       console.log('BigInt conversion error:', error)
       return 0
@@ -195,10 +254,32 @@ export class ChatService {
 
   private async discoverServices(broker: any): Promise<any[]> {
     try {
+      console.log('Discovering services from contract...')
       const services = await broker.inference.listService()
+      
+      if (!services || !Array.isArray(services)) {
+        console.log('Invalid services response, got:', typeof services)
+        return []
+      }
+      
       console.log(`Found ${services.length} services`)
       
-      // Приоритизируем официальные провайдеры
+      if (services.length === 0) {
+        console.log('No services found in contract')
+        return []
+      }
+      
+      // Log service details for debugging
+      services.forEach((service: any, index: number) => {
+        console.log(`Service ${index + 1}:`, {
+          provider: service.provider,
+          model: service.model,
+          serviceType: service.serviceType,
+          verifiability: service.verifiability
+        })
+      })
+      
+      // Prioritize official providers
       const officialProviders = [
         '0xf07240Efa67755B5311bc75784a061eDB47165Dd', // llama-3.3-70b-instruct
         '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'  // deepseek-r1-70b
@@ -213,7 +294,9 @@ export class ChatService {
         return 0
       })
     } catch (error: any) {
-      throw new Error(`Service discovery failed: ${error.message}`)
+      console.error('Service discovery error:', error)
+      // Don't throw - return empty array to allow graceful fallback
+      return []
     }
   }
 
@@ -250,19 +333,29 @@ export class ChatService {
     try {
       console.log(`Trying provider: ${service.model} at ${service.provider}`)
 
-      // 1. Acknowledge провайдера с кэшем
+      // 1. Acknowledge provider with better error handling
       const ackStart = Date.now()
-      await this.acknowledgeProviderSafe(broker, service.provider)
-      timing.ack += Date.now() - ackStart
+      try {
+        await this.acknowledgeProviderSafe(broker, service.provider)
+        timing.ack += Date.now() - ackStart
+      } catch (ackError: any) {
+        if (ackError.message.includes('ServiceNotExist')) {
+          console.log(`Skipping provider ${service.provider}: service not registered`)
+          throw ackError
+        }
+        // For other ack errors, continue anyway
+        console.log('Acknowledge failed but continuing:', ackError.message)
+        timing.ack += Date.now() - ackStart
+      }
 
-      // 2. Получаем метаданные сервиса
+      // 2. Get service metadata
       const metadata = await broker.inference.getServiceMetadata(service.provider)
       console.log(`Service endpoint: ${metadata.endpoint}`)
 
-      // 3. Генерируем headers
+      // 3. Generate headers
       const headers = await broker.inference.getRequestHeaders(service.provider, request.message)
 
-      // 4. Подготавливаем запрос
+      // 4. Prepare request
       const requestBody = {
         messages: [
           { 
@@ -275,7 +368,7 @@ export class ChatService {
         stream: false as const
       }
 
-      // 5. Пробуем OpenAI SDK
+      // 5. Try OpenAI SDK first
       try {
         const openai = new OpenAI({
           baseURL: metadata.endpoint,
@@ -289,7 +382,7 @@ export class ChatService {
 
         const aiResponse = completion.choices[0].message.content
 
-        // 6. Обрабатываем ответ (верификация)
+        // 6. Process response (verification)
         try {
           const isValid = await broker.inference.processResponse(
             service.provider,
@@ -310,7 +403,7 @@ export class ChatService {
       } catch (sdkError: any) {
         console.log(`OpenAI SDK failed, trying fetch: ${sdkError.message}`)
         
-        // 7. Fallback на fetch
+        // 7. Fallback to fetch
         const response = await fetch(`${metadata.endpoint}/chat/completions`, {
           method: 'POST',
           headers: {
@@ -353,12 +446,14 @@ export class ChatService {
     }
 
     try {
-      console.log('Acknowledging provider...')
+      console.log(`Acknowledging provider ${providerAddress}...`)
       const ackTx = await broker.inference.acknowledgeProviderSigner(providerAddress)
+      
       if (ackTx && (ackTx as any).hash) {
         console.log(`Acknowledge tx: ${(ackTx as any).hash}`)
         try {
           await (ackTx as any)?.wait?.()
+          console.log('Acknowledge transaction confirmed')
         } catch (waitErr: any) {
           console.log('Ack wait error (non-critical):', waitErr?.message)
         }
@@ -370,12 +465,26 @@ export class ChatService {
       console.log('Provider acknowledged successfully!')
       
     } catch (ackError: any) {
-      if (ackError.message.includes('already acknowledged')) {
+      console.log('Acknowledge error details:', ackError.message)
+      
+      // Handle different error types
+      if (ackError.message.includes('already acknowledged') || 
+          ackError.message.includes('AlreadyAcknowledged')) {
         console.log('Provider already acknowledged')
         acknowledgeCache.set(providerAddress, now)
-      } else {
-        throw new Error(`Acknowledge failed: ${ackError.message}`)
+        return
       }
+      
+      if (ackError.message.includes('ServiceNotExist') || 
+          ackError.message.includes('service not exist')) {
+        console.log('Service does not exist for provider:', providerAddress)
+        // Don't cache failed acknowledges, but don't throw error
+        throw new Error(`ServiceNotExist: ${providerAddress}`)
+      }
+      
+      // For other errors, still try to continue
+      console.log('Acknowledge failed but continuing:', ackError.message)
+      throw ackError
     }
   }
 

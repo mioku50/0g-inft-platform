@@ -208,42 +208,43 @@ export default function ChatPage() {
 
   if (initializing) {
     return (
-      <div className="container mx-auto py-10 flex items-center justify-center min-h-[600px]">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="container mx-auto py-10 flex items-center justify-center min-h-[600px] bg-gray-50">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-600" />
       </div>
     )
   }
 
   return (
-    <div className="container mx-auto py-10 max-w-4xl">
-      <Link href="/agents">
-        <Button variant="ghost" className="mb-4">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to My Agents
-        </Button>
-      </Link>
+    <div className="min-h-screen bg-gray-50">
+      <div className="container mx-auto py-10 max-w-4xl">
+        <Link href="/agents">
+          <Button variant="ghost" className="mb-4">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to My Agents
+          </Button>
+        </Link>
 
-      <Card className="h-[600px] flex flex-col">
-        <CardHeader className="border-b">
-          <CardTitle className="flex items-center gap-2">
-            {agent?.metadata?.image ? (
-              <img 
-                src={agent.metadata.image} 
-                alt={agent.metadata.name}
-                className="w-8 h-8 rounded-full"
-                onError={(e) => {
-                  e.currentTarget.src = `https://api.dicebear.com/7.x/bottts/svg?seed=agent-${tokenId}`
-                }}
-              />
-            ) : (
-              <span className="text-2xl">🤖</span>
-            )}
-            Chat with {agent?.metadata?.name || `Agent #${tokenId}`}
-          </CardTitle>
-          <p className="text-sm text-gray-600">
-            Model: {agent?.metadata?.model || 'llama-3.3-70b'}
-          </p>
-        </CardHeader>
+        <Card className="h-[600px] flex flex-col bg-white border-gray-200">
+          <CardHeader className="border-b border-gray-200">
+            <CardTitle className="flex items-center gap-2 text-gray-900">
+              {agent?.metadata?.image ? (
+                <img 
+                  src={agent.metadata.image} 
+                  alt={agent.metadata.name}
+                  className="w-8 h-8 rounded-full"
+                  onError={(e) => {
+                    e.currentTarget.src = `https://api.dicebear.com/7.x/bottts/svg?seed=agent-${tokenId}`
+                  }}
+                />
+              ) : (
+                <span className="text-2xl">🤖</span>
+              )}
+              Chat with {agent?.metadata?.name || `Agent #${tokenId}`}
+            </CardTitle>
+            <p className="text-sm text-gray-600">
+              Model: {agent?.metadata?.model || 'llama-3.3-70b'}
+            </p>
+          </CardHeader>
         
         <CardContent className="flex-1 flex flex-col p-0">
           <div className="flex-1 overflow-y-auto p-6">
@@ -256,8 +257,8 @@ export default function ChatPage() {
                   <div
                     className={`max-w-[80%] rounded-lg p-4 ${
                       message.role === 'user'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-100'
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-900'
                     }`}
                   >
                     <p className="whitespace-pre-wrap">{message.content}</p>
@@ -303,6 +304,7 @@ export default function ChatPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   )
 }

@@ -87,7 +87,17 @@ export function getFineTuneProvider(): string {
 }
 
 export function getPrivateKey(): string | undefined {
-  const pk = process.env.OG_COMPUTE_PRIVATE_KEY
+  // First try to get the compute-specific private key
+  let pk = process.env.OG_COMPUTE_PRIVATE_KEY
+  
+  // Fallback to storage private key if compute key is not set
+  if (!pk) {
+    pk = process.env.OG_STORAGE_PRIVATE_KEY
+    if (pk) {
+      console.log('[compute-env] Using OG_STORAGE_PRIVATE_KEY as fallback for compute operations')
+    }
+  }
+  
   if (!pk) return undefined
   return pk.startsWith('0x') ? pk : `0x${pk}`
 }

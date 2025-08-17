@@ -15,12 +15,10 @@ const FINE_TUNING_CONTRACT = '0xda478Ccf5d534346A16b1475E4c2DecE0268B176';
 const OFFICIAL_PROVIDERS = [
   {
     address: '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
-    url: 'https://serving-broker-1.0g-newton-testnet-sepolia.0g.ai',
     model: 'llama-3.3-70b-instruct'
   },
   {
     address: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3',
-    url: 'https://serving-broker-2.0g-newton-testnet-sepolia.0g.ai',
     model: 'deepseek-r1-70b'
   }
 ];
@@ -96,15 +94,19 @@ async function testRealServices() {
     // 4. Тестирование провайдеров
     console.log('4️⃣ Testing official providers...\n');
     
-    for (const provider of OFFICIAL_PROVIDERS) {
-      console.log(`\n📡 Testing ${provider.model}`);
-      console.log(`   Provider: ${provider.address}`);
-      console.log(`   URL: ${provider.url}`);
+    for (const providerInfo of OFFICIAL_PROVIDERS) {
+      console.log(`\n📡 Testing ${providerInfo.model}`);
+      console.log(`   Provider: ${providerInfo.address}`);
       
       try {
+        // Получаем метаданные сервиса
+        const meta = await broker.inference.getServiceMetadata(providerInfo.address);
+        console.log(`   URL: ${meta.endpoint}`);
+        console.log(`   Contract model: ${meta.model}`);
+
         // Попробуем сначала без acknowledge
         console.log('   Generating request headers...');
-        const headers = await broker.inference.getRequestHeaders(provider.address, 'Hello');
+        const headers = await broker.inference.getRequestHeaders(providerInfo.address, 'Hello');
         
         // Подготовка запроса
         const requestBody = {
@@ -112,14 +114,14 @@ async function testRealServices() {
             { role: 'system', content: 'You are a helpful AI assistant.' },
             { role: 'user', content: 'Hello! Please respond with a short greeting.' }
           ],
-          model: provider.model,
+          model: meta.model,
           stream: false
         };
 
         // Отправка запроса
         console.log('   Sending test request...');
         const openai = new OpenAI({
-          baseURL: provider.url,
+          baseURL: meta.endpoint,
           apiKey: ''
         });
 
@@ -136,7 +138,7 @@ async function testRealServices() {
         // Попробуем верификацию
         try {
           const isValid = await broker.inference.processResponse(
-            provider.address,
+            providerInfo.address,
             completion.choices[0].message.content,
             completion.id
           );
@@ -152,19 +154,20 @@ async function testRealServices() {
         if (error.message.includes('acknowledge') || error.message.includes('unauthorized')) {
           console.log('   Attempting to acknowledge provider...');
           try {
-            await broker.inference.acknowledgeProviderSigner(provider.address);
+            await broker.inference.acknowledgeProviderSigner(providerInfo.address);
             console.log('   Provider acknowledged, retrying...');
             
             // Повторная попытка
-            const headers = await broker.inference.getRequestHeaders(provider.address, 'Hello');
+            const headers = await broker.inference.getRequestHeaders(providerInfo.address, 'Hello');
+            const meta = await broker.inference.getServiceMetadata(providerInfo.address);
             const requestBody = {
               messages: [{ role: 'user', content: 'Hello!' }],
-              model: provider.model,
+              model: meta.model,
               stream: false
             };
             
             const openai = new OpenAI({
-              baseURL: provider.url,
+              baseURL: meta.endpoint,
               apiKey: ''
             });
             

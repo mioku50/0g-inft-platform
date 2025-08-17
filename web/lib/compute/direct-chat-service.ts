@@ -6,11 +6,6 @@ import { create0GProvider } from '@/lib/server/provider'
 // Официальные провайдеры 0G
 const PROVIDERS = [
   {
-    name: 'llama-3.3-70b',
-    url: 'https://serving-broker-1.0g-newton-testnet-sepolia.0g.ai',
-    apiKey: process.env.OPENAI_API_KEY || ''
-  },
-  {
     name: 'gpt-4',
     url: 'https://api.openai.com/v1',
     apiKey: process.env.OPENAI_API_KEY || ''
@@ -47,7 +42,7 @@ export class DirectChatService {
     // Попробуем каждого провайдера по очереди
     for (const provider of PROVIDERS) {
       try {
-        console.log(`Trying provider: ${provider.name} at ${provider.url}`)
+        console.log(`Trying fallback provider: ${provider.name} at ${provider.url}`)
         
         const openai = new OpenAI({
           baseURL: provider.url,
@@ -75,7 +70,7 @@ export class DirectChatService {
           temperature: 0.7
         })
 
-        const response = completion.choices[0].message.content
+        const response = completion.choices[0].message.content || ''
 
         return {
           success: true,

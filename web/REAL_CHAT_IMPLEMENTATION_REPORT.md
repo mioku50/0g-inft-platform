@@ -52,12 +52,12 @@ const OFFICIAL_PROVIDERS = [
   {
     address: '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
     model: 'llama-3.3-70b-instruct',
-    url: 'https://serving-broker-1.0g-newton-testnet-sepolia.0g.ai'
+    url: '<resolved via getServiceMetadata>'
   },
   {
     address: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3',
     model: 'deepseek-r1-70b',
-    url: 'https://serving-broker-2.0g-newton-testnet-sepolia.0g.ai'
+    url: '<resolved via getServiceMetadata>'
   }
 ]
 ```

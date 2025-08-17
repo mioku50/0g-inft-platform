@@ -28,21 +28,11 @@ const OFFICIAL_CONTRACTS = {
   fineTuning: getFineTuningServingAddress()
 }
 
-// Официальные провайдеры 0G для Galileo testnet
-const OFFICIAL_PROVIDERS = [
-  {
-    address: '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
-    model: 'llama-3.3-70b-instruct',
-    url: 'https://serving-broker-1.0g-newton-testnet-sepolia.0g.ai',
-    description: 'State-of-the-art 70B parameter model'
-  },
-  {
-    address: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3',
-    model: 'deepseek-r1-70b',
-    url: 'https://serving-broker-2.0g-newton-testnet-sepolia.0g.ai',
-    description: 'Advanced reasoning model'
-  }
-]
+// Предпочитаемые официальные адреса провайдеров (Galileo)
+const OFFICIAL_PROVIDER_ADDRESSES = new Set<string>([
+  '0xf07240Efa67755B5311bc75784a061eDB47165Dd', // llama-3.3-70b-instruct
+  '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'  // deepseek-r1-70b
+])
 
 // Тайм-ауты
 const TOTAL_TIMEOUT = 20000 // 20 секунд общий
@@ -101,17 +91,48 @@ export class ChatService {
       const broker = await this.getBrokerSafe()
       timing.initBroker = Date.now() - brokerStart
 
-      // 2. Попробуем работать напрямую с известными провайдерами
-      console.log('Using known official providers for Galileo testnet')
-      const services = OFFICIAL_PROVIDERS.map(p => ({
-        provider: p.address,
-        model: p.model,
-        url: p.url,
-        serviceType: 'inference',
-        verifiability: 'TeeML'
-      }))
+      // 2. Дискавери сервисов через контракт (без хардкода URL)
+      console.log('Discovering services from 0G Inference contract (Galileo)')
+      const discoveryStart = Date.now()
+      let services: any[] = []
+      try {
+        const listed = await broker.inference.listService()
+        services = (listed || [])
+          .filter((s: any) => (s?.url && s?.provider))
+          .map((s: any) => ({
+            provider: s.provider,
+            model: s.model,
+            url: s.url,
+            serviceType: s.serviceType,
+            verifiability: s.verifiability
+          }))
 
-      console.log(`Working with ${services.length} official providers`)
+        // Предпочитаем официальные адреса, но оставляем все
+        services.sort((a, b) => {
+          const aOfficial = OFFICIAL_PROVIDER_ADDRESSES.has((a.provider || '').toLowerCase())
+          const bOfficial = OFFICIAL_PROVIDER_ADDRESSES.has((b.provider || '').toLowerCase())
+          if (aOfficial === bOfficial) return 0
+          return aOfficial ? -1 : 1
+        })
+      } catch (e: any) {
+        console.log('Service discovery failed (non-critical):', e?.message)
+      }
+      timing.discovery = Date.now() - discoveryStart
+
+      if (!services.length) {
+        errors.push('No services discovered on current network')
+        timing.totalTTFB = Date.now() - startTime
+        return {
+          success: false,
+          response: 'No AI services available on the current network. Please try again later.',
+          model: 'unavailable',
+          provider: 'none',
+          isRealAI: false,
+          metadata: { timing, servicesFound: 0, errors }
+        }
+      }
+
+      console.log(`Working with ${services.length} discovered providers`)
 
       // 3. Параллельный запуск запросов к провайдерам
       const providerStart = Date.now()
@@ -321,19 +342,22 @@ export class ChatService {
     try {
       console.log(`Trying provider: ${service.model} at ${service.provider}`)
 
-      // 1. Get service metadata - для официальных провайдеров используем известные URL
-      const metadata = {
-        endpoint: service.url,
-        model: service.model
+      // Получим актуальные метаданные сервиса из контракта
+      let metadata: { endpoint: string; model: string }
+      try {
+        const meta = await broker.inference.getServiceMetadata(service.provider)
+        metadata = { endpoint: meta.endpoint, model: meta.model }
+      } catch (metaErr: any) {
+        console.log('getServiceMetadata failed, falling back to listed URL:', metaErr?.message)
+        if (!service.url || !service.model) throw metaErr
+        metadata = { endpoint: service.url, model: service.model }
       }
       console.log(`Service endpoint: ${metadata.endpoint}`)
 
-      // 2. Try direct request without acknowledgment first
+      // 2. Generate headers and send request
       try {
-        // Generate headers
         const headers = await broker.inference.getRequestHeaders(service.provider, request.message)
 
-        // Prepare request
         const requestBody = {
           messages: [
             { 
@@ -381,7 +405,7 @@ export class ChatService {
         } catch (sdkError: any) {
           console.log(`OpenAI SDK failed: ${sdkError.message}`)
           
-          // If it's an auth error, try to acknowledge
+          // Если требуется acknowledge
           if (sdkError.message.includes('acknowledge') || sdkError.message.includes('unauthorized')) {
             console.log('Attempting to acknowledge provider...')
             const ackStart = Date.now()
@@ -414,7 +438,7 @@ export class ChatService {
             }
           }
           
-          // For other errors, try direct fetch
+          // Fallback: direct fetch
           console.log('Trying direct fetch...')
           const response = await fetch(`${metadata.endpoint}/chat/completions`, {
             method: 'POST',

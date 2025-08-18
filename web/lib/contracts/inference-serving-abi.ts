@@ -159,8 +159,4 @@ export const INFERENCE_SERVING_ABI = [
     "stateMutability": "nonpayable",
     "type": "function"
   }
-] as const;ts": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  }
 ] as const;

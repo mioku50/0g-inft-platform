@@ -1,5 +1,6 @@
-// Minimal ABI for 0G Inference Serving Contract
+// 0G Inference Serving Contract ABI - Updated to match SDK structure
 // Based on the deployed contract at 0x5299bd255B76305ae08d7F95B270A485c6b95D54
+// Updated to match 0g-serving-user-broker SDK ServiceStruct
 
 export const INFERENCE_SERVING_ABI = [
   // Service management
@@ -16,7 +17,8 @@ export const INFERENCE_SERVING_ABI = [
           { "internalType": "uint256", "name": "outputPrice", "type": "uint256" },
           { "internalType": "uint256", "name": "updatedAt", "type": "uint256" },
           { "internalType": "string", "name": "model", "type": "string" },
-          { "internalType": "string", "name": "verifiability", "type": "string" }
+          { "internalType": "string", "name": "verifiability", "type": "string" },
+          { "internalType": "string", "name": "additionalInfo", "type": "string" }
         ],
         "internalType": "struct InferenceServing.ServiceStruct[]",
         "name": "",
@@ -74,7 +76,7 @@ export const INFERENCE_SERVING_ABI = [
     "stateMutability": "nonpayable",
     "type": "function"
   },
-  // Account management
+  // Account management  
   {
     "inputs": [
       { "internalType": "address", "name": "user", "type": "address" },
@@ -89,7 +91,20 @@ export const INFERENCE_SERVING_ABI = [
           { "internalType": "uint256", "name": "nonce", "type": "uint256" },
           { "internalType": "uint256", "name": "balance", "type": "uint256" },
           { "internalType": "uint256", "name": "pendingRefund", "type": "uint256" },
-          { "internalType": "bool", "name": "providerSigned", "type": "bool" }
+          { "internalType": "uint256[2]", "name": "signer", "type": "uint256[2]" },
+          {
+            "components": [
+              { "internalType": "uint256", "name": "index", "type": "uint256" },
+              { "internalType": "uint256", "name": "amount", "type": "uint256" },
+              { "internalType": "uint256", "name": "createdAt", "type": "uint256" },
+              { "internalType": "bool", "name": "processed", "type": "bool" }
+            ],
+            "internalType": "struct InferenceServing.RefundStruct[]",
+            "name": "refunds",
+            "type": "tuple[]"
+          },
+          { "internalType": "string", "name": "additionalInfo", "type": "string" },
+          { "internalType": "uint256[2]", "name": "providerPubKey", "type": "uint256[2]" }
         ],
         "internalType": "struct InferenceServing.AccountStruct",
         "name": "",
@@ -110,7 +125,20 @@ export const INFERENCE_SERVING_ABI = [
           { "internalType": "uint256", "name": "nonce", "type": "uint256" },
           { "internalType": "uint256", "name": "balance", "type": "uint256" },
           { "internalType": "uint256", "name": "pendingRefund", "type": "uint256" },
-          { "internalType": "bool", "name": "providerSigned", "type": "bool" }
+          { "internalType": "uint256[2]", "name": "signer", "type": "uint256[2]" },
+          {
+            "components": [
+              { "internalType": "uint256", "name": "index", "type": "uint256" },
+              { "internalType": "uint256", "name": "amount", "type": "uint256" },
+              { "internalType": "uint256", "name": "createdAt", "type": "uint256" },
+              { "internalType": "bool", "name": "processed", "type": "bool" }
+            ],
+            "internalType": "struct InferenceServing.RefundStruct[]",
+            "name": "refunds",
+            "type": "tuple[]"
+          },
+          { "internalType": "string", "name": "additionalInfo", "type": "string" },
+          { "internalType": "uint256[2]", "name": "providerPubKey", "type": "uint256[2]" }
         ],
         "internalType": "struct InferenceServing.AccountStruct[]",
         "name": "",
@@ -128,6 +156,10 @@ export const INFERENCE_SERVING_ABI = [
     ],
     "name": "acknowledgeProviderSigner",
     "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+] as const;ts": [],
     "stateMutability": "nonpayable",
     "type": "function"
   }

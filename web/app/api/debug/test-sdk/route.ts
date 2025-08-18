@@ -9,7 +9,7 @@ import {
 /**
  * Test the 0G SDK directly to check if we can list services
  */
-export async function testSDKDirectly() {
+async function testSDKDirectly() {
   console.log('🔍 Testing 0G SDK directly...')
   
   try {

@@ -1,0 +1,151 @@
+basePath: /v1
+definitions:
+  schema.Task:
+    properties:
+      createdAt:
+        readOnly: true
+        type: string
+      datasetHash:
+        type: string
+      deliverIndex:
+        readOnly: true
+        type: integer
+      fee:
+        type: string
+      id:
+        readOnly: true
+        type: string
+      nonce:
+        type: string
+      preTrainedModelHash:
+        type: string
+      progress:
+        readOnly: true
+        type: string
+      signature:
+        type: string
+      trainingParams:
+        type: string
+      updatedAt:
+        readOnly: true
+        type: string
+      userAddress:
+        type: string
+    required:
+    - datasetHash
+    - fee
+    - nonce
+    - preTrainedModelHash
+    - signature
+    - trainingParams
+    - userAddress
+    type: object
+host: localhost:3080
+info:
+  contact: {}
+  description: These APIs allows providers to interact with the 0G Compute Fine Tune
+    Service
+  title: 0G Compute Network Fine-tuning Provider API
+  version: 0.1.0
+paths:
+  /quote:
+    get:
+      description: This endpoint allows you to get a quote
+      operationId: getQuote
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      tags:
+      - quote
+  /user/{userAddress}/task:
+    get:
+      description: This endpoint allows you to list tasks by user address
+      operationId: listTask
+      parameters:
+      - description: user address
+        in: path
+        name: userAddress
+        required: true
+        type: string
+      - description: latest tasks
+        in: query
+        name: latest
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/schema.Task'
+            type: array
+      tags:
+      - task
+    post:
+      description: This endpoint allows you to create a fine-tuning task
+      operationId: createTask
+      parameters:
+      - description: user address
+        in: path
+        name: userAddress
+        required: true
+        type: string
+      - description: body
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/schema.Task'
+      responses:
+        "204":
+          description: No Content - success without response body
+      tags:
+      - task
+  /user/{userAddress}/task/{taskID}:
+    get:
+      description: This endpoint allows you to get a task by ID
+      operationId: getTask
+      parameters:
+      - description: user address
+        in: path
+        name: userAddress
+        required: true
+        type: string
+      - description: task ID
+        in: path
+        name: taskID
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/schema.Task'
+      tags:
+      - task
+  /user/{userAddress}/task/{taskID}/log:
+    get:
+      description: This endpoint allows you to get the progress log of a task by ID
+      operationId: getTaskProgress
+      parameters:
+      - description: user address
+        in: path
+        name: userAddress
+        required: true
+        type: string
+      - description: task ID
+        in: path
+        name: taskID
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: progress.log
+          schema:
+            type: file
+      tags:
+      - task
+swagger: "2.0"

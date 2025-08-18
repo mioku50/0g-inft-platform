@@ -1,0 +1,243 @@
+basePath: /v1
+definitions:
+  model.ListMeta:
+    properties:
+      total:
+        type: integer
+    type: object
+  model.Request:
+    properties:
+      createdAt:
+        readOnly: true
+        type: string
+      fee:
+        type: string
+      inputFee:
+        type: string
+      nonce:
+        type: string
+      outputFee:
+        type: string
+      processed:
+        type: boolean
+      requestHash:
+        type: string
+      serviceName:
+        type: string
+      signature:
+        type: string
+      teeSignature:
+        type: string
+      updatedAt:
+        readOnly: true
+        type: string
+      userAddress:
+        type: string
+      vllmProxy:
+        type: boolean
+    required:
+    - fee
+    - inputFee
+    - nonce
+    - outputFee
+    - requestHash
+    - serviceName
+    - signature
+    - teeSignature
+    - userAddress
+    type: object
+  model.RequestList:
+    properties:
+      fee:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/model.Request'
+        type: array
+      metadata:
+        $ref: '#/definitions/model.ListMeta'
+    type: object
+  model.Service:
+    properties:
+      createdAt:
+        readOnly: true
+        type: string
+      inputPrice:
+        type: string
+      model:
+        type: string
+      name:
+        type: string
+      outputPrice:
+        type: string
+      type:
+        type: string
+      updatedAt:
+        readOnly: true
+        type: string
+      url:
+        type: string
+      verifiability:
+        type: string
+    required:
+    - inputPrice
+    - model
+    - name
+    - outputPrice
+    - type
+    - url
+    - verifiability
+    type: object
+  model.ServiceList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/model.Service'
+        type: array
+      metadata:
+        $ref: '#/definitions/model.ListMeta'
+    type: object
+  model.User:
+    properties:
+      createdAt:
+        readOnly: true
+        type: string
+      lastBalanceCheckTime:
+        type: string
+      lockBalance:
+        type: string
+      signer:
+        items:
+          type: string
+        type: array
+      unsettledFee:
+        type: string
+      updatedAt:
+        readOnly: true
+        type: string
+      user:
+        type: string
+    required:
+    - user
+    type: object
+  model.UserList:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/model.User'
+        type: array
+      metadata:
+        $ref: '#/definitions/model.ListMeta'
+    type: object
+host: localhost:3080
+info:
+  contact: {}
+  description: These APIs allow providers to manage services and user accounts. The
+    host is localhost, and the port is configured in the provider's configuration
+    file, defaulting to 3080.
+  title: 0G Serving Provider Broker API
+  version: 0.1.0
+paths:
+  /quote:
+    get:
+      description: This endpoint allows you to get a quote
+      operationId: getQuote
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      tags:
+      - quote
+  /request:
+    get:
+      description: This endpoint allows you to list requests
+      operationId: listRequest
+      parameters:
+      - description: Processed
+        in: query
+        name: processed
+        type: boolean
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.RequestList'
+      tags:
+      - request
+  /service:
+    get:
+      description: This endpoint allows you to list all services in the contract
+      operationId: getService
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ServiceList'
+      tags:
+      - service
+  /settle:
+    post:
+      description: This endpoint allows you to settle fees for requests from users
+      operationId: settleFees
+      responses:
+        "202":
+          description: Accepted
+      tags:
+      - settle
+  /sync-account:
+    post:
+      description: This endpoint allows you to synchronize information of all accounts
+        from the contract
+      operationId: syncUserAccounts
+      responses:
+        "202":
+          description: Accepted
+      tags:
+      - user
+  /user:
+    get:
+      description: This endpoint allows you to list all users who have created accounts
+        for your service
+      operationId: listUserAccount
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.UserList'
+      tags:
+      - user
+  /user/{user}:
+    get:
+      description: This endpoint allows you to get account by user address
+      operationId: getUserAccount
+      parameters:
+      - description: User address
+        in: path
+        name: user
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.User'
+      tags:
+      - user
+  /user/{user}/sync:
+    post:
+      description: This endpoint allows you to synchronize information of single account
+        from the contract
+      operationId: syncUserAccount
+      parameters:
+      - description: User address
+        in: path
+        name: user
+        required: true
+        type: string
+      responses:
+        "202":
+          description: Accepted
+      tags:
+      - user
+swagger: "2.0"

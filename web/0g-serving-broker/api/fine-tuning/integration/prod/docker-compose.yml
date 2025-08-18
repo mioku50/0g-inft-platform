@@ -1,0 +1,46 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: 0g-fine-tune-broker-db
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost"]
+      interval: 10s
+      retries: 5
+    networks:
+      - localhost
+
+  0g-fine-tune-broker:
+    image: ghcr.io/0glabs/0g-serving-broker:0.2.1
+    privileged: true
+    container_name: 0g-fine-tune-broker
+    environment:
+      - PORT=3080
+      - CONFIG_FILE=/etc/config.yaml
+    ports:
+      - "#PORT#:3080"
+    volumes:
+      - /var/run/tappd.sock:/var/run/tappd.sock
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config.local.yaml:/etc/config.yaml
+      - /tmp:/tmp
+      - ./transformer:/fine-tuning/execution/transformer
+      - ./models:/fine-tuning/execution/models
+    command: 0g-fine-tuning-server
+    networks:
+      - localhost
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
+
+networks:
+  localhost:
+    name: localhost
+    external: false

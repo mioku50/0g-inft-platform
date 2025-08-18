@@ -390,117 +390,104 @@ export class ChatService {
       }
 
       // 2. Generate headers and send request
+      let headers: any = {}
       try {
-        const headers = await broker.inference.getRequestHeaders(service.provider, request.message)
+        headers = await broker.inference.getRequestHeaders(service.provider, request.message)
+        console.log('✅ Generated request headers successfully')
+      } catch (headerError: any) {
+        console.log(`Header generation failed: ${headerError.message}`)
+        
+        // If header generation fails due to ServiceNotExist, try acknowledge first
+        if (headerError.message.includes('ServiceNotExist') || 
+            headerError.message.includes('acknowledge') || 
+            headerError.message.includes('unauthorized')) {
+          console.log('Attempting to acknowledge provider for header generation...')
+          
+          try {
+            await this.acknowledgeProviderSafe(broker, service.provider)
+            // Retry header generation after acknowledge
+            headers = await broker.inference.getRequestHeaders(service.provider, request.message)
+            console.log('✅ Generated headers after acknowledge')
+          } catch (retryError: any) {
+            console.log(`Header generation still failed after acknowledge: ${retryError.message}`)
+            throw retryError
+          }
+        } else {
+          throw headerError
+        }
+      }
 
-        const requestBody = {
-          messages: [
-            { 
-              role: 'system' as const, 
-              content: `You are ${request.agentMetadata.name}. ${request.agentMetadata.description}` 
-            },
-            { role: 'user' as const, content: request.message }
-          ],
-          model: metadata.model,
-          stream: false as const
+      const requestBody = {
+        messages: [
+          { 
+            role: 'system' as const, 
+            content: `You are ${request.agentMetadata.name}. ${request.agentMetadata.description}` 
+          },
+          { role: 'user' as const, content: request.message }
+        ],
+        model: metadata.model,
+        stream: false as const
+      }
+
+      // Try OpenAI SDK first
+      try {
+        const openai = new OpenAI({
+          baseURL: metadata.endpoint,
+          apiKey: ''
+        })
+
+        const completion = await openai.chat.completions.create(requestBody, {
+          headers: headers,
+          signal: controller.signal
+        })
+
+        const aiResponse = completion.choices[0].message.content
+
+        // Process response (verification)
+        try {
+          const isValid = await broker.inference.processResponse(
+            service.provider,
+            aiResponse,
+            completion.id
+          )
+          console.log(`✅ Success with ${service.model}, valid: ${isValid}`)
+        } catch (e) {
+          console.log('Process response error (non-critical):', (e as any).message)
         }
 
-        // Try OpenAI SDK first
-        try {
-          const openai = new OpenAI({
-            baseURL: metadata.endpoint,
-            apiKey: ''
-          })
+        return {
+          response: aiResponse,
+          model: metadata.model,
+          provider: service.provider
+        }
 
-          const completion = await openai.chat.completions.create(requestBody, {
-            headers: headers,
-            signal: controller.signal
-          })
+      } catch (sdkError: any) {
+        console.log(`OpenAI SDK failed: ${sdkError.message}`)
+        
+        // Fallback: direct fetch
+        console.log('Trying direct fetch...')
+        const response = await fetch(`${metadata.endpoint}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal
+        })
 
-          const aiResponse = completion.choices[0].message.content
-
-          // Process response (verification)
-          try {
-            const isValid = await broker.inference.processResponse(
-              service.provider,
-              aiResponse,
-              completion.id
-            )
-            console.log(`✅ Success with ${service.model}, valid: ${isValid}`)
-          } catch (e) {
-            console.log('Process response error (non-critical):', (e as any).message)
-          }
-
+        if (response.ok) {
+          const data = await response.json()
+          console.log(`✅ Success with fetch for ${service.model}`)
+          
           return {
-            response: aiResponse,
+            response: data.choices[0].message.content,
             model: metadata.model,
             provider: service.provider
           }
-
-        } catch (sdkError: any) {
-          console.log(`OpenAI SDK failed: ${sdkError.message}`)
-          
-          // Если требуется acknowledge
-          if (sdkError.message.includes('acknowledge') || sdkError.message.includes('unauthorized')) {
-            console.log('Attempting to acknowledge provider...')
-            const ackStart = Date.now()
-            try {
-              await this.acknowledgeProviderSafe(broker, service.provider)
-              timing.ack += Date.now() - ackStart
-              
-              // Retry after acknowledgment
-              const newHeaders = await broker.inference.getRequestHeaders(service.provider, request.message)
-              const openai = new OpenAI({
-                baseURL: metadata.endpoint,
-                apiKey: ''
-              })
-
-              const completion = await openai.chat.completions.create(requestBody, {
-                headers: newHeaders,
-                signal: controller.signal
-              })
-
-              const aiResponse = completion.choices[0].message.content
-              
-              return {
-                response: aiResponse,
-                model: metadata.model,
-                provider: service.provider
-              }
-            } catch (retryError: any) {
-              console.log('Retry after acknowledge failed:', retryError.message)
-              throw retryError
-            }
-          }
-          
-          // Fallback: direct fetch
-          console.log('Trying direct fetch...')
-          const response = await fetch(`${metadata.endpoint}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              ...headers,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody),
-            signal: controller.signal
-          })
-
-          if (response.ok) {
-            const data = await response.json()
-            console.log(`✅ Success with fetch for ${service.model}`)
-            
-            return {
-              response: data.choices[0].message.content,
-              model: metadata.model,
-              provider: service.provider
-            }
-          } else {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-          }
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         }
-      } catch (error: any) {
-        console.log(`Direct request failed: ${error.message}`)
-        throw error
       }
 
     } catch (error: any) {

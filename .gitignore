@@ -4,3 +4,7 @@ web/.next
 **/.next
 web/.cache
 **/.cache
+
+# Test files
+test-*.js
+*.test.local.js

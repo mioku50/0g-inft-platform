@@ -2,15 +2,23 @@ import { ethers } from 'ethers'
 import OpenAI from 'openai'
 import { getPrivateKey } from '@/lib/server/compute-env'
 import { create0GProvider } from '@/lib/server/provider'
+import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 
-// Официальные провайдеры 0G
-const PROVIDERS = [
-  {
-    name: 'gpt-4',
-    url: 'https://api.openai.com/v1',
-    apiKey: process.env.OPENAI_API_KEY || ''
-  }
+// Официальные провайдеры 0G (Galileo)
+const OFFICIAL_PROVIDER_ADDRESSES = [
+  '0xf07240Efa67755B5311bc75784a061eDB47165Dd', // llama-3.3-70b-instruct
+  '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'  // deepseek-r1-70b
 ]
+
+// Резервное сопоставление адресов провайдеров с их публичными URL, если контракт недоступен
+function getProviderUrl(providerAddress: string): string {
+  const map: Record<string, string> = {
+    '0x960E74Fc0AF1a6fBcADA3eEFCBe3152fA5E87A5f': 'http://50.145.48.68:30080',
+    '0xf07240Efa67755B5311bc75784a061eDB47165Dd': 'http://50.145.48.68:30080',
+    '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3': 'http://50.145.48.68:30080'
+  }
+  return map[providerAddress] || 'http://50.145.48.68:30080'
+}
 
 interface ChatRequest {
   message: string
@@ -39,59 +47,110 @@ export class DirectChatService {
     const startTime = Date.now()
     const errors: string[] = []
 
-    // Попробуем каждого провайдера по очереди
-    for (const provider of PROVIDERS) {
-      try {
-        console.log(`Trying fallback provider: ${provider.name} at ${provider.url}`)
-        
-        const openai = new OpenAI({
-          baseURL: provider.url,
-          apiKey: provider.apiKey || 'dummy-key'
-        })
+    try {
+      // Инициализируем брокер для генерации одноразовых заголовков
+      const provider = create0GProvider()
+      const pk = getPrivateKey()
+      if (!pk) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
+      const wallet = new ethers.Wallet(pk, provider)
+      const broker = await createZGComputeNetworkBroker(wallet)
 
-        const messages = [
-          { 
-            role: 'system' as const, 
-            content: `You are ${request.agentMetadata.name}. ${request.agentMetadata.description}` 
-          },
-          { 
-            role: 'user' as const, 
-            content: request.message 
+      // Перебираем официальных провайдеров, даже если listService недоступен
+      for (const providerAddress of OFFICIAL_PROVIDER_ADDRESSES) {
+        try {
+          // Получаем метаданные сервиса из контракта; 
+          // если не удается — используем локальную карту URL и модель по умолчанию
+          let endpoint: string
+          let model: string
+          try {
+            const meta = await broker.inference.getServiceMetadata(providerAddress)
+            endpoint = meta.endpoint
+            model = meta.model
+          } catch (metaErr: any) {
+            console.log('Direct fallback: metadata not available, using static mapping:', metaErr?.message)
+            endpoint = getProviderUrl(providerAddress)
+            // Подберем разумную модель на основе адреса
+            model = providerAddress.toLowerCase() === OFFICIAL_PROVIDER_ADDRESSES[0].toLowerCase()
+              ? 'llama-3.3-70b-instruct'
+              : 'deepseek-r1-70b'
           }
-        ]
 
-        // Определяем модель в зависимости от провайдера
-        const model = provider.name.includes('gpt') ? 'gpt-3.5-turbo' : provider.name
+          const headers = await broker.inference.getRequestHeaders(providerAddress, request.message)
 
-        const completion = await openai.chat.completions.create({
-          messages,
-          model,
-          max_tokens: 500,
-          temperature: 0.7
-        })
+          const requestBody = {
+            messages: [
+              {
+                role: 'system' as const,
+                content: `You are ${request.agentMetadata.name}. ${request.agentMetadata.description}`
+              },
+              { role: 'user' as const, content: request.message }
+            ],
+            model,
+            stream: false as const
+          }
 
-        const response = completion.choices[0].message.content || ''
+          // OpenAI совместимый вызов к самому провайдеру 0G (НЕ api.openai.com)
+          try {
+            const openai = new OpenAI({ baseURL: endpoint, apiKey: '' })
+            const completion = await openai.chat.completions.create(requestBody, { headers })
+            const aiResponse = completion.choices[0].message.content || ''
 
-        return {
-          success: true,
-          response,
-          model,
-          provider: provider.url,
-          isRealAI: true,
-          metadata: {
-            timing: {
-              totalTTFB: Date.now() - startTime
+            try {
+              await broker.inference.processResponse(providerAddress, aiResponse, completion.id)
+            } catch (verifyErr: any) {
+              console.log('Direct fallback: processResponse warning:', verifyErr?.message)
+            }
+
+            return {
+              success: true,
+              response: aiResponse,
+              model,
+              provider: providerAddress,
+              isRealAI: true,
+              metadata: { timing: { totalTTFB: Date.now() - startTime } }
+            }
+          } catch (sdkError: any) {
+            console.error(`Direct fallback: provider ${providerAddress} SDK error:`, sdkError.message)
+            // Пробуем прямой fetch, если SDK по какой-то причине не сработал
+            const resp = await fetch(`${endpoint}/chat/completions`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...headers },
+              body: JSON.stringify(requestBody)
+            })
+            if (!resp.ok) {
+              throw new Error(`HTTP ${resp.status}: ${resp.statusText}`)
+            }
+            const data = await resp.json()
+            const aiResponse = data.choices?.[0]?.message?.content || ''
+
+            try {
+              await broker.inference.processResponse(providerAddress, aiResponse, data.id)
+            } catch (verifyErr: any) {
+              console.log('Direct fallback: processResponse warning (fetch):', verifyErr?.message)
+            }
+
+            return {
+              success: true,
+              response: aiResponse,
+              model,
+              provider: providerAddress,
+              isRealAI: true,
+              metadata: { timing: { totalTTFB: Date.now() - startTime } }
             }
           }
+        } catch (err: any) {
+          console.error(`Direct fallback: provider ${providerAddress} failed:`, err.message)
+          errors.push(`${providerAddress}: ${err.message}`)
+          // Переходим к следующему провайдеру
+          continue
         }
-      } catch (error: any) {
-        console.error(`Provider ${provider.name} failed:`, error.message)
-        errors.push(`${provider.name}: ${error.message}`)
-        continue
       }
+    } catch (outerErr: any) {
+      console.error('Direct fallback init error:', outerErr.message)
+      errors.push(outerErr.message)
     }
 
-    // Если все провайдеры не работают, используем простой fallback
+    // Если все провайдеры не работают, используем локальный дефолтный ответ
     return {
       success: true,
       response: this.generateFallbackResponse(request.message, request.agentMetadata),

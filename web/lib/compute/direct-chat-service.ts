@@ -7,7 +7,7 @@ import {
   getFineTuningServingAddress,
   getPrivateKey
 } from '@/lib/server/compute-env'
-import { create0GProvider } from '@/lib/server/provider'
+import { create0GRateLimitedProvider } from '@/lib/server/provider'
 
 interface ChatRequest {
   message: string

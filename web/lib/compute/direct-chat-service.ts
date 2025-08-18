@@ -135,11 +135,37 @@ export class DirectChatService {
   }
 
   private generateFallbackResponse(request: ChatRequest): string {
+    // Generate more contextual responses based on the message content
+    const message = request.message.toLowerCase()
+    const agentName = request.agentMetadata.name
+    const agentDesc = request.agentMetadata.description
+    
+    // Handle common greetings
+    if (message.includes('hello') || message.includes('hi') || message.includes('hey')) {
+      return `Hello! I'm ${agentName}. ${agentDesc} I'm currently running in local mode while we're working on connecting to the 0G network providers. How can I help you today?`
+    }
+    
+    // Handle questions about capabilities
+    if (message.includes('what can you do') || message.includes('capabilities') || message.includes('help')) {
+      return `I'm ${agentName}, and I'm here to assist you! ${agentDesc} Currently, I'm operating in fallback mode while our 0G network services are being established. Once connected, I'll have access to the full 0G compute network for more advanced AI processing.`
+    }
+    
+    // Handle questions about the agent
+    if (message.includes('who are you') || message.includes('tell me about') || message.includes('about yourself')) {
+      return `I'm ${agentName}. ${agentDesc} I'm part of the 0G INFT platform, which allows AI agents to be owned, traded, and enhanced through blockchain technology. Right now I'm running locally while we establish connectivity to the 0G providers.`
+    }
+    
+    // Handle technical questions
+    if (message.includes('0g') || message.includes('blockchain') || message.includes('nft')) {
+      return `As an AI agent on the 0G INFT platform, I represent a new paradigm where AI agents can be owned as NFTs with verifiable intelligence and capabilities. The 0G network provides decentralized AI inference services. I'm currently operating in local mode while our providers are being configured.`
+    }
+    
+    // General response that acknowledges the message
     const responses = [
-      `Hello! I'm ${request.agentMetadata.name}. I'm currently running in fallback mode while we work on connecting to the 0G network providers.`,
-      `Hi there! ${request.agentMetadata.description} I'm operating locally while the 0G services are being configured.`,
-      `Greetings! I'm ${request.agentMetadata.name} and I'm here to help. Currently using local processing while 0G network services are being established.`,
-      `Hello! I understand you said "${request.message}". I'm ${request.agentMetadata.name} running in local mode as we work on 0G provider connectivity.`
+      `Hello! I'm ${agentName}. I understand you said "${request.message}". ${agentDesc} I'm currently running in local mode while we establish connections to the 0G network providers.`,
+      `Hi there! ${agentDesc} I received your message: "${request.message}". I'm operating locally right now as we work on 0G provider connectivity.`,
+      `Greetings! I'm ${agentName} and I see you wrote: "${request.message}". ${agentDesc} Currently using local processing while 0G network services are being established.`,
+      `Thank you for your message! As ${agentName}, I aim to help with: ${agentDesc} I'm running in fallback mode at the moment while our 0G inference services are being configured.`
     ]
     
     return responses[Math.floor(Math.random() * responses.length)]

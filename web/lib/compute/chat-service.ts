@@ -95,34 +95,36 @@ export class ChatService {
       console.log('Discovering services from 0G Inference contract (Galileo)')
       const discoveryStart = Date.now()
       let services: any[] = []
+      let contractServicesWorking = false
       
       try {
         // Add delay before service discovery to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 300))
         
         const listed = await broker.inference.listService()
-        services = (listed || [])
-          .filter((s: any) => (s?.url && s?.provider))
-          .map((s: any) => ({
-            provider: s.provider,
-            model: s.model,
-            url: s.url,
-            serviceType: s.serviceType,
-            verifiability: s.verifiability
-          }))
-
-        console.log(`Contract service discovery found ${services.length} services`)
+        if (listed && Array.isArray(listed) && listed.length > 0) {
+          services = listed
+            .filter((s: any) => (s?.url && s?.provider))
+            .map((s: any) => ({
+              provider: s.provider,
+              model: s.model,
+              url: s.url,
+              serviceType: s.serviceType,
+              verifiability: s.verifiability
+            }))
+          
+          if (services.length > 0) {
+            contractServicesWorking = true
+            console.log(`Contract service discovery found ${services.length} services`)
+          }
+        }
       } catch (e: any) {
         console.log('Contract service discovery failed:', e?.message)
-        
-        // If it's a rate limiting error, we'll use fallback immediately
-        if (e?.message?.includes('rate exceeded') || e?.message?.includes('Too many requests')) {
-          console.log('Rate limiting detected, falling back to official providers immediately')
-        }
+        errors.push(`Contract discovery error: ${e?.message}`)
       }
 
       // Если нет сервисов из контракта, используем fallback на официальные провайдеры
-      if (!services.length) {
+      if (!contractServicesWorking) {
         console.log('No services from contract, using fallback official providers')
         services = [
           {
@@ -130,14 +132,16 @@ export class ChatService {
             model: 'llama-3.3-70b-instruct',
             url: 'https://inference-testnet.0g.ai',
             serviceType: 'inference',
-            verifiability: 'TeeML'
+            verifiability: 'TeeML',
+            isStatic: true // Mark as static fallback
           },
           {
             provider: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3',
             model: 'deepseek-r1-70b', 
             url: 'https://inference-testnet.0g.ai',
             serviceType: 'inference',
-            verifiability: 'TeeML'
+            verifiability: 'TeeML',
+            isStatic: true // Mark as static fallback
           }
         ]
       }
@@ -390,37 +394,58 @@ export class ChatService {
 
       // Получим актуальные метаданные сервиса из контракта
       let metadata: { endpoint: string; model: string }
-      try {
-        // Add delay before metadata request to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 200))
-        
-        const meta = await broker.inference.getServiceMetadata(service.provider)
-        metadata = { endpoint: meta.endpoint, model: meta.model }
-        console.log(`Service metadata from contract: ${metadata.endpoint}`)
-      } catch (metaErr: any) {
-        console.log(`Direct fallback: metadata not available, using static mapping: ${metaErr?.message}`)
-        
-        // Проверяем специфичные ошибки сервиса
-        if (metaErr?.message?.includes('ServiceNotExist')) {
-          console.log(`Direct fallback: provider ${service.provider} failed: execution reverted: ServiceNotExist(address)`)
-        }
-        
-        // Fallback на предоставленные данные сервиса  
-        if (!service.url || !service.model) {
-          throw new Error(`No service metadata available for ${service.provider} and no fallback URL/model`)
-        }
+      let isStaticMetadata = false
+      
+      // If this is a static fallback service, skip contract metadata lookup
+      if (service.isStatic) {
+        console.log(`Using static fallback metadata for ${service.provider}`)
         metadata = { endpoint: service.url, model: service.model }
-        console.log(`Using fallback service endpoint: ${metadata.endpoint}`)
+        isStaticMetadata = true
+      } else {
+        try {
+          // Add delay before metadata request to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200))
+          
+          const meta = await broker.inference.getServiceMetadata(service.provider)
+          metadata = { endpoint: meta.endpoint, model: meta.model }
+          console.log(`Service metadata from contract: ${metadata.endpoint}`)
+        } catch (metaErr: any) {
+          console.log(`Direct fallback: metadata not available, using static mapping: ${metaErr?.message}`)
+          
+          // Проверяем специфичные ошибки сервиса
+          if (metaErr?.message?.includes('ServiceNotExist')) {
+            console.log(`Direct fallback: provider ${service.provider} failed: execution reverted: ServiceNotExist(address)`)
+          }
+          
+          // Fallback на предоставленные данные сервиса  
+          if (!service.url || !service.model) {
+            throw new Error(`No service metadata available for ${service.provider} and no fallback URL/model`)
+          }
+          metadata = { endpoint: service.url, model: service.model }
+          isStaticMetadata = true
+          console.log(`Using fallback service endpoint: ${metadata.endpoint}`)
+        }
       }
 
       // 2. Generate headers and send request
       let headers: any = {}
       try {
-        // Add delay before header generation to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 300))
-        
-        headers = await broker.inference.getRequestHeaders(service.provider, request.message)
-        console.log('✅ Generated request headers successfully')
+        // For static metadata, we skip header generation as services might not be registered
+        if (isStaticMetadata) {
+          console.log('Skipping header generation for static fallback service')
+          headers = {
+            'User-Agent': '0G-Chat-Client/1.0',
+            'X-Provider': service.provider,
+            'X-Model': service.model,
+            'X-Fallback': 'true'
+          }
+        } else {
+          // Add delay before header generation to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 300))
+          
+          headers = await broker.inference.getRequestHeaders(service.provider, request.message)
+          console.log('✅ Generated request headers successfully')
+        }
       } catch (headerError: any) {
         console.log(`Header generation failed: ${headerError.message}`)
         
@@ -439,10 +464,33 @@ export class ChatService {
             console.log('✅ Generated headers after acknowledge')
           } catch (retryError: any) {
             console.log(`Header generation still failed after acknowledge: ${retryError.message}`)
-            throw retryError
+            
+            // Fallback to minimal headers for static services
+            if (isStaticMetadata) {
+              console.log('Using fallback headers for static service')
+              headers = {
+                'User-Agent': '0G-Chat-Client/1.0',
+                'X-Provider': service.provider,
+                'X-Model': service.model,
+                'X-Fallback': 'true'
+              }
+            } else {
+              throw retryError
+            }
           }
         } else {
-          throw headerError
+          // For static services, use fallback headers
+          if (isStaticMetadata) {
+            console.log('Using fallback headers for static service due to other error')
+            headers = {
+              'User-Agent': '0G-Chat-Client/1.0',
+              'X-Provider': service.provider,
+              'X-Model': service.model,
+              'X-Fallback': 'true'
+            }
+          } else {
+            throw headerError
+          }
         }
       }
 

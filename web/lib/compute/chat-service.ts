@@ -91,10 +91,11 @@ export class ChatService {
       const broker = await this.getBrokerSafe()
       timing.initBroker = Date.now() - brokerStart
 
-      // 2. Дискавери сервисов через контракт (без хардкода URL)
+      // 2. Дискавери сервисов через контракт + fallback на hardcoded провайдеры
       console.log('Discovering services from 0G Inference contract (Galileo)')
       const discoveryStart = Date.now()
       let services: any[] = []
+      
       try {
         const listed = await broker.inference.listService()
         services = (listed || [])
@@ -107,20 +108,44 @@ export class ChatService {
             verifiability: s.verifiability
           }))
 
-        // Предпочитаем официальные адреса, но оставляем все
-        services.sort((a, b) => {
-          const aOfficial = OFFICIAL_PROVIDER_ADDRESSES.has((a.provider || '').toLowerCase())
-          const bOfficial = OFFICIAL_PROVIDER_ADDRESSES.has((b.provider || '').toLowerCase())
-          if (aOfficial === bOfficial) return 0
-          return aOfficial ? -1 : 1
-        })
+        console.log(`Contract service discovery found ${services.length} services`)
       } catch (e: any) {
-        console.log('Service discovery failed (non-critical):', e?.message)
+        console.log('Contract service discovery failed:', e?.message)
       }
+
+      // Если нет сервисов из контракта, используем fallback на официальные провайдеры
+      if (!services.length) {
+        console.log('No services from contract, using fallback official providers')
+        services = [
+          {
+            provider: '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
+            model: 'llama-3.3-70b-instruct',
+            url: 'https://inference-testnet.0g.ai',
+            serviceType: 'inference',
+            verifiability: 'TeeML'
+          },
+          {
+            provider: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3',
+            model: 'deepseek-r1-70b', 
+            url: 'https://inference-testnet.0g.ai',
+            serviceType: 'inference',
+            verifiability: 'TeeML'
+          }
+        ]
+      }
+
+      // Предпочитаем официальные адреса
+      services.sort((a, b) => {
+        const aOfficial = OFFICIAL_PROVIDER_ADDRESSES.has((a.provider || '').toLowerCase())
+        const bOfficial = OFFICIAL_PROVIDER_ADDRESSES.has((b.provider || '').toLowerCase())
+        if (aOfficial === bOfficial) return 0
+        return aOfficial ? -1 : 1
+      })
+      
       timing.discovery = Date.now() - discoveryStart
 
       if (!services.length) {
-        errors.push('No services discovered on current network')
+        errors.push('No services discovered and no fallback providers available')
         timing.totalTTFB = Date.now() - startTime
         return {
           success: false,
@@ -347,12 +372,22 @@ export class ChatService {
       try {
         const meta = await broker.inference.getServiceMetadata(service.provider)
         metadata = { endpoint: meta.endpoint, model: meta.model }
+        console.log(`Service metadata from contract: ${metadata.endpoint}`)
       } catch (metaErr: any) {
-        console.log('getServiceMetadata failed, falling back to listed URL:', metaErr?.message)
-        if (!service.url || !service.model) throw metaErr
+        console.log(`Direct fallback: metadata not available, using static mapping: ${metaErr?.message}`)
+        
+        // Проверяем специфичные ошибки сервиса
+        if (metaErr?.message?.includes('ServiceNotExist')) {
+          console.log(`Direct fallback: provider ${service.provider} failed: execution reverted: ServiceNotExist(address)`)
+        }
+        
+        // Fallback на предоставленные данные сервиса  
+        if (!service.url || !service.model) {
+          throw new Error(`No service metadata available for ${service.provider} and no fallback URL/model`)
+        }
         metadata = { endpoint: service.url, model: service.model }
+        console.log(`Using fallback service endpoint: ${metadata.endpoint}`)
       }
-      console.log(`Service endpoint: ${metadata.endpoint}`)
 
       // 2. Generate headers and send request
       try {

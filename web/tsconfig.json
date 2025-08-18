@@ -23,5 +23,10 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "0g-serving-broker/**/*",
+    "0g-serving-user-broker/**/*", 
+    "0g-ts-sdk/**/*"
+  ]
 }

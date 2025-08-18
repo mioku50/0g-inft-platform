@@ -1,0 +1,4 @@
+[submodule "web/0g-serving-broker"]
+	path = web/0g-serving-broker
+	url = git@github.com:0glabs/0g-serving-broker.git
+	branch = main

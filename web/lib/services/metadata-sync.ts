@@ -54,12 +54,26 @@ export class MetadataSyncService {
               console.log('Extracted hash:', cleanHash)
             }
             
+            // Remove any local:// or file:// prefixes and just get the hash
+            if (cleanHash.startsWith('local://')) {
+              cleanHash = cleanHash.replace('local://', '')
+            }
+            if (cleanHash.startsWith('file://')) {
+              cleanHash = cleanHash.replace('file://', '')
+            }
+            
             // Добавляем префикс 0x если нужно
             if (cleanHash && !cleanHash.startsWith('0x')) {
               if (/^[a-fA-F0-9]{64}$/.test(cleanHash)) {
                 cleanHash = '0x' + cleanHash
               }
             }
+          }
+          
+          // Skip if no valid hash after cleaning
+          if (!cleanHash || cleanHash === '0x' || cleanHash === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+            console.log(`[MetadataSync] Token #${tokenId} has no valid hash, skipping`)
+            continue
           }
           
           // Проверяем существует ли файл локально

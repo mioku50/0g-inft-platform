@@ -149,39 +149,19 @@ export class ChatService {
           } catch (metaError: any) {
             console.log(`Provider ${providerAddr} not found in contract: ${metaError.message}`)
             
-            // If provider doesn't exist in contract, use static fallback with known endpoints
-            const modelName = providerAddr === '0xf07240Efa67755B5311bc75784a061eDB47165Dd' 
-              ? 'llama-3.3-70b-instruct' 
-              : 'deepseek-r1-70b'
-            
-            // Try multiple possible endpoints for 0G inference services
-            const possibleEndpoints = [
-              'https://api.0g.ai',  // Official API endpoint
-              'https://inference.0g.ai',  // Inference specific endpoint  
-              'https://compute.0g.ai',    // Compute endpoint
-              'https://serving.0g.ai'     // Serving endpoint
-            ]
-            
-            fallbackServices.push({
-              provider: providerAddr,
-              model: modelName,
-              url: possibleEndpoints[0], // Use first as primary
-              alternativeUrls: possibleEndpoints.slice(1),
-              serviceType: 'inference',
-              verifiability: 'TeeML',
-              isContractRegistered: false,
-              isStatic: true
-            })
+            // For providers not in contract, do not add them to fallback services
+            // This avoids trying non-existent endpoints
+            console.log(`Skipping provider ${providerAddr} - not registered in contract`)
           }
         }
         
         services = fallbackServices
         
         if (services.length === 0) {
-          console.log('⚠️  No providers found via contract or static fallback')
-          errors.push('Contract has no registered services and static fallback failed')
+          console.log('⚠️  No providers found via contract or service metadata')
+          errors.push('Contract has no registered services and providers are not available')
         } else {
-          console.log(`Found ${services.length} providers (${services.filter(s => s.isContractRegistered).length} from contract, ${services.filter(s => s.isStatic).length} static)`)
+          console.log(`Found ${services.length} providers (${services.filter(s => s.isContractRegistered).length} from contract, 0 static)`)
         }
       }
 
@@ -449,62 +429,38 @@ export class ChatService {
           metadata = { endpoint: meta.endpoint, model: meta.model }
           console.log(`Service metadata from contract: ${metadata.endpoint}`)
         } catch (metaErr: any) {
-          console.log(`Direct fallback: metadata not available, using static mapping: ${metaErr?.message}`)
+          console.log(`Service metadata not available: ${metaErr?.message}`)
           
           // Проверяем специфичные ошибки сервиса
           if (metaErr?.message?.includes('ServiceNotExist')) {
-            console.log(`Direct fallback: provider ${service.provider} failed: execution reverted: ServiceNotExist(address)`)
+            console.log(`Provider ${service.provider} failed: execution reverted: ServiceNotExist(address)`)
           }
           
-          // Fallback на предоставленные данные сервиса  
-          if (!service.url || !service.model) {
-            throw new Error(`No service metadata available for ${service.provider} and no fallback URL/model`)
-          }
-          metadata = { endpoint: service.url, model: service.model }
-          isStaticMetadata = true
-          console.log(`Using fallback service endpoint: ${metadata.endpoint}`)
+          throw new Error(`No service metadata available for ${service.provider}: ${metaErr?.message}`)
         }
       }
 
-      // For static services with multiple endpoints, try each one
-      const endpointsToTry = isStaticMetadata && service.alternativeUrls 
-        ? [metadata.endpoint, ...service.alternativeUrls]
-        : [metadata.endpoint]
-
-      let lastError: any = null
+      // Use the single endpoint from service metadata
+      console.log(`Trying endpoint: ${metadata.endpoint}`)
       
-      for (let i = 0; i < endpointsToTry.length; i++) {
-        const currentEndpoint = endpointsToTry[i]
-        console.log(`Trying endpoint ${i + 1}/${endpointsToTry.length}: ${currentEndpoint}`)
+      try {
+        const result = await this.tryEndpoint(
+          broker, 
+          service, 
+          request, 
+          metadata,
+          isStaticMetadata,
+          controller
+        )
         
-        try {
-          const result = await this.tryEndpoint(
-            broker, 
-            service, 
-            request, 
-            { endpoint: currentEndpoint, model: metadata.model },
-            isStaticMetadata,
-            controller
-          )
-          
-          if (result) {
-            console.log(`✅ Success with endpoint: ${currentEndpoint}`)
-            return result
-          }
-        } catch (endpointError: any) {
-          console.log(`❌ Endpoint ${currentEndpoint} failed: ${endpointError.message}`)
-          lastError = endpointError
-          
-          // If not the last endpoint, continue to next
-          if (i < endpointsToTry.length - 1) {
-            console.log(`Trying next endpoint...`)
-            continue
-          }
+        if (result) {
+          console.log(`✅ Success with endpoint: ${metadata.endpoint}`)
+          return result
         }
+      } catch (endpointError: any) {
+        console.log(`❌ Endpoint ${metadata.endpoint} failed: ${endpointError.message}`)
+        throw endpointError
       }
-      
-      // All endpoints failed
-      throw lastError || new Error('All endpoints failed')
 
     } catch (error: any) {
       console.log(`Provider ${service.provider} failed: ${error.message}`)

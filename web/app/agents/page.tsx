@@ -31,7 +31,6 @@ import {
   RefreshCw, 
   Send,
   Copy,
-  Brain,
   Settings,
   Ban,
   Sparkles,
@@ -112,18 +111,10 @@ const AgentCard = React.memo(({
             compact={true}
             onActivateModel={async (agentId, modelRootHash) => {
               try {
-                // For now, just show a toast - full implementation would need activation logic
+                // Model activation is not available in this version
                 toast({
                   title: 'Model Activation',
-                  description: `Navigate to agent ${agentId} fine-tune page to activate the candidate model`,
-                  action: (
-                    <ToastAction 
-                      altText="Go to Fine-tune"
-                      onClick={() => window.open(`/agents/${agentId}/fine-tune`, '_blank')}
-                    >
-                      Go to Fine-tune
-                    </ToastAction>
-                  )
+                  description: `Model activation is not available in this version`,
                 })
               } catch (error) {
                 toast({
@@ -153,17 +144,11 @@ const AgentCard = React.memo(({
         <div className="space-y-2">
           {agent.status === 'owned' && (
             <>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="mb-2">
                 <Link href={`/agent/${agent.tokenId}/chat`}>
                   <Button variant="outline" size="sm" className="w-full border-gray-200 hover:bg-gray-50 text-gray-700">
                     <MessageCircle className="h-4 w-4 mr-1" />
                     Chat
-                  </Button>
-                </Link>
-                <Link href={`/agents/${agent.tokenId}/fine-tune`}>
-                  <Button variant="outline" size="sm" className="w-full border-gray-200 hover:bg-gray-50 text-gray-700">
-                    <Brain className="h-4 w-4 mr-1" />
-                    Fine-tune
                   </Button>
                 </Link>
               </div>

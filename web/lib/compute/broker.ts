@@ -9,7 +9,7 @@ import {
   getComputeInferenceContract,
   logEnvironmentStatus
 } from '@/lib/server/compute-env'
-import { create0GProvider } from '@/lib/server/provider'
+import { create0GRateLimitedProvider } from '@/lib/server/provider'
 
 export const SERVING_ABI = [
   'function accountExists(address user, address provider) view returns (bool)',
@@ -581,7 +581,7 @@ export async function getBrokerOrThrow() {
   const pk = getPrivateKey()
   if (!pk) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
 
-  const provider = create0GProvider()
+  const provider = create0GRateLimitedProvider()
   const signer = new Wallet(pk, provider)
 
   // Verify contracts are deployed

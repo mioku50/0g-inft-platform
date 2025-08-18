@@ -6,7 +6,7 @@ import {
   getComputeInferenceContract,
   getFineTuningServingAddress
 } from '@/lib/server/compute-env'
-import { create0GProvider } from '@/lib/server/provider'
+import { create0GRateLimitedProvider } from '@/lib/server/provider'
 
 // Кэш брокера (TTL 5 минут)
 interface BrokerCacheEntry {
@@ -97,6 +97,9 @@ export class ChatService {
       let services: any[] = []
       
       try {
+        // Add delay before service discovery to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 300))
+        
         const listed = await broker.inference.listService()
         services = (listed || [])
           .filter((s: any) => (s?.url && s?.provider))
@@ -111,6 +114,11 @@ export class ChatService {
         console.log(`Contract service discovery found ${services.length} services`)
       } catch (e: any) {
         console.log('Contract service discovery failed:', e?.message)
+        
+        // If it's a rate limiting error, we'll use fallback immediately
+        if (e?.message?.includes('rate exceeded') || e?.message?.includes('Too many requests')) {
+          console.log('Rate limiting detected, falling back to official providers immediately')
+        }
       }
 
       // Если нет сервисов из контракта, используем fallback на официальные провайдеры
@@ -217,7 +225,8 @@ export class ChatService {
     console.log('Initializing new broker...')
     
     try {
-      const provider = create0GProvider()
+      // Use rate-limited provider to avoid RPC throttling
+      const provider = create0GRateLimitedProvider()
       if (!this.privateKey) throw new Error('OG_COMPUTE_PRIVATE_KEY not set')
       
       // Validate private key format
@@ -229,9 +238,11 @@ export class ChatService {
       const wallet = new ethers.Wallet(cleanKey, provider)
       console.log(`Wallet address: ${wallet.address}`)
       
-      // Test network connectivity
+      // Test network connectivity with rate limiting
       try {
         if (wallet.provider) {
+          // Add delay to avoid immediate rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200))
           const balance = await wallet.provider.getBalance(wallet.address)
           console.log(`Wallet balance: ${ethers.formatEther(balance)} OG`)
         }
@@ -245,6 +256,9 @@ export class ChatService {
         fineTuning: OFFICIAL_CONTRACTS.fineTuning
       })
       
+      // Add delay before broker creation to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 300))
+      
       const broker = await createZGComputeNetworkBroker(
         wallet,
         OFFICIAL_CONTRACTS.ledger,
@@ -254,7 +268,7 @@ export class ChatService {
 
       console.log('Broker created successfully')
 
-      // Check and top up balance safely
+      // Check and top up balance safely with delays
       await this.ensureMinBalance(broker)
 
       // Cache broker
@@ -269,11 +283,16 @@ export class ChatService {
 
   private async ensureMinBalance(broker: any): Promise<void> {
     try {
+      // Add delay before balance check to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 300))
+      
       const ledgerInfo = await broker.ledger.getLedger()
       
       // Check if ledgerInfo and balance exist
       if (!ledgerInfo) {
         console.log('No ledger info found, creating account...')
+        // Add delay before account creation
+        await new Promise(resolve => setTimeout(resolve, 500))
         const initialAmount = ethers.parseEther('0.05')
         await broker.ledger.addLedger(initialAmount)
         console.log('New ledger account created with 0.05 OG')
@@ -292,6 +311,8 @@ export class ChatService {
       const minBalance = 0.02
       if (balance < minBalance) {
         console.log('Low balance, adding funds...')
+        // Add delay before adding funds
+        await new Promise(resolve => setTimeout(resolve, 500))
         const addAmount = ethers.parseEther('0.05')
         await broker.ledger.addLedger(addAmount)
         console.log('Funds added successfully')
@@ -370,6 +391,9 @@ export class ChatService {
       // Получим актуальные метаданные сервиса из контракта
       let metadata: { endpoint: string; model: string }
       try {
+        // Add delay before metadata request to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 200))
+        
         const meta = await broker.inference.getServiceMetadata(service.provider)
         metadata = { endpoint: meta.endpoint, model: meta.model }
         console.log(`Service metadata from contract: ${metadata.endpoint}`)
@@ -392,6 +416,9 @@ export class ChatService {
       // 2. Generate headers and send request
       let headers: any = {}
       try {
+        // Add delay before header generation to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 300))
+        
         headers = await broker.inference.getRequestHeaders(service.provider, request.message)
         console.log('✅ Generated request headers successfully')
       } catch (headerError: any) {
@@ -405,6 +432,8 @@ export class ChatService {
           
           try {
             await this.acknowledgeProviderSafe(broker, service.provider)
+            // Add delay before retry
+            await new Promise(resolve => setTimeout(resolve, 500))
             // Retry header generation after acknowledge
             headers = await broker.inference.getRequestHeaders(service.provider, request.message)
             console.log('✅ Generated headers after acknowledge')
@@ -507,39 +536,61 @@ export class ChatService {
       return
     }
 
-    try {
-      console.log(`Acknowledging provider ${providerAddress}...`)
-      const ackTx = await broker.inference.acknowledgeProviderSigner(providerAddress)
-      
-      if (ackTx && (ackTx as any).hash) {
-        console.log(`Acknowledge tx: ${(ackTx as any).hash}`)
-        try {
-          await (ackTx as any)?.wait?.()
-          console.log('Acknowledge transaction confirmed')
-        } catch (waitErr: any) {
-          console.log('Ack wait error (non-critical):', waitErr?.message)
-        }
-      } else {
-        console.log('Provider signer already acknowledged (no tx emitted)')
-      }
+    // Add delay before acknowledge to avoid rate limiting
+    await new Promise(resolve => setTimeout(resolve, 400))
 
-      acknowledgeCache.set(providerAddress, now)
-      console.log('Provider acknowledged successfully!')
-      
-    } catch (ackError: any) {
-      console.log('Acknowledge error details:', ackError.message)
-      
-      // Handle different error types
-      if (ackError.message.includes('already acknowledged') || 
-          ackError.message.includes('AlreadyAcknowledged')) {
-        console.log('Provider already acknowledged')
+    const maxRetries = 3
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        console.log(`Acknowledging provider ${providerAddress}... (attempt ${attempt + 1}/${maxRetries})`)
+        
+        const ackTx = await broker.inference.acknowledgeProviderSigner(providerAddress)
+        
+        if (ackTx && (ackTx as any).hash) {
+          console.log(`Acknowledge tx: ${(ackTx as any).hash}`)
+          try {
+            await (ackTx as any)?.wait?.()
+            console.log('Acknowledge transaction confirmed')
+          } catch (waitErr: any) {
+            console.log('Ack wait error (non-critical):', waitErr?.message)
+          }
+        } else {
+          console.log('Provider signer already acknowledged (no tx emitted)')
+        }
+
         acknowledgeCache.set(providerAddress, now)
+        console.log('Provider acknowledged successfully!')
         return
+        
+      } catch (ackError: any) {
+        console.log('Acknowledge error details:', ackError.message)
+        
+        // Handle different error types
+        if (ackError.message.includes('already acknowledged') || 
+            ackError.message.includes('AlreadyAcknowledged')) {
+          console.log('Provider already acknowledged')
+          acknowledgeCache.set(providerAddress, now)
+          return
+        }
+        
+        // Handle rate limiting errors
+        if (ackError.message.includes('rate exceeded') || 
+            ackError.message.includes('Too many requests')) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 5000) // Exponential backoff, max 5s
+          console.log(`Rate limited, waiting ${delay}ms before retry...`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+          continue
+        }
+        
+        // For other errors on last attempt, throw
+        if (attempt === maxRetries - 1) {
+          console.log('Acknowledge failed but continuing:', ackError.message)
+          throw ackError
+        }
+        
+        // Wait before retry for other errors
+        await new Promise(resolve => setTimeout(resolve, 1000))
       }
-      
-      // For other errors, still try to continue
-      console.log('Acknowledge failed but continuing:', ackError.message)
-      throw ackError
     }
   }
 }

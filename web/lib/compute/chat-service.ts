@@ -126,24 +126,63 @@ export class ChatService {
       // Если нет сервисов из контракта, используем fallback на официальные провайдеры
       if (!contractServicesWorking) {
         console.log('No services from contract, using fallback official providers')
-        services = [
-          {
-            provider: '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
-            model: 'llama-3.3-70b-instruct',
-            url: 'https://inference-testnet.0g.ai',
-            serviceType: 'inference',
-            verifiability: 'TeeML',
-            isStatic: true // Mark as static fallback
-          },
-          {
-            provider: '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3',
-            model: 'deepseek-r1-70b', 
-            url: 'https://inference-testnet.0g.ai',
-            serviceType: 'inference',
-            verifiability: 'TeeML',
-            isStatic: true // Mark as static fallback
+        
+        // First try to check if providers exist in contract but without service metadata
+        console.log('Checking if providers exist in contract directly...')
+        const fallbackServices: any[] = []
+        
+        for (const providerAddr of Array.from(OFFICIAL_PROVIDER_ADDRESSES)) {
+          try {
+            // Try to get service metadata directly from contract
+            await new Promise(resolve => setTimeout(resolve, 300)) // Rate limiting
+            const metadata = await broker.inference.getServiceMetadata(providerAddr)
+            console.log(`✅ Found provider ${providerAddr} via getServiceMetadata`)
+            
+            fallbackServices.push({
+              provider: providerAddr,
+              model: metadata.model || 'unknown',
+              url: metadata.endpoint,
+              serviceType: 'inference',
+              verifiability: 'TeeML',
+              isContractRegistered: true
+            })
+          } catch (metaError: any) {
+            console.log(`Provider ${providerAddr} not found in contract: ${metaError.message}`)
+            
+            // If provider doesn't exist in contract, use static fallback with known endpoints
+            const modelName = providerAddr === '0xf07240Efa67755B5311bc75784a061eDB47165Dd' 
+              ? 'llama-3.3-70b-instruct' 
+              : 'deepseek-r1-70b'
+            
+            // Try multiple possible endpoints for 0G inference services
+            const possibleEndpoints = [
+              'https://api.0g.ai',  // Official API endpoint
+              'https://inference.0g.ai',  // Inference specific endpoint  
+              'https://compute.0g.ai',    // Compute endpoint
+              'https://serving.0g.ai'     // Serving endpoint
+            ]
+            
+            fallbackServices.push({
+              provider: providerAddr,
+              model: modelName,
+              url: possibleEndpoints[0], // Use first as primary
+              alternativeUrls: possibleEndpoints.slice(1),
+              serviceType: 'inference',
+              verifiability: 'TeeML',
+              isContractRegistered: false,
+              isStatic: true
+            })
           }
-        ]
+        }
+        
+        services = fallbackServices
+        
+        if (services.length === 0) {
+          console.log('⚠️  No providers found via contract or static fallback')
+          errors.push('Contract has no registered services and static fallback failed')
+        } else {
+          console.log(`Found ${services.length} providers (${services.filter(s => s.isContractRegistered).length} from contract, ${services.filter(s => s.isStatic).length} static)`)
+        }
       }
 
       // Предпочитаем официальные адреса
@@ -397,7 +436,7 @@ export class ChatService {
       let isStaticMetadata = false
       
       // If this is a static fallback service, skip contract metadata lookup
-      if (service.isStatic) {
+      if (service.isStatic || !service.isContractRegistered) {
         console.log(`Using static fallback metadata for ${service.provider}`)
         metadata = { endpoint: service.url, model: service.model }
         isStaticMetadata = true
@@ -427,7 +466,63 @@ export class ChatService {
         }
       }
 
-      // 2. Generate headers and send request
+      // For static services with multiple endpoints, try each one
+      const endpointsToTry = isStaticMetadata && service.alternativeUrls 
+        ? [metadata.endpoint, ...service.alternativeUrls]
+        : [metadata.endpoint]
+
+      let lastError: any = null
+      
+      for (let i = 0; i < endpointsToTry.length; i++) {
+        const currentEndpoint = endpointsToTry[i]
+        console.log(`Trying endpoint ${i + 1}/${endpointsToTry.length}: ${currentEndpoint}`)
+        
+        try {
+          const result = await this.tryEndpoint(
+            broker, 
+            service, 
+            request, 
+            { endpoint: currentEndpoint, model: metadata.model },
+            isStaticMetadata,
+            controller
+          )
+          
+          if (result) {
+            console.log(`✅ Success with endpoint: ${currentEndpoint}`)
+            return result
+          }
+        } catch (endpointError: any) {
+          console.log(`❌ Endpoint ${currentEndpoint} failed: ${endpointError.message}`)
+          lastError = endpointError
+          
+          // If not the last endpoint, continue to next
+          if (i < endpointsToTry.length - 1) {
+            console.log(`Trying next endpoint...`)
+            continue
+          }
+        }
+      }
+      
+      // All endpoints failed
+      throw lastError || new Error('All endpoints failed')
+
+    } catch (error: any) {
+      console.log(`Provider ${service.provider} failed: ${error.message}`)
+      throw error
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  private async tryEndpoint(
+    broker: any,
+    service: any,
+    request: ChatRequest,
+    metadata: { endpoint: string; model: string },
+    isStaticMetadata: boolean,
+    controller: AbortController
+  ): Promise<any> {
+    // Generate headers and send request
       let headers: any = {}
       try {
         // For static metadata, we skip header generation as services might not be registered
@@ -566,13 +661,6 @@ export class ChatService {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`)
         }
       }
-
-    } catch (error: any) {
-      console.log(`Provider ${service.provider} failed: ${error.message}`)
-      throw error
-    } finally {
-      clearTimeout(timeout)
-    }
   }
 
   private async acknowledgeProviderSafe(broker: any, providerAddress: string): Promise<void> {

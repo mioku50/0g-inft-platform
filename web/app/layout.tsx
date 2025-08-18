@@ -3,7 +3,7 @@
 
 import './globals.css'
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+// import { Inter } from 'next/font/google'  // Temporarily disabled due to network issues
 import { Providers } from './providers'
 import Link from 'next/link'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
@@ -11,7 +11,7 @@ import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { useMetadataSync } from '@/hooks/useMetadataSync'
 
-const inter = Inter({ subsets: ['latin'] })
+// const inter = Inter({ subsets: ['latin'] })  // Temporarily disabled
 
 // Metadata нужно вынести в отдельный layout для серверных компонентов
 // export const metadata: Metadata = {
@@ -109,7 +109,7 @@ export default function RootLayout({
         <meta name="description" content="Create and manage AI agents as NFTs" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
-      <body className={inter.className}>
+      <body className="font-sans">  {/* className={inter.className} */}
         <Providers>
           <Navigation />
           <main className="min-h-screen">

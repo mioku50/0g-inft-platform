@@ -23,11 +23,14 @@ const nextConfig = {
     config.resolve.alias['@0glabs/0g-serving-broker'] = path.join(path.dirname(brokerEntry), '../lib.commonjs/index.js')
     config.resolve.mainFields = ['main', 'module']
 
+    // В обоих бандлах заглушаем шумные опциональные зависимости pino
+    const emptyModule = path.resolve(__dirname, 'temp/empty-module.js')
+    config.resolve.alias['pino-pretty'] = emptyModule
+    config.resolve.alias['pino-std-serializers'] = emptyModule
+    config.resolve.alias['sonic-boom'] = emptyModule
+
     if (!isServer) {
-      // В браузерном бандле заглушаем Node-специфичные модули
-      config.resolve.alias['pino-pretty'] = false
-      config.resolve.alias['pino-std-serializers'] = false
-      config.resolve.alias['sonic-boom'] = false
+      // В браузере дополнительно вырезаем Node-специфичные модули
       config.resolve.alias['node:fs'] = false
       config.resolve.alias['node:path'] = require.resolve('path-browserify')
       config.resolve.alias['node:crypto'] = false
@@ -62,6 +65,12 @@ const nextConfig = {
           resource.request = resource.request.replace(/^node:/, '')
         })
       )
+      config.plugins.push(new webpack.IgnorePlugin({ resourceRegExp: /(pino-pretty|pino-std-serializers|sonic-boom)/ }))
+    }
+
+    // И на сервере игнорируем эти модули на этапе сборки
+    if (isServer) {
+      config.plugins = config.plugins || []
       config.plugins.push(new webpack.IgnorePlugin({ resourceRegExp: /(pino-pretty|pino-std-serializers|sonic-boom)/ }))
     }
 

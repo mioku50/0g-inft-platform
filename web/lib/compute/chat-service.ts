@@ -1,6 +1,8 @@
 // lib/compute/chat-service.ts
 import { ethers } from 'ethers'
 
+const ackCache = new Set<string>()
+
 interface ChatRequest {
   message: string
   agentMetadata: any
@@ -24,12 +26,12 @@ class ChatService {
     try {
       const broker = request.broker
 
-      // Check and create/deposit ledger if needed
-      await this.ensureLedgerBalance(broker)
-
-      // Discover services
+      // Discover services first
       const services = await broker.inference.listService()
       console.log(`listService() -> ${services.length}`)
+
+      // Check and create/deposit ledger if needed
+      await this.ensureLedgerBalance(broker)
 
       if (services.length === 0) {
         return this.createGracefulFallback(request, 'No services available')
@@ -40,9 +42,8 @@ class ChatService {
         try {
           console.log(`Trying service: ${service.model} at ${service.provider}`)
           
-          // Acknowledge provider if needed
+          // Acknowledge provider if needed (after ensuring available > 0)
           await this.acknowledgeProviderIfNeeded(broker, service.provider)
-          console.log('ack=OK', { provider: service.provider })
 
           // Get service metadata and endpoint
           const { endpoint, model } = await broker.inference.getServiceMetadata(service.provider)
@@ -117,52 +118,86 @@ class ChatService {
       const available = info?.availableBalance ?? 0n
       const total = info?.totalBalance ?? 0n
 
-      const availableStr = Number(ethers.formatEther(available)).toFixed(4)
-      console.log(`available=${availableStr} OG, total=${Number(ethers.formatEther(total)).toFixed(4)} OG`)
+      console.log(`available=${Number(ethers.formatEther(available)).toFixed(4)} OG`)
 
       if (available === 0n) {
-        console.log('Low or zero available balance, depositing funds...')
-        // Deposit to existing ledger if present, otherwise add new ledger
+        // If account exists but available == 0 → create via addLedger(0.05)
         try {
-          await broker.ledger.depositFund("0.05")
-          console.log('deposit=OK')
-        } catch (depErr: any) {
-          console.log('deposit failed, trying addLedger...', depErr?.message)
-          await broker.ledger.addLedger("0.05")
-          console.log('addLedger=OK')
+          await broker.ledger.addLedger(0.05)
+          const after = await broker.ledger.getLedger()
+          console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
+        } catch (e: any) {
+          // If addLedger fails (already exists), attempt deposit
+          await broker.ledger.depositFund(0.05)
+          const after = await broker.ledger.getLedger()
+          console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
+        }
+      } else {
+        // If account exists but low balance < 0.01 → deposit
+        const availableFloat = Number(ethers.formatEther(available))
+        if (availableFloat < 0.01) {
+          await broker.ledger.depositFund(0.05)
+          const after = await broker.ledger.getLedger()
+          console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
         }
       }
     } catch (error: any) {
-      console.log('Creating new ledger account (fallback path)...')
-      try {
-        await broker.ledger.addLedger("0.05")
-        console.log('addLedger=OK')
-      } catch (createError) {
-        console.error('Failed to create ledger:', (createError as any).message)
+      // If getLedger failed (e.g., Account does not exist) → create account
+      const msg: string = error?.message || ''
+      if (msg.includes('Account does not exist') || msg.includes('not exist')) {
+        await broker.ledger.addLedger(0.05)
+        const after = await broker.ledger.getLedger().catch(() => null)
+        if (after) {
+          console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
+        }
+      } else {
+        console.error('Failed to ensure ledger balance:', msg)
+        throw error
       }
     }
   }
 
   private async acknowledgeProviderIfNeeded(broker: any, providerAddress: string): Promise<void> {
+    const walletAddr: string | undefined = (broker as any).__walletAddress
+    const cacheKey = `${walletAddr || 'unknown'}:${providerAddress}`
+    if (ackCache.has(cacheKey)) return
+
+    let attemptedRecovery = false
+
+    const doAck = async (): Promise<void> => {
+      const tx = await broker.inference.acknowledgeProviderSigner(providerAddress)
+      if (tx && typeof tx.wait === 'function') {
+        const receipt = await tx.wait()
+        const status = Number((receipt as any)?.status ?? 0)
+        if (status === 1) {
+          ackCache.add(cacheKey)
+          console.log('ack=OK', { provider: providerAddress })
+          return
+        }
+        throw new Error(`ack failed, receipt.status=${status}`)
+      }
+      // Some SDKs may not return a tx when already acknowledged
+      ackCache.add(cacheKey)
+      console.log('ack=OK', { provider: providerAddress })
+      return
+    }
+
     try {
-      console.log('Acknowledging provider...')
-      const ackTx = await broker.inference.acknowledgeProviderSigner(providerAddress)
-      
-      if (ackTx?.hash) {
-        console.log('Acknowledge tx:', ackTx.hash)
-        await ackTx.wait()
-        console.log('Provider acknowledged successfully!')
+      await doAck()
+    } catch (e: any) {
+      const msg: string = e?.message || ''
+      if (msg.includes('already acknowledged')) {
+        ackCache.add(cacheKey)
+        console.log('ack=OK', { provider: providerAddress })
+        return
       }
-    } catch (ackError: any) {
-      if (ackError.message?.includes('already acknowledged')) {
-        console.log('Provider already acknowledged')
-      } else if (ackError.message?.includes('ServiceNotExist')) {
-        console.log('ServiceNotExist during acknowledge - skipping this provider')
-        throw ackError
-      } else {
-        console.log('Acknowledge error:', ackError.message)
-        // Continue anyway - some providers may work without acknowledge
+      if (!attemptedRecovery && msg.includes('Account does not exist')) {
+        attemptedRecovery = true
+        await this.ensureLedgerBalance(broker)
+        await doAck()
+        return
       }
+      throw e
     }
   }
 
@@ -173,11 +208,13 @@ class ChatService {
     message: string
     agentMetadata: any
   }): Promise<{ success: boolean; content: string; id?: string }> {
+    const agentName = params.agentMetadata?.name || 'Agent'
+    const agentDesc = params.agentMetadata?.description || ''
     const requestBody = {
       messages: [
         { 
           role: 'system', 
-          content: `You are ${params.agentMetadata.name}. ${params.agentMetadata.description}` 
+          content: `You are ${agentName}. ${agentDesc}` 
         },
         { role: 'user', content: params.message }
       ],

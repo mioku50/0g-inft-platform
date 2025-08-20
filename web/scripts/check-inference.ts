@@ -15,16 +15,15 @@ async function main() {
   // Ledger
   const ledger = await broker.ledger.getLedger()
   const available = ledger?.availableBalance ?? 0n
-  const availableStr = Number(ethers.formatEther(available)).toFixed(4)
-  console.log(`available=${availableStr}`)
+  console.log(`available=${Number(ethers.formatEther(available)).toFixed(4)}`)
   if (available === 0n) {
-    try {
-      await broker.ledger.depositFund("0.05")
-      console.log('deposit=OK')
-    } catch {
-      await broker.ledger.addLedger("0.05")
-      console.log('addLedger=OK')
-    }
+    await broker.ledger.addLedger(0.05)
+    const after = await broker.ledger.getLedger()
+    console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)}`)
+  } else if (Number(ethers.formatEther(available)) < 0.01) {
+    await broker.ledger.depositFund(0.05)
+    const after = await broker.ledger.getLedger()
+    console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)}`)
   }
 
   // list services
@@ -39,8 +38,29 @@ async function main() {
   const userMessage = 'Say hello in one short sentence.'
 
   // acknowledge → metadata → headers → fetch
-  await broker.inference.acknowledgeProviderSigner(service.provider)
-  console.log('ack=OK', { provider: service.provider })
+  try {
+    const ackTx = await broker.inference.acknowledgeProviderSigner(service.provider)
+    if (ackTx && typeof (ackTx as any).wait === 'function') {
+      const receipt = await (ackTx as any).wait()
+      if (Number(receipt?.status || 0) !== 1) {
+        throw new Error('ack failed')
+      }
+    }
+    console.log('ack=OK', { provider: service.provider })
+  } catch (e: any) {
+    if ((e?.message || '').includes('Account does not exist')) {
+      // fund and retry once
+      await broker.ledger.addLedger(0.05)
+      const ackTx = await broker.inference.acknowledgeProviderSigner(service.provider)
+      if (ackTx && typeof (ackTx as any).wait === 'function') {
+        const receipt = await (ackTx as any).wait()
+        if (Number(receipt?.status || 0) !== 1) throw new Error('ack failed after retry')
+      }
+      console.log('ack=OK', { provider: service.provider })
+    } else {
+      throw e
+    }
+  }
 
   const { endpoint, model } = await broker.inference.getServiceMetadata(service.provider)
   console.log('metadata=OK', { provider: service.provider, model })
@@ -65,7 +85,7 @@ async function main() {
   if (!resp.ok) {
     throw new Error(`HTTP ${resp.status}`)
   }
-  const data = await resp.json()
+  const data: any = await resp.json()
   const content = data?.choices?.[0]?.message?.content || ''
   console.log('isRealAI:true', { provider: service.provider, model })
   console.log('content:', content?.slice(0, 80))

@@ -6,28 +6,7 @@ import { uploadToStorage } from '@/lib/storage/client-server'
 import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
-
-function normalizeHash(input: string): string {
-  if (!input) return ''
-  let h = input.trim()
-
-  for (const pref of ['local://', 'file://']) {
-    if (h.startsWith(pref)) h = h.slice(pref.length)
-  }
-
-  // Если это turbo-URL — взять хвост после последнего слэша
-  if (h.startsWith('http')) {
-    try {
-      const u = new URL(h)
-      const last = u.pathname.split('/').filter(Boolean).pop()
-      if (last) h = last
-    } catch {/* ignore */}
-  }
-
-  // базовая валидация 0x + 64 hex
-  if (!/^0x[0-9a-fA-F]{64}$/.test(h)) return ''
-  return h.toLowerCase()
-}
+import { normalizeHash } from '@/lib/utils/hash-validator'
 
 export class MetadataSyncService {
   private static instance: MetadataSyncService

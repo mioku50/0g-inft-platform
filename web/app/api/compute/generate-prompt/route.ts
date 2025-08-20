@@ -1,12 +1,12 @@
 // web/app/api/compute/generate-prompt/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { getBroker } from '@/lib/compute/broker'
+import { createBrokerWithEnvPK } from '@/lib/compute/broker'
 
 export async function POST(request: NextRequest) {
   try {
     const { description, capabilities, personality } = await request.json()
     
-    const broker = await getBroker()
+    const broker = await createBrokerWithEnvPK()
     
     // Используем официальный провайдер для генерации
     const providerAddress = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'

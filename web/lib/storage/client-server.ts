@@ -86,7 +86,7 @@ export async function downloadFromStorage(
     const content = await fs.readFile(tempFile)
     await fs.unlink(tempFile).catch(() => {})
     if (meta?.contentType) {
-      return new Blob([content], { type: meta.contentType })
+      return new Blob([content as any], { type: meta.contentType })
     }
     return content.toString('utf-8')
   } catch (e: any) {

@@ -1,58 +1,64 @@
-import 'dotenv/config'
 import { ethers } from 'ethers'
-import { create0GRateLimitedProvider } from '../server/rate-limited-provider'
+import { getServerProvider } from '../server/provider'
 
-let _createZGComputeNetworkBroker: any | null = null;
+let _create: any = null
 
-async function getCreateBrokerFn() {
-  if (_createZGComputeNetworkBroker) return _createZGComputeNetworkBroker;
+async function loadCreateFn() {
+  if (_create) return _create
+  // Благодаря алиасу в next.config.js это загрузит CJS-вход
+  const mod: any = await import('@0glabs/0g-serving-broker')
+  _create = mod?.createZGComputeNetworkBroker ?? mod?.default?.createZGComputeNetworkBroker
+  if (!_create) throw new Error('createZGComputeNetworkBroker not found')
+  return _create
+}
 
-  const mod: any = await import('@0glabs/0g-serving-broker');
-  _createZGComputeNetworkBroker =
-    mod?.createZGComputeNetworkBroker ?? mod?.default?.createZGComputeNetworkBroker;
-
-  if (!_createZGComputeNetworkBroker) {
-    throw new Error('[broker] Failed to load createZGComputeNetworkBroker');
+function getAddressesFromEnv() {
+  return {
+    ledgerManagerAddress: process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT!,
+    inferenceServingAddress: process.env.NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT!,
+    fineTuningServingAddress: process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS!,
   }
-  return _createZGComputeNetworkBroker;
 }
 
-export async function createBroker(walletOrSigner: any, addrs: { ledger: string; inference: string; fineTuning?: string }) {
-  const createZGComputeNetworkBroker = await getCreateBrokerFn();
-  return createZGComputeNetworkBroker(walletOrSigner, addrs);
-}
+// Унифицированный конструктор: пробуем modern → legacy
+export async function createBrokerWithEnvPK() {
+  const create = await loadCreateFn()
 
-let brokerInstance: any = null
+  const provider = getServerProvider()
+  const pk = process.env.OG_COMPUTE_PRIVATE_KEY || process.env.OG_STORAGE_PRIVATE_KEY
+  if (!pk) throw new Error('Missing OG_COMPUTE_PRIVATE_KEY/OG_STORAGE_PRIVATE_KEY')
+  const wallet = new ethers.Wallet(pk, provider)
 
-function getBrowserWalletSigner(): ethers.Signer {
-  // This would be implemented for non-custodial mode
-  // For now, we'll fall back to server-side signer
-  throw new Error('Non-custodial wallet not available on server side')
-}
+  const addrs = getAddressesFromEnv()
 
-export async function getBroker() {
-  if (brokerInstance) return brokerInstance
-  
-  const privateKey = process.env.OG_COMPUTE_PRIVATE_KEY
-  if (!privateKey) {
-    throw new Error('OG_COMPUTE_PRIVATE_KEY not found')
+  // 1) Попытка modern-сигнатуры (с правильными ключами)
+  try {
+    const broker = await create(wallet, addrs)
+    // быстрый runtime-check: убеждаемся, что контракты подхватились
+    if (!broker?.inference || !broker?.ledger) {
+      throw new Error('Broker missing inference/ledger after modern init')
+    }
+    return broker
+  } catch (e: any) {
+    console.log('[broker] modern init failed → fallback to legacy:', e?.message)
   }
-  
-  const provider = create0GRateLimitedProvider()
-  
-  const USE_NONCUSTODIAL_INFERENCE = process.env.USE_NONCUSTODIAL_INFERENCE === 'true'
-  
-  const signer = USE_NONCUSTODIAL_INFERENCE
-    ? getBrowserWalletSigner()
-    : new ethers.Wallet(privateKey, provider) as any
 
-  // Create broker using the new function
-  brokerInstance = await createBroker(signer, {
-    ledger: process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT!,
-    inference: process.env.NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT!,
-    fineTuning: process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS!
-  })
-  
-  console.log('broker created')
-  return brokerInstance
+  // 2) Legacy: без адресов (SDK сам знает тестнет-адреса) ИЛИ с другими именами ключей
+  try {
+    const broker = await create(wallet)
+    // если у объекта есть setters — подставим адреса вручную
+    if (broker?.inference?.setContractAddresses) {
+      await broker.inference.setContractAddresses({ inferenceServingAddress: addrs.inferenceServingAddress })
+    }
+    if (broker?.ledger?.setContractAddress) {
+      await broker.ledger.setContractAddress(addrs.ledgerManagerAddress)
+    }
+    if (broker?.fineTuning?.setContractAddresses && addrs.fineTuningServingAddress) {
+      await broker.fineTuning.setContractAddresses({ fineTuningServingAddress: addrs.fineTuningServingAddress })
+    }
+    return broker
+  } catch (e: any) {
+    console.error('[broker] legacy init also failed:', e?.message)
+    throw e
+  }
 }

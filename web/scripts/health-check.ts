@@ -3,8 +3,8 @@ export {}
 const { ethers } = require('ethers')
 const dotenv = require('dotenv')
 
-// Import the broker functions from our updated module
-import { createBroker } from '../lib/compute/broker'
+// Import the broker constructor
+import { createBrokerWithEnvPK } from '../lib/compute/broker'
 
 dotenv.config({ path: '.env' })
 
@@ -84,13 +84,8 @@ async function checkSystemHealth() {
   if (process.argv[2] === 'init-compute') {
     console.log('\n🤖 Initializing compute broker...')
     try {
+      const broker = await createBrokerWithEnvPK()
       const wallet = new ethers.Wallet(process.env.OG_COMPUTE_PRIVATE_KEY!, provider)
-      const broker = await createBroker(wallet, {
-        ledger: process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT!,
-        inference: process.env.NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT!,
-        fineTuning: process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS!
-      })
-      
       // Check if account exists
       const account = await broker.ledger.getAccount(wallet.address)
       if (!account || account[0] === BigInt(0)) {

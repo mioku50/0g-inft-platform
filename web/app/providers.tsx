@@ -1,4 +1,3 @@
-// web/app/providers.tsx
 'use client'
 
 import { WagmiConfig, createConfig, configureChains } from 'wagmi'

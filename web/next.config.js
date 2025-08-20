@@ -1,5 +1,7 @@
 // Загружаем переменные из .env файла
 require('dotenv').config({ path: '.env' })
+const path = require('path')
+const webpack = require('webpack')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -13,61 +15,51 @@ const nextConfig = {
   transpilePackages: [
     '@0glabs/0g-serving-broker',
   ],
+
   webpack: (config, { isServer }) => {
-    // 0g-serving-broker — жёстко на CJS-вход  
-    config.resolve.alias = config.resolve.alias || {};
-    config.resolve.alias['@0glabs/0g-serving-broker'] = 
-      require.resolve('@0glabs/0g-serving-broker');
-    config.resolve.mainFields = ['main', 'module'];
+    // 0g-serving-broker — жёстко на CJS-вход
+    config.resolve.alias = config.resolve.alias || {}
+    const brokerEntry = require.resolve('@0glabs/0g-serving-broker')
+    config.resolve.alias['@0glabs/0g-serving-broker'] = path.join(path.dirname(brokerEntry), '../lib.commonjs/index.js')
+    config.resolve.mainFields = ['main', 'module']
 
     if (!isServer) {
-      // В браузерном бандле выключаем node:* и fs/crypto
-      config.resolve.alias['node:fs'] = false;
-      config.resolve.alias['node:path'] = false;
-      config.resolve.alias['node:crypto'] = false;
-      config.resolve.alias['node:util'] = false;
-      config.resolve.alias['node:stream'] = false;
-      config.resolve.alias['node:buffer'] = false;
+      // В браузерном бандле заглушаем Node-специфичные модули
+      config.resolve.alias['pino-pretty'] = false
+      config.resolve.alias['node:fs'] = false
+      config.resolve.alias['node:path'] = require.resolve('path-browserify')
+      config.resolve.alias['node:crypto'] = false
+      config.resolve.alias['unstorage/drivers/fs-lite.cjs'] = false
+      config.resolve.alias['@walletconnect/keyvaluestorage/dist/index.cjs.js'] = false
 
-      // На случай, если какой-то модуль потребует обычные имена
       config.resolve.fallback = {
         ...(config.resolve.fallback || {}),
         fs: false,
-        crypto: false,
-        path: false,
         net: false,
         tls: false,
         stream: false,
-        util: false,
-        buffer: false,
-        events: false,
-        process: false,
-        child_process: false,
-        'fs/promises': false,
-        readline: false,
         worker_threads: false,
         module: false,
-      };
+        encoding: false,
+        'pino-pretty': false,
+      }
 
-      // Доп. страховка: если unstorage вдруг схватит fs-драйвер
-      config.resolve.alias['unstorage/drivers/fs-lite.cjs'] = false;
-      config.resolve.alias['unstorage/drivers/fs-lite'] = false;
-      config.resolve.alias['@walletconnect/keyvaluestorage/dist/index.cjs.js'] = false;
-      
-      // Отключаем проблемные модули, которые пытаются загрузить fs
-      config.externals = config.externals || [];
+      config.externals = config.externals || []
       config.externals.push({
         'unstorage/drivers/fs-lite.cjs': 'commonjs unstorage/drivers/fs-lite.cjs',
         'pino-pretty': 'commonjs pino-pretty',
-        lokijs: 'commonjs lokijs',
-        encoding: 'commonjs encoding',
-      });
+      })
+
+      config.plugins = config.plugins || []
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(/^node:/, resource => {
+          resource.request = resource.request.replace(/^node:/, '')
+        })
+      )
+      config.plugins.push(new webpack.IgnorePlugin({ resourceRegExp: /pino-pretty/ }))
     }
 
-    return config;
+    return config
   },
 };
-
-module.exports = nextConfig;
-
 module.exports = nextConfig

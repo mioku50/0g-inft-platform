@@ -1,13 +1,7 @@
 // web/app/api/tee/generate-transfer-proof/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
-import { createBroker } from '@/lib/compute/broker'
-import { create0GRateLimitedProvider } from '@/lib/server/rate-limited-provider'
-
-const OFFICIAL_CONTRACTS = {
-  ledger: '0x1a85Dd32da10c170F4f138d082DDc496ab3E5BAa',
-  inference: '0x5299bd255B76305ae08d7F95B270A485c6b95D54',
-}
+import { createBrokerWithEnvPK } from '@/lib/compute/broker'
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,13 +10,7 @@ export async function POST(request: NextRequest) {
     console.log('Generating TEE transfer proof for token:', tokenId)
     
     // Подключаемся к 0G Compute
-    const provider = create0GRateLimitedProvider()
-    const wallet = new ethers.Wallet(process.env.OG_COMPUTE_PRIVATE_KEY!, provider)
-    
-    const broker = await createBroker(wallet, {
-      ledger: OFFICIAL_CONTRACTS.ledger,
-      inference: OFFICIAL_CONTRACTS.inference
-    })
+    const broker = await createBrokerWithEnvPK()
     
     // Используем phala/deepseek с TEE
     const teeProvider = '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'

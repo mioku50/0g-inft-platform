@@ -5,7 +5,8 @@ if (!(process as any).versions?.node) {
 }
 // web/app/api/compute/chat/route.ts - updated for SDK 0.3.1
 import { NextRequest, NextResponse } from 'next/server'
-import { ChatService } from '@/lib/compute/chat-service'
+import { createBrokerWithEnvPK } from '@/lib/compute/broker'
+import { chatService } from '@/lib/compute/chat-service'
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,9 +15,8 @@ export async function POST(request: NextRequest) {
     console.log('\n=== 0G Compute Chat Request (SDK 0.3.1) ===')
     console.log('Message:', message)
     
-    const chatService = ChatService.getInstance()
-    const result = await chatService.chat({ message, agentMetadata })
-    
+    const broker = await createBrokerWithEnvPK()
+    const result = await chatService.processChat({ message, agentMetadata, broker })
     return NextResponse.json(result)
     
   } catch (error: any) {

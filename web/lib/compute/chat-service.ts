@@ -1,10 +1,10 @@
 // lib/compute/chat-service.ts
-import { getBroker } from './broker'
 import { ethers } from 'ethers'
 
 interface ChatRequest {
   message: string
   agentMetadata: any
+  broker: any
 }
 
 interface ChatResponse {
@@ -17,21 +17,12 @@ interface ChatResponse {
   error?: string
 }
 
-export class ChatService {
-  private static instance: ChatService
-
-  static getInstance(): ChatService {
-    if (!this.instance) {
-      this.instance = new ChatService()
-    }
-    return this.instance
-  }
-
-  async chat(request: ChatRequest): Promise<ChatResponse> {
+class ChatService {
+  async processChat(request: ChatRequest): Promise<ChatResponse> {
     const startTime = Date.now()
-    
+
     try {
-      const broker = await getBroker()
+      const broker = request.broker
 
       // Check and create ledger if needed
       await this.ensureLedgerBalance(broker)
@@ -233,3 +224,5 @@ I'm here with local intelligence while we reconnect to the 0G Compute network. W
     }
   }
 }
+
+export const chatService = new ChatService()

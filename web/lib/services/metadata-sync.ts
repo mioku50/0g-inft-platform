@@ -7,6 +7,28 @@ import fs from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
 
+function normalizeHash(input: string): string {
+  if (!input) return ''
+  let h = input.trim()
+
+  for (const pref of ['local://', 'file://']) {
+    if (h.startsWith(pref)) h = h.slice(pref.length)
+  }
+
+  // Если это turbo-URL — взять хвост после последнего слэша
+  if (h.startsWith('http')) {
+    try {
+      const u = new URL(h)
+      const last = u.pathname.split('/').filter(Boolean).pop()
+      if (last) h = last
+    } catch {/* ignore */}
+  }
+
+  // базовая валидация 0x + 64 hex
+  if (!/^0x[0-9a-fA-F]{64}$/.test(h)) return ''
+  return h.toLowerCase()
+}
+
 export class MetadataSyncService {
   private static instance: MetadataSyncService
   private syncInterval: NodeJS.Timeout | null = null
@@ -44,32 +66,12 @@ export class MetadataSyncService {
           const tokenId = await contract.tokenByIndex(i)
           let metadataHash = await contract.getEncryptedURI(tokenId)
           
-          // Clean hash and skip invalid ones
-          let cleanHash = metadataHash
-          if (metadataHash && typeof metadataHash === 'string') {
-            // Skip local://, file://, empty, or null hashes
-            if (metadataHash.startsWith('local://') || 
-                metadataHash.startsWith('file://') ||
-                metadataHash === '' ||
-                metadataHash === '0x' ||
-                metadataHash === 'null') {
-              console.log(`[MetadataSync] Skipping invalid hash for token #${tokenId}: ${metadataHash}`)
-              continue
-            }
-            
-            if (metadataHash.includes('http://') || metadataHash.includes('https://')) {
-              console.warn(`Token #${tokenId} has URL instead of hash:`, metadataHash)
-              const parts = metadataHash.split('/')
-              cleanHash = parts[parts.length - 1]
-              console.log('Extracted hash:', cleanHash)
-            }
-            
-            // Добавляем префикс 0x если нужно
-            if (cleanHash && !cleanHash.startsWith('0x')) {
-              if (/^[a-fA-F0-9]{64}$/.test(cleanHash)) {
-                cleanHash = '0x' + cleanHash
-              }
-            }
+          // Normalize hash using the new function
+          let cleanHash = normalizeHash(metadataHash)
+          
+          if (!cleanHash) {
+            console.log(`[MetadataSync] Skipping invalid hash for token #${tokenId}: ${metadataHash}`)
+            continue
           }
           
           // Проверяем существует ли файл локально
@@ -173,8 +175,11 @@ export class MetadataSyncService {
     for (let i = 0; i < Number(total); i++) {
       const tokenId = await contract.tokenByIndex(i)
       const uri: string = await contract.getEncryptedURI(tokenId)
-      if (uri.startsWith('local://')) {
-        const hash = uri.replace('local://', '')
+      
+      // Use normalizeHash to check if this needs retry
+      const normalizedHash = normalizeHash(uri)
+      if (!normalizedHash && (uri.startsWith('local://') || uri.startsWith('file://'))) {
+        const hash = uri.replace(/^(local:\/\/|file:\/\/)/, '')
         const filePath = path.join(process.cwd(), 'data', 'metadata', `${hash}.json`)
         try {
           const content = await fs.readFile(filePath, 'utf-8')

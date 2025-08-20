@@ -1,7 +1,38 @@
 import 'dotenv/config'
 import { ethers } from 'ethers'
-import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
 import { create0GRateLimitedProvider } from '../server/rate-limited-provider'
+
+// Resilient broker import (ESM → CJS fallback)
+let createZGComputeNetworkBroker: any
+
+async function loadBrokerFunction() {
+  if (createZGComputeNetworkBroker) return createZGComputeNetworkBroker
+
+  try {
+    const mod: any = await import('@0glabs/0g-serving-broker') // ESM-путь
+    createZGComputeNetworkBroker =
+      mod?.createZGComputeNetworkBroker ??
+      mod?.default?.createZGComputeNetworkBroker
+    if (!createZGComputeNetworkBroker) throw new Error('esm reexport mismatch')
+  } catch {
+    try {
+      // CJS-фоллбэк: try direct require first
+      const direct = require('@0glabs/0g-serving-broker')
+      createZGComputeNetworkBroker =
+        direct?.createZGComputeNetworkBroker ??
+        direct?.default?.createZGComputeNetworkBroker
+      if (!createZGComputeNetworkBroker) throw new Error('cjs direct mismatch')
+    } catch {
+      throw new Error('[broker] Failed to load createZGComputeNetworkBroker from any source')
+    }
+  }
+
+  if (!createZGComputeNetworkBroker) {
+    throw new Error('[broker] Failed to load createZGComputeNetworkBroker')
+  }
+
+  return createZGComputeNetworkBroker
+}
 
 let brokerInstance: any = null
 
@@ -27,7 +58,10 @@ export async function getBroker() {
     ? getBrowserWalletSigner()
     : new ethers.Wallet(privateKey, provider) as any
 
-  brokerInstance = await createZGComputeNetworkBroker(
+  // Load the broker function with resilient import
+  const brokerFactory = await loadBrokerFunction()
+
+  brokerInstance = await brokerFactory(
     signer,
     process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT!,
     process.env.NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT!,

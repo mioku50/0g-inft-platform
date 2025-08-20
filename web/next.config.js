@@ -67,7 +67,11 @@ const nextConfig = {
   },
   // Экспериментальная поддержка для серверных компонентов
   experimental: {
-    serverComponentsExternalPackages: ['@0glabs/0g-ts-sdk', '@0glabs/0g-serving-broker', 'ethers'],
+    serverComponentsExternalPackages: [
+      '@0glabs/0g-ts-sdk',
+      'ethers',
+      // ВАЖНО: без '@0glabs/0g-serving-broker' здесь
+    ],
   },
 }
 

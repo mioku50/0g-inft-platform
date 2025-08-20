@@ -15,6 +15,12 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  metadata?: {
+    model?: string
+    provider?: string
+    isRealAI?: boolean
+    ttfb?: number
+  }
 }
 
 export default function ChatPage() {
@@ -28,6 +34,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
+  const [lastResponseMeta, setLastResponseMeta] = useState<any>(null)
 
   const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
 
@@ -168,6 +175,7 @@ export default function ChatPage() {
     setLoading(true)
 
     try {
+      const startTime = Date.now()
       const response = await fetch('/api/compute/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -179,15 +187,23 @@ export default function ChatPage() {
       })
 
       const data = await response.json()
+      const ttfb = Date.now() - startTime
       
       if (data.success) {
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: data.response,
-          timestamp: new Date()
+          timestamp: new Date(),
+          metadata: {
+            model: data.model,
+            provider: data.provider,
+            isRealAI: data.isRealAI,
+            ttfb: data.ttfb || ttfb
+          }
         }
         setMessages(prev => [...prev, assistantMessage])
+        setLastResponseMeta(data)
       } else {
         throw new Error(data.error || 'Failed to get response')
       }
@@ -240,10 +256,25 @@ export default function ChatPage() {
             )}
             Chat with {agent?.metadata?.name || `Agent #${tokenId}`}
           </CardTitle>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-600 flex items-center gap-2">
             Model: {agent?.metadata?.model || 'llama-3.3-70b'}
+            <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+              SDK 0.3.1
+            </span>
+            <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
+              Galileo v3 (16601)
+            </span>
           </p>
         </CardHeader>
+        
+        {/* Status Banner */}
+        {lastResponseMeta && !lastResponseMeta.isRealAI && (
+          <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2">
+            <p className="text-sm text-yellow-800">
+              ⚠️ AI providers temporarily unavailable. Using local intelligence while reconnecting to 0G Compute...
+            </p>
+          </div>
+        )}
         
         <CardContent className="flex-1 flex flex-col p-0">
           <div className="flex-1 overflow-y-auto p-6">
@@ -261,9 +292,28 @@ export default function ChatPage() {
                     }`}
                   >
                     <p className="whitespace-pre-wrap">{message.content}</p>
-                    <p className="text-xs opacity-70 mt-2">
-                      {message.timestamp.toLocaleTimeString()}
-                    </p>
+                    <div className="flex items-center justify-between mt-2 text-xs opacity-70">
+                      <span>{message.timestamp.toLocaleTimeString()}</span>
+                      {message.metadata && message.role === 'assistant' && (
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className={`px-2 py-1 rounded text-white text-xs ${
+                            message.metadata.isRealAI ? 'bg-green-500' : 'bg-yellow-500'
+                          }`}>
+                            {message.metadata.isRealAI ? 'Real AI' : 'Local'}
+                          </span>
+                          {message.metadata.model && (
+                            <span className="text-gray-600">
+                              {message.metadata.model}
+                            </span>
+                          )}
+                          {message.metadata.ttfb && (
+                            <span className="text-gray-600">
+                              {message.metadata.ttfb}ms
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}

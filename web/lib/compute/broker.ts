@@ -12,15 +12,7 @@ async function loadCreateFn() {
   return _create
 }
 
-function getAddressesFromEnv() {
-  return {
-    ledgerManagerAddress: process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT!,
-    inferenceServingAddress: process.env.NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT!,
-    fineTuningServingAddress: process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS!,
-  }
-}
-
-// Унифицированный конструктор: пробуем modern → legacy
+// Унифицированный конструктор: используем modern сигнатуру без ручной передачи адресов
 export async function createBrokerWithEnvPK() {
   const create = await loadCreateFn()
 
@@ -29,41 +21,11 @@ export async function createBrokerWithEnvPK() {
   if (!pk) throw new Error('Missing OG_COMPUTE_PRIVATE_KEY/OG_STORAGE_PRIVATE_KEY')
   const wallet = new ethers.Wallet(pk, provider)
 
-  const addrs = getAddressesFromEnv()
-
-  // 1) Попытка modern-сигнатуры (с правильными ключами)
+  // Modern: SDK знает адреса тестнета сам, передаём только signer
+  const broker = await create(wallet)
+  // Добавим адрес кошелька для кеширования ACK per-wallet
   try {
-    // Modern: ensure we pass exactly expected keys
-    const broker = await create(wallet, {
-      ledgerManagerAddress: addrs.ledgerManagerAddress,
-      inferenceServingAddress: addrs.inferenceServingAddress,
-      fineTuningServingAddress: addrs.fineTuningServingAddress,
-    })
-    // быстрый runtime-check: убеждаемся, что контракты подхватились
-    if (!broker?.inference || !broker?.ledger) {
-      throw new Error('Broker missing inference/ledger after modern init')
-    }
-    return broker
-  } catch (e: any) {
-    console.log('[broker] modern init failed → fallback to legacy:', e?.message)
-  }
-
-  // 2) Legacy: без адресов (SDK сам знает тестнет-адреса) ИЛИ с другими именами ключей
-  try {
-    const broker = await create(wallet)
-    // если у объекта есть setters — подставим адреса вручную
-    if (broker?.inference?.setContractAddresses) {
-      await broker.inference.setContractAddresses({ inferenceServingAddress: addrs.inferenceServingAddress })
-    }
-    if (broker?.ledger?.setContractAddress) {
-      await broker.ledger.setContractAddress(addrs.ledgerManagerAddress)
-    }
-    if (broker?.fineTuning?.setContractAddresses && addrs.fineTuningServingAddress) {
-      await broker.fineTuning.setContractAddresses({ fineTuningServingAddress: addrs.fineTuningServingAddress })
-    }
-    return broker
-  } catch (e: any) {
-    console.error('[broker] legacy init also failed:', e?.message)
-    throw e
-  }
+    ;(broker as any).__walletAddress = wallet.address
+  } catch {}
+  return broker
 }

@@ -34,6 +34,9 @@ Format your response as JSON with these fields:
   "optimizedPrompt": "..."
 }`
 
+    // Ensure ACK before metadata/headers
+    const ackTx = await broker.inference.acknowledgeProviderSigner(providerAddress)
+    await ackTx.wait()
     const { endpoint, model } = await broker.inference.getServiceMetadata(providerAddress)
     const headers = await broker.inference.getRequestHeaders(providerAddress, analysisPrompt)
     

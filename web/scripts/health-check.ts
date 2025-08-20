@@ -36,7 +36,9 @@ async function checkSystemHealth() {
   try {
     const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
     const blockNumber = await provider.getBlockNumber()
-    console.log(`✅ Connected to 0G network (block: ${blockNumber})`)
+    const net = await provider.getNetwork()
+    const chainId = Number(net.chainId)
+    console.log(`✅ Connected to 0G network (chainId=${chainId}, block=${blockNumber})`)
   } catch (error) {
     issues.push('❌ Cannot connect to 0G network')
     console.error('❌ Network error:', error)
@@ -80,32 +82,47 @@ async function checkSystemHealth() {
     }
   }
   
-  // Check compute broker initialization
-  if (process.argv[2] === 'init-compute') {
-    console.log('\n🤖 Initializing compute broker...')
+  // Compute broker and services overview
+  console.log('\n🤖 Checking compute broker and services...')
+  try {
+    const broker = await createBrokerWithEnvPK()
+    const services = await broker.inference.listService()
+    console.log(`services=${services.length}`)
+    // Ledger available
     try {
-      const broker = await createBrokerWithEnvPK()
-      const wallet = new ethers.Wallet(process.env.OG_COMPUTE_PRIVATE_KEY!, provider)
-      // Check if account exists and available balance
       const ledger = await broker.ledger.getLedger()
       const available = ledger?.availableBalance ?? 0n
-      const availableStr = Number(ethers.formatEther(available)).toFixed(4)
-      console.log(`   Ledger available: ${availableStr} OG`)
-      if (available === 0n) {
-        console.log('📝 Creating or funding compute account...')
-        try {
-          await broker.ledger.depositFund("0.05")
-          console.log('✅ deposit=OK')
-        } catch (e) {
-          await broker.ledger.addLedger("0.05")
-          console.log('✅ addLedger=OK')
-        }
+      console.log(`available=${Number(ethers.formatEther(available)).toFixed(4)} OG`)
+    } catch (e: any) {
+      const msg: string = e?.message || ''
+      if (msg.includes('Account does not exist')) {
+        console.log('available=0.0000 OG')
       } else {
-        console.log('✅ Compute account has funds')
+        throw e
       }
+    }
+  } catch (error) {
+    console.error('❌ Compute check failed:', error)
+    issues.push('❌ Compute check failed')
+  }
+
+  // Optional: initialize/fund compute account if requested
+  if (process.argv[2] === 'init-compute') {
+    console.log('\n🛠 Funding compute account...')
+    try {
+      const broker = await createBrokerWithEnvPK()
+      const ledger = await broker.ledger.getLedger().catch(() => null)
+      const available = ledger?.availableBalance ?? 0n
+      if (available === 0n) {
+        await broker.ledger.addLedger(0.05)
+      } else if (Number(ethers.formatEther(available)) < 0.01) {
+        await broker.ledger.depositFund(0.05)
+      }
+      const after = await broker.ledger.getLedger()
+      console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
     } catch (error) {
-      console.error('❌ Failed to initialize compute:', error)
-      issues.push('❌ Compute initialization failed')
+      console.error('❌ Failed to fund compute:', error)
+      issues.push('❌ Compute funding failed')
     }
   }
   

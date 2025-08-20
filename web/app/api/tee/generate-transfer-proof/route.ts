@@ -26,7 +26,9 @@ export async function POST(request: NextRequest) {
       nonce: ethers.hexlify(ethers.randomBytes(16))
     }
     
-    // Получаем метаданные сервиса
+    // ACK → метаданные → заголовки
+    const ackTx = await broker.inference.acknowledgeProviderSigner(teeProvider)
+    await ackTx.wait()
     const metadata = await broker.inference.getServiceMetadata(teeProvider)
     const headers = await broker.inference.getRequestHeaders(
       teeProvider, 

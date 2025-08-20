@@ -7,7 +7,7 @@ import crypto from 'crypto'
 
 export interface UploadResult {
   rootHash: string
-  txHash?: string
+  txHash?: any
   size?: number
   segments?: number
 }
@@ -45,7 +45,7 @@ export async function uploadToStorage(file: File | Buffer | string, fileName = '
     try {
       const feeData = await provider.getFeeData()
       const gasPrice = (feeData.gasPrice || ethers.parseUnits('1', 'gwei')) * BigInt(2 ** i)
-      const [tx, err] = await indexer.upload(zgFile, evmRpc, wallet, undefined, undefined, { gasPrice })
+      const [tx, err] = await indexer.upload(zgFile, evmRpc, wallet as any, undefined, undefined, { gasPrice })
       if (!err) {
         await fs.unlink(tempFile).catch(() => {})
         const size = zgFile.size()

@@ -1,8 +1,15 @@
 import 'dotenv/config'
 import { ethers } from 'ethers'
 import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-broker'
+import { create0GRateLimitedProvider } from '../server/rate-limited-provider'
 
 let brokerInstance: any = null
+
+function getBrowserWalletSigner(): ethers.Signer {
+  // This would be implemented for non-custodial mode
+  // For now, we'll fall back to server-side signer
+  throw new Error('Non-custodial wallet not available on server side')
+}
 
 export async function getBroker() {
   if (brokerInstance) return brokerInstance
@@ -12,9 +19,21 @@ export async function getBroker() {
     throw new Error('OG_COMPUTE_PRIVATE_KEY not found')
   }
   
-  const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
-  const wallet = new ethers.Wallet(privateKey, provider)
+  const provider = create0GRateLimitedProvider()
   
-  brokerInstance = await createZGComputeNetworkBroker(wallet)
+  const USE_NONCUSTODIAL_INFERENCE = process.env.USE_NONCUSTODIAL_INFERENCE === 'true'
+  
+  const signer = USE_NONCUSTODIAL_INFERENCE
+    ? getBrowserWalletSigner()
+    : new ethers.Wallet(privateKey, provider) as any
+
+  brokerInstance = await createZGComputeNetworkBroker(
+    signer,
+    process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT!,
+    process.env.NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT!,
+    process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS!
+  )
+  
+  console.log('broker created')
   return brokerInstance
 }

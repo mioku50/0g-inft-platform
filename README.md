@@ -1,3 +1,135 @@
+1) @0glabs/0g-serving-user-broker (клиентский/серверный TS-SDK для dApp)
+
+Появился «всё-в-одном» брокер:
+
+import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-user-broker'
+// + createInferenceBroker / createLedgerBroker, но обычно достаточно ZGComputeNetworkBroker
+
+
+Ключевые методы (типизация в d.ts):
+
+broker.inference.listService() — список сервисов.
+
+broker.inference.getServiceMetadata(provider) → { endpoint, model }.
+
+broker.inference.getRequestHeaders(provider, content, vllmProxy?) — контент обязателен (раньше могли генерить без него).
+
+broker.inference.acknowledgeProviderSigner(provider) — обязательный ACK перед запросами.
+
+broker.inference.processResponse(provider, content, chatID?) — верификация ответа (TEE).
+
+Структуры контрактов изменились: теперь у сервиса есть поле additionalInfo, verifiability — это строка, иные названия балансов в Ledger (см. ниже).
+
+2) 0g-serving-broker (брокер/провайдер на Go — это «серверная» часть сети)
+
+В биндингах видно новые структуры (Go): ServiceParams включает
+serviceType, url, model, verifiability, inputPrice, outputPrice, additionalInfo.
+
+Это значит: ABI твоего приложения обязана содержать эти поля. Если их нет — будут «missing revert data / decode» и прочие странности.
+
+3) 0g-ts-sdk (storage)
+
+Без критичных для Compute изменений. Это про хранение (ZgFile/Indexer). Можно оставить как есть.
+
+Почему у тебя чат не работает сейчас
+
+Несовпадение ABI InferenceServing
+В твоём web/lib/contracts/abis.ts (или соседнем файле) структура сервиса, похоже, старая (без additionalInfo / с другим порядком полей).
+Итог: listService() и getServiceMetadata() либо возвращают пусто, либо разваливаются на декодировании → ты падаешь в «статический фолбэк» и дальше ловишь ServiceNotExist(address) при ACK.
+
+Неверный разбор баланса Ledger (BigNumberish null)
+В новом SDK getLedger() возвращает availableBalance и totalBalance, а не старые balance/locked. Если читать старые поля — они null ⇒ «invalid BigNumberish (value=null)».
+
+ACK обязателен и требует правильной цепочки вызовов
+Порядок сейчас такой:
+listService() → для выбранного провайдера acknowledgeProviderSigner(provider) → getServiceMetadata(provider) → getRequestHeaders(provider, content) → запрос к endpoint.
+
+ENV противоречивый / смешанный режим
+У тебя включён NEXT_PUBLIC_USE_NONCUSTODIAL_INFERENCE=true, но в логах виден серверный кошелёк (Wallet address: 0x4323…) и сервер создаёт брокер. Выбери один режим:
+
+Кастодиальный: серверный приватник → все шаги (ACK/headers) на бэкенде.
+
+Не кастодиальный: клиентский EIP-1193 кошелёк → ACK/headers на клиенте.
+Смешение двух путей часто ломает заголовки/ACK.
+
+OpenAI фолбэк
+Логи OpenAI SDK failed: Connection error — это твой «фолбэк-код». Если ты не хочешь, чтобы он вообще дергался — огради это флагом.
+
+Что конкретно поменять у тебя (патчи)
+A. Обнови ABI InferenceServing
+
+В web/lib/contracts/abis.ts структура сервиса должна включать additionalInfo и правильный порядок. По d.ts из SDK это такой tuple:
+
+// Сигнатурная часть структуры сервиса (пример для ABI):
+"components": [
+  { "name": "provider",       "type": "address" },
+  { "name": "serviceType",    "type": "string"  },
+  { "name": "url",            "type": "string"  },
+  { "name": "model",          "type": "string"  },
+  { "name": "verifiability",  "type": "string"  },
+  { "name": "inputPrice",     "type": "uint256" },
+  { "name": "outputPrice",    "type": "uint256" },
+  { "name": "additionalInfo", "type": "string"  },
+  { "name": "updatedAt",      "type": "uint256" }
+]
+
+
+Порядок может отличаться в конкретной реализации, но эти поля должны присутствовать (особенно additionalInfo, verifiability). Возьми точную сигнатуру из твоего архива 0g-serving-user-broker (там в cli.commonjs/sdk/inference/contract/typechain/InferenceServing.d.ts и соседних d.ts видно состав структур).
+
+B. Исправь разбор Ledger
+
+Везде, где ты читаешь баланс, меняй на:
+
+const ledger = await broker.ledger.getLedger()
+// Новые поля:
+const available = ledger?.availableBalance ?? 0n
+const total     = ledger?.totalBalance     ?? 0n
+// Старые поля не использовать (balance/locked могут быть null)
+
+
+Инициализация счёта:
+
+if (!ledger || total === 0n) {
+  await broker.ledger.addLedger(ethers.parseEther('0.05'))
+}
+
+C. Переход на «правильный» брокер и вызовы
+import { ethers } from 'ethers'
+import { createZGComputeNetworkBroker } from '@0glabs/0g-serving-user-broker'
+// 1) провайдер лучше через твой rate-limited provider
+const provider = create0GRateLimitedProvider(process.env.NEXT_PUBLIC_0G_RPC_URL!)
+
+const wallet = new ethers.Wallet(PRIVATE_KEY, provider)
+const broker = await createZGComputeNetworkBroker(wallet)
+
+// 2) discovery
+const services = await broker.inference.listService()
+
+// 3) ACK обязателен для выбранного провайдера
+await broker.inference.acknowledgeProviderSigner(providerAddress)
+
+// 4) метаданные сервиса
+const { endpoint, model } = await broker.inference.getServiceMetadata(providerAddress)
+
+// 5) заголовки (контент обязателен!)
+const headers = await broker.inference.getRequestHeaders(providerAddress, userPrompt)
+
+// 6) запрос
+const resp = await fetch(`${endpoint}/chat/completions`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', ...headers },
+  body: JSON.stringify({ model, messages })
+})
+
+// 7) (опционально TEE) верификация
+const data = await resp.json()
+await broker.inference.processResponse(providerAddress, data, data?.id)
+
+
+
+
+
+
 INFT Integration Guide
 Overview
 This step-by-step guide shows you how to integrate INFTs into your applications using the 0G ecosystem. You'll learn to deploy contracts, manage metadata, and implement secure transfers.
@@ -1133,4 +1265,5 @@ const valid = await broker.inference.processResponse(
 )
 Interface
 Access the more details of interfaces via cloning the repo and opening index.html in browser.
+
 

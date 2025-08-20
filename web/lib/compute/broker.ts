@@ -2,36 +2,34 @@ import 'dotenv/config'
 import { ethers } from 'ethers'
 import { create0GRateLimitedProvider } from '../server/rate-limited-provider'
 
-// Resilient broker import (ESM → CJS fallback)
-let createZGComputeNetworkBroker: any
+// CJS-only broker import (никаких «иногда ESM»)
+let _createZGComputeNetworkBroker: any | null = null
 
-async function loadBrokerFunction() {
-  if (createZGComputeNetworkBroker) return createZGComputeNetworkBroker
+async function getCreateBrokerFn() {
+  if (_createZGComputeNetworkBroker) return _createZGComputeNetworkBroker
 
   try {
-    const mod: any = await import('@0glabs/0g-serving-broker') // ESM-путь
-    createZGComputeNetworkBroker =
+    // Try dynamic import first (should resolve to CJS via alias)
+    const mod: any = await import('@0glabs/0g-serving-broker')
+    _createZGComputeNetworkBroker =
       mod?.createZGComputeNetworkBroker ??
       mod?.default?.createZGComputeNetworkBroker
-    if (!createZGComputeNetworkBroker) throw new Error('esm reexport mismatch')
-  } catch {
+  } catch (importError) {
+    // Fallback to require if dynamic import fails
     try {
-      // CJS-фоллбэк: try direct require first
-      const direct = require('@0glabs/0g-serving-broker')
-      createZGComputeNetworkBroker =
-        direct?.createZGComputeNetworkBroker ??
-        direct?.default?.createZGComputeNetworkBroker
-      if (!createZGComputeNetworkBroker) throw new Error('cjs direct mismatch')
-    } catch {
-      throw new Error('[broker] Failed to load createZGComputeNetworkBroker from any source')
+      const mod = require('@0glabs/0g-serving-broker')
+      _createZGComputeNetworkBroker =
+        mod?.createZGComputeNetworkBroker ??
+        mod?.default?.createZGComputeNetworkBroker
+    } catch (requireError) {
+      throw new Error(`[broker] Failed to load createZGComputeNetworkBroker: ${importError}, ${requireError}`)
     }
   }
 
-  if (!createZGComputeNetworkBroker) {
+  if (!_createZGComputeNetworkBroker) {
     throw new Error('[broker] Failed to load createZGComputeNetworkBroker')
   }
-
-  return createZGComputeNetworkBroker
+  return _createZGComputeNetworkBroker
 }
 
 let brokerInstance: any = null
@@ -40,6 +38,12 @@ function getBrowserWalletSigner(): ethers.Signer {
   // This would be implemented for non-custodial mode
   // For now, we'll fall back to server-side signer
   throw new Error('Non-custodial wallet not available on server side')
+}
+
+// пример использования:
+export async function createBroker(walletOrSigner: any, addrs: { ledger: string; inference: string; fineTuning?: string }) {
+  const createZGComputeNetworkBroker = await getCreateBrokerFn()
+  return createZGComputeNetworkBroker(walletOrSigner, addrs)
 }
 
 export async function getBroker() {
@@ -58,15 +62,12 @@ export async function getBroker() {
     ? getBrowserWalletSigner()
     : new ethers.Wallet(privateKey, provider) as any
 
-  // Load the broker function with resilient import
-  const brokerFactory = await loadBrokerFunction()
-
-  brokerInstance = await brokerFactory(
-    signer,
-    process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT!,
-    process.env.NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT!,
-    process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS!
-  )
+  // Create broker using the new function
+  brokerInstance = await createBroker(signer, {
+    ledger: process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT!,
+    inference: process.env.NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT!,
+    fineTuning: process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS!
+  })
   
   console.log('broker created')
   return brokerInstance

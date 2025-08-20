@@ -1,16 +1,12 @@
 // web/app/api/compute/generate-prompt/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { ethers } from 'ethers'
-const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
+import { getBroker } from '@/lib/compute/broker'
 
 export async function POST(request: NextRequest) {
   try {
     const { description, capabilities, personality } = await request.json()
     
-    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
-    const wallet = new ethers.Wallet(process.env.OG_COMPUTE_PRIVATE_KEY!, provider)
-    
-    const broker = await createZGComputeNetworkBroker(wallet)
+    const broker = await getBroker()
     
     // Используем официальный провайдер для генерации
     const providerAddress = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'

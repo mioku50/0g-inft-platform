@@ -64,18 +64,20 @@ export class MetadataSyncService {
       for (let i = 0; i < Number(totalSupply); i++) {
         try {
           const tokenId = await contract.tokenByIndex(i)
-          let metadataHash = await contract.getEncryptedURI(tokenId)
+          let metadataHashRaw = await contract.getEncryptedURI(tokenId)
           
           // Normalize hash using the new function
-          let cleanHash = normalizeHash(metadataHash)
+          const hash = normalizeHash(metadataHashRaw)
           
-          if (!cleanHash) {
-            console.log(`[MetadataSync] Skipping invalid hash for token #${tokenId}: ${metadataHash}`)
+          if (!hash) {
+            // раньше: console.log(`[MetadataSync] Skipping invalid hash … ${metadataHashRaw}`)
+            // теперь либо тихо скипаем, либо один короткий лог без спама:
+            console.debug(`[MetadataSync] skip token ${tokenId}: no valid metadata hash`)
             continue
           }
           
-          // Проверяем существует ли файл локально
-          const filePath = path.join(metadataDir, `${cleanHash}.json`)
+          // и ТОЛЬКО с нормализованным hash строим путь:
+          const filePath = path.join(metadataDir, `${hash}.json`)
           try {
             await fs.access(filePath)
             console.log(`[MetadataSync] Token #${tokenId} already has local metadata`)
@@ -90,7 +92,7 @@ export class MetadataSyncService {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ 
-                root: cleanHash.replace('0x', '') // 0G Storage может не любить префикс
+                root: hash.replace('0x', '') // 0G Storage может не любить префикс
               })
             })
             

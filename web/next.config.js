@@ -26,6 +26,8 @@ const nextConfig = {
     if (!isServer) {
       // В браузерном бандле заглушаем Node-специфичные модули
       config.resolve.alias['pino-pretty'] = false
+      config.resolve.alias['pino-std-serializers'] = false
+      config.resolve.alias['sonic-boom'] = false
       config.resolve.alias['node:fs'] = false
       config.resolve.alias['node:path'] = require.resolve('path-browserify')
       config.resolve.alias['node:crypto'] = false
@@ -42,12 +44,16 @@ const nextConfig = {
         module: false,
         encoding: false,
         'pino-pretty': false,
+        'pino-std-serializers': false,
+        'sonic-boom': false,
       }
 
       config.externals = config.externals || []
       config.externals.push({
         'unstorage/drivers/fs-lite.cjs': 'commonjs unstorage/drivers/fs-lite.cjs',
         'pino-pretty': 'commonjs pino-pretty',
+        'pino-std-serializers': 'commonjs pino-std-serializers',
+        'sonic-boom': 'commonjs sonic-boom',
       })
 
       config.plugins = config.plugins || []
@@ -56,7 +62,7 @@ const nextConfig = {
           resource.request = resource.request.replace(/^node:/, '')
         })
       )
-      config.plugins.push(new webpack.IgnorePlugin({ resourceRegExp: /pino-pretty/ }))
+      config.plugins.push(new webpack.IgnorePlugin({ resourceRegExp: /(pino-pretty|pino-std-serializers|sonic-boom)/ }))
     }
 
     return config

@@ -26,6 +26,8 @@ Create a comprehensive system prompt that:
 
 Format: Return only the system prompt text, no explanations.`
 
+    // Ensure correct order: acknowledge → metadata → headers
+    await broker.inference.acknowledgeProviderSigner(providerAddress)
     const { endpoint, model } = await broker.inference.getServiceMetadata(providerAddress)
     const headers = await broker.inference.getRequestHeaders(providerAddress, prompt)
     

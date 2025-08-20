@@ -14,6 +14,7 @@ export async function POST(request: NextRequest) {
     
     console.log('\n=== 0G Compute Chat Request (SDK 0.3.1) ===')
     console.log('Message:', message)
+    console.log('Using RPC:', process.env.NEXT_PUBLIC_0G_RPC_URL || process.env.NEXT_PUBLIC_RPC_URL)
     
     const broker = await createBrokerWithEnvPK()
     const result = await chatService.processChat({ message, agentMetadata, broker })

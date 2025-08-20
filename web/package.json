@@ -12,6 +12,7 @@
     "fund-storage": "ts-node --project tsconfig.scripts.json scripts/check-storage-balance.ts fund",
     "health-check": "ts-node --project tsconfig.scripts.json scripts/health-check.ts",
     "init-compute": "ts-node --project tsconfig.scripts.json scripts/health-check.ts init-compute",
+    "check-inference": "ts-node --project tsconfig.scripts.json scripts/check-inference.ts",
     "check-metadata": "ts-node --project tsconfig.scripts.json scripts/check-metadata.ts",
     "debug-metadata": "ts-node --project tsconfig.scripts.json scripts/debug-token-metadata.ts",
     "fix-metadata": "ts-node --project tsconfig.scripts.json scripts/fix-metadata-urls.ts",

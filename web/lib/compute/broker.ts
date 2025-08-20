@@ -33,7 +33,12 @@ export async function createBrokerWithEnvPK() {
 
   // 1) Попытка modern-сигнатуры (с правильными ключами)
   try {
-    const broker = await create(wallet, addrs)
+    // Modern: ensure we pass exactly expected keys
+    const broker = await create(wallet, {
+      ledgerManagerAddress: addrs.ledgerManagerAddress,
+      inferenceServingAddress: addrs.inferenceServingAddress,
+      fineTuningServingAddress: addrs.fineTuningServingAddress,
+    })
     // быстрый runtime-check: убеждаемся, что контракты подхватились
     if (!broker?.inference || !broker?.ledger) {
       throw new Error('Broker missing inference/ledger after modern init')

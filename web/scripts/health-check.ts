@@ -86,16 +86,22 @@ async function checkSystemHealth() {
     try {
       const broker = await createBrokerWithEnvPK()
       const wallet = new ethers.Wallet(process.env.OG_COMPUTE_PRIVATE_KEY!, provider)
-      // Check if account exists
-      const account = await broker.ledger.getAccount(wallet.address)
-      if (!account || account[0] === BigInt(0)) {
-        console.log('📝 Creating compute account...')
-        await broker.ledger.addLedger(0.01) // 0.01 OG initial deposit
-        console.log('✅ Compute account created!')
+      // Check if account exists and available balance
+      const ledger = await broker.ledger.getLedger()
+      const available = ledger?.availableBalance ?? 0n
+      const availableStr = Number(ethers.formatEther(available)).toFixed(4)
+      console.log(`   Ledger available: ${availableStr} OG`)
+      if (available === 0n) {
+        console.log('📝 Creating or funding compute account...')
+        try {
+          await broker.ledger.depositFund("0.05")
+          console.log('✅ deposit=OK')
+        } catch (e) {
+          await broker.ledger.addLedger("0.05")
+          console.log('✅ addLedger=OK')
+        }
       } else {
-        console.log('✅ Compute account already exists')
-        const balance = ethers.formatEther(account[0])
-        console.log(`   Balance: ${balance} OG`)
+        console.log('✅ Compute account has funds')
       }
     } catch (error) {
       console.error('❌ Failed to initialize compute:', error)

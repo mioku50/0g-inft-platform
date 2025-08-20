@@ -24,12 +24,12 @@ class ChatService {
     try {
       const broker = request.broker
 
-      // Check and create ledger if needed
+      // Check and create/deposit ledger if needed
       await this.ensureLedgerBalance(broker)
 
       // Discover services
       const services = await broker.inference.listService()
-      console.log(`listService() -> [${services.length} services]`)
+      console.log(`listService() -> ${services.length}`)
 
       if (services.length === 0) {
         return this.createGracefulFallback(request, 'No services available')
@@ -40,16 +40,17 @@ class ChatService {
         try {
           console.log(`Trying service: ${service.model} at ${service.provider}`)
           
+          // Acknowledge provider if needed
+          await this.acknowledgeProviderIfNeeded(broker, service.provider)
+          console.log('ack=OK', { provider: service.provider })
+
           // Get service metadata and endpoint
           const { endpoint, model } = await broker.inference.getServiceMetadata(service.provider)
-          console.log('Service endpoint:', endpoint)
+          console.log('metadata=OK', { model, provider: service.provider })
 
           // Get request headers
           const headers = await broker.inference.getRequestHeaders(service.provider, request.message)
-          console.log('Headers generated:', Object.keys(headers))
-
-          // Acknowledge provider if needed
-          await this.acknowledgeProviderIfNeeded(broker, service.provider)
+          console.log('headers=OK')
 
           // Send inference request
           const response = await this.sendInferenceRequest({
@@ -75,6 +76,7 @@ class ChatService {
             }
 
             const ttfb = Date.now() - startTime
+            console.log('isRealAI:true', { provider: service.provider, model })
             return {
               success: true,
               response: response.content,
@@ -112,26 +114,31 @@ class ChatService {
   private async ensureLedgerBalance(broker: any): Promise<void> {
     try {
       const info = await broker.ledger.getLedger()
-      const balance = info?.balance ?? BigInt(0)
-      
-      console.log('Ledger balance:', ethers.formatEther(balance), 'OG')
-      
-      if (balance < ethers.parseEther('0.02')) {
-        console.log('Low balance, adding funds...')
-        await broker.ledger.addLedger(ethers.parseEther('0.05'))
-        console.log('Funds added')
+      const available = info?.availableBalance ?? 0n
+      const total = info?.totalBalance ?? 0n
+
+      const availableStr = Number(ethers.formatEther(available)).toFixed(4)
+      console.log(`available=${availableStr} OG, total=${Number(ethers.formatEther(total)).toFixed(4)} OG`)
+
+      if (available === 0n) {
+        console.log('Low or zero available balance, depositing funds...')
+        // Deposit to existing ledger if present, otherwise add new ledger
+        try {
+          await broker.ledger.depositFund("0.05")
+          console.log('deposit=OK')
+        } catch (depErr: any) {
+          console.log('deposit failed, trying addLedger...', depErr?.message)
+          await broker.ledger.addLedger("0.05")
+          console.log('addLedger=OK')
+        }
       }
     } catch (error: any) {
-      if (!error.message?.includes('invalid BigNumberish value')) {
-        console.log('Creating new ledger account...')
-        try {
-          await broker.ledger.addLedger(ethers.parseEther('0.05'))
-          console.log('New ledger account created')
-        } catch (createError) {
-          console.error('Failed to create ledger:', (createError as any).message)
-        }
-      } else {
-        console.error('Ledger balance check error:', error.message)
+      console.log('Creating new ledger account (fallback path)...')
+      try {
+        await broker.ledger.addLedger("0.05")
+        console.log('addLedger=OK')
+      } catch (createError) {
+        console.error('Failed to create ledger:', (createError as any).message)
       }
     }
   }

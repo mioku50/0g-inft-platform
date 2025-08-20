@@ -44,9 +44,19 @@ export class MetadataSyncService {
           const tokenId = await contract.tokenByIndex(i)
           let metadataHash = await contract.getEncryptedURI(tokenId)
           
-          // Очищаем хэш от URL если он есть
+          // Clean hash and skip invalid ones
           let cleanHash = metadataHash
           if (metadataHash && typeof metadataHash === 'string') {
+            // Skip local://, file://, empty, or null hashes
+            if (metadataHash.startsWith('local://') || 
+                metadataHash.startsWith('file://') ||
+                metadataHash === '' ||
+                metadataHash === '0x' ||
+                metadataHash === 'null') {
+              console.log(`[MetadataSync] Skipping invalid hash for token #${tokenId}: ${metadataHash}`)
+              continue
+            }
+            
             if (metadataHash.includes('http://') || metadataHash.includes('https://')) {
               console.warn(`Token #${tokenId} has URL instead of hash:`, metadataHash)
               const parts = metadataHash.split('/')

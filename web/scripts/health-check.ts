@@ -1,8 +1,10 @@
 // scripts/health-check.ts
 export {}
 const { ethers } = require('ethers')
-const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
 const dotenv = require('dotenv')
+
+// Import the broker functions from our updated module
+import { createBroker } from '../lib/compute/broker'
 
 dotenv.config({ path: '.env' })
 
@@ -83,7 +85,11 @@ async function checkSystemHealth() {
     console.log('\n🤖 Initializing compute broker...')
     try {
       const wallet = new ethers.Wallet(process.env.OG_COMPUTE_PRIVATE_KEY!, provider)
-      const broker = await createZGComputeNetworkBroker(wallet)
+      const broker = await createBroker(wallet, {
+        ledger: process.env.NEXT_PUBLIC_COMPUTE_LEDGER_CONTRACT!,
+        inference: process.env.NEXT_PUBLIC_COMPUTE_INFERENCE_CONTRACT!,
+        fineTuning: process.env.NEXT_PUBLIC_FINE_TUNING_SERVING_ADDRESS!
+      })
       
       // Check if account exists
       const account = await broker.ledger.getAccount(wallet.address)

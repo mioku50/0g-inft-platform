@@ -1,7 +1,8 @@
 // web/app/api/tee/generate-transfer-proof/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ethers } from 'ethers'
-const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker')
+import { createBroker } from '@/lib/compute/broker'
+import { create0GRateLimitedProvider } from '@/lib/server/rate-limited-provider'
 
 const OFFICIAL_CONTRACTS = {
   ledger: '0x1a85Dd32da10c170F4f138d082DDc496ab3E5BAa',
@@ -15,14 +16,13 @@ export async function POST(request: NextRequest) {
     console.log('Generating TEE transfer proof for token:', tokenId)
     
     // Подключаемся к 0G Compute
-    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL)
+    const provider = create0GRateLimitedProvider()
     const wallet = new ethers.Wallet(process.env.OG_COMPUTE_PRIVATE_KEY!, provider)
     
-    const broker = await createZGComputeNetworkBroker(
-      wallet,
-      OFFICIAL_CONTRACTS.ledger,
-      OFFICIAL_CONTRACTS.inference
-    )
+    const broker = await createBroker(wallet, {
+      ledger: OFFICIAL_CONTRACTS.ledger,
+      inference: OFFICIAL_CONTRACTS.inference
+    })
     
     // Используем phala/deepseek с TEE
     const teeProvider = '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3'

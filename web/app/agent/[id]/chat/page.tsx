@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import { useAccount, usePublicClient } from 'wagmi'
+import { useAccount, useNetwork, usePublicClient, useSwitchNetwork } from 'wagmi'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,7 +27,10 @@ interface Message {
 export default function ChatPage() {
   const params = useParams()
   const tokenId = params.id as string
-  const { address } = useAccount()
+  const { address, isConnected } = useAccount()
+  const { chain } = useNetwork()
+  const { switchNetwork, isLoading: isSwitching } = useSwitchNetwork()
+  const { openConnectModal } = useConnectModal()
   const publicClient = usePublicClient()
   
   const [agent, setAgent] = useState<any>(null)
@@ -35,6 +39,8 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const [lastResponseMeta, setLastResponseMeta] = useState<any>(null)
+  const [isOwner, setIsOwner] = useState<boolean>(false)
+  const [ownerAddress, setOwnerAddress] = useState<string>('')
 
   const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
 
@@ -160,8 +166,36 @@ export default function ChatPage() {
     loadAgent()
   }, [publicClient, tokenId, contractAddress])
 
+  // Owner check and gating
+  useEffect(() => {
+    if (!publicClient || !tokenId) return
+    const checkOwner = async () => {
+      try {
+        const owner = await publicClient.readContract({
+          address: contractAddress,
+          abi: INFT_ABI,
+          functionName: 'ownerOf',
+          args: [BigInt(tokenId)],
+        }) as string
+        setOwnerAddress(owner)
+        if (address) {
+          setIsOwner(owner.toLowerCase() === address.toLowerCase())
+        } else {
+          setIsOwner(false)
+        }
+      } catch (e) {
+        console.warn('ownerOf check failed')
+        setIsOwner(false)
+      }
+    }
+    checkOwner()
+  }, [publicClient, tokenId, address, contractAddress])
+
   const sendMessage = async () => {
     if (!input.trim() || loading) return
+    // Block sending if not owner or wrong network
+    const isCorrectChain = chain?.id === 16601
+    if (!isOwner || !isCorrectChain) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -178,11 +212,12 @@ export default function ChatPage() {
       const startTime = Date.now()
       const response = await fetch('/api/compute/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(address ? { 'x-address': address } : {}) },
         body: JSON.stringify({
           message: userMessage.content,
           agentMetadata: agent?.metadata,
-          providerAddress: '0xf07240Efa67755B5311bc75784a061eDB47165Dd' // llama-3.3-70b
+          providerAddress: '0xf07240Efa67755B5311bc75784a061eDB47165Dd', // llama-3.3-70b
+          agentId: Number(tokenId)
         }),
       })
 
@@ -268,6 +303,35 @@ export default function ChatPage() {
         </CardHeader>
         
         {/* Status Banner */}
+        {!isOwner && (
+          <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 flex items-center justify-between gap-2">
+            <p className="text-sm text-yellow-800">
+              Подключите кошелёк владельца агента №{tokenId} (сеть Galileo 16601)
+            </p>
+            <div className="flex items-center gap-2">
+              {chain?.id !== 16601 && (
+                <Button size="sm" variant="outline" onClick={() => switchNetwork?.(16601)} disabled={isSwitching}>
+                  {isSwitching ? 'Switching…' : 'Switch network'}
+                </Button>
+              )}
+              {!isConnected && (
+                <Button size="sm" onClick={() => openConnectModal?.()}>Connect</Button>
+              )}
+            </div>
+          </div>
+        )}
+        {isOwner && chain?.id !== 16601 && (
+          <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 flex items-center justify-between gap-2">
+            <p className="text-sm text-yellow-800">
+              Переключитесь на сеть Galileo 16601 для работы агента
+            </p>
+            <div>
+              <Button size="sm" variant="outline" onClick={() => switchNetwork?.(16601)} disabled={isSwitching}>
+                {isSwitching ? 'Switching…' : 'Switch network'}
+              </Button>
+            </div>
+          </div>
+        )}
         {lastResponseMeta && !lastResponseMeta.isRealAI && (
           <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2">
             <p className="text-sm text-yellow-800">
@@ -339,10 +403,10 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Type your message..."
-                disabled={loading}
+                disabled={loading || !isOwner || chain?.id !== 16601}
                 className="flex-1"
               />
-              <Button type="submit" disabled={loading || !input.trim()}>
+              <Button type="submit" disabled={loading || !input.trim() || !isOwner || chain?.id !== 16601}>
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (

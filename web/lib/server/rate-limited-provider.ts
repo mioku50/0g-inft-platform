@@ -99,6 +99,6 @@ class RateLimitedProvider extends ethers.JsonRpcProvider {
 
 export function create0GRateLimitedProvider(options?: RateLimitedProviderOptions): ethers.JsonRpcProvider {
   const rpcUrl = process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai'
-  console.log('Created rate-limited RPC provider')
+  console.log('rpc=OK')
   return new RateLimitedProvider(rpcUrl, options)
 }

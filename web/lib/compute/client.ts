@@ -18,12 +18,17 @@ export interface AnalysisResponse {
 export class ComputeClient {
   private baseUrl = '/api/compute'
   
-  async chat(message: string, agentMetadata: any): Promise<ChatResponse> {
+  async chat(message: string | { tokenId?: string | number; messages?: any[]; stream?: boolean }, agentMetadata?: any): Promise<ChatResponse> {
     try {
+      // Support both legacy (message string + metadata) and object payload from pages
+      const isObjectPayload = typeof message === 'object' && message !== null && !Array.isArray(message)
+      const body = isObjectPayload
+        ? { message: (message as any).messages?.at?.(-1)?.content || '', agentMetadata, agentId: (message as any).tokenId }
+        : { message, agentMetadata }
       const response = await fetch(`${this.baseUrl}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, agentMetadata })
+        body: JSON.stringify(body)
       })
       
       if (!response.ok) {

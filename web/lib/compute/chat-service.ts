@@ -27,8 +27,17 @@ class ChatService {
       const broker = request.broker
 
       // Discover services first
-      const services = await broker.inference.listService()
-      console.log(`listService() -> ${services.length}`)
+      let services = await broker.inference.listService()
+      console.log(`services=${services.length}`)
+
+      // Prefer official providers (best-effort heuristics)
+      services = (services || []).slice().sort((a: any, b: any) => {
+        const aInfo = String(a?.additionalInfo || a?.verifiability || '').toLowerCase()
+        const bInfo = String(b?.additionalInfo || b?.verifiability || '').toLowerCase()
+        const aScore = (aInfo.includes('official') || aInfo.includes('0g') || aInfo.includes('tee')) ? 1 : 0
+        const bScore = (bInfo.includes('official') || bInfo.includes('0g') || bInfo.includes('tee')) ? 1 : 0
+        return bScore - aScore
+      })
 
       // Check and create/deposit ledger if needed
       await this.ensureLedgerBalance(broker)
@@ -40,7 +49,7 @@ class ChatService {
       // Try each service
       for (const service of services) {
         try {
-          console.log(`Trying service: ${service.model} at ${service.provider}`)
+          console.log(`try provider=${service.provider}`)
           
           // Acknowledge provider if needed (after ensuring available > 0)
           await this.acknowledgeProviderIfNeeded(broker, service.provider)
@@ -77,7 +86,7 @@ class ChatService {
             }
 
             const ttfb = Date.now() - startTime
-            console.log('isRealAI:true', { provider: service.provider, model })
+            console.log(`provider=${service.provider} -> OK (${ttfb}ms)`)            
             return {
               success: true,
               response: response.content,
@@ -89,7 +98,13 @@ class ChatService {
           }
 
         } catch (serviceError: any) {
-          console.error(`Service ${service.model} error:`, serviceError.message)
+          const msg = serviceError?.message || ''
+          const code = msg.includes('timeout>15s')
+            ? 'timeout>15s'
+            : msg.includes('Invalid response format')
+              ? 'invalid-format'
+              : (msg.match(/HTTP\s+(\d+)/)?.[1] || 'error')
+          console.warn(`provider=${service.provider} -> ${code}`)
           
           // If ServiceNotExist, try acknowledge once more
           if (serviceError.message?.includes('ServiceNotExist')) {
@@ -222,16 +237,31 @@ class ChatService {
       stream: false
     }
 
-    console.log('Sending request to AI...')
+    console.log('send=AI')
 
-    const response = await fetch(`${params.endpoint}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        ...params.headers,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    })
+    // Implement 15s timeout per provider
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15000)
+
+    let response: Response
+    try {
+      response = await fetch(`${params.endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          ...params.headers,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      })
+    } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        throw new Error('timeout>15s')
+      }
+      throw e
+    } finally {
+      clearTimeout(timeout)
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)

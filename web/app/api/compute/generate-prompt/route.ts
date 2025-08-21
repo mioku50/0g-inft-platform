@@ -4,6 +4,8 @@ import { createBrokerWithEnvPK, ensureLedgerBalance, acknowledgeProviderIfNeeded
 import { ethers } from 'ethers'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import { getServerProvider } from '@/lib/server/provider'
+import { promises as fs } from 'fs'
+import path from 'path'
 
 export async function POST(request: NextRequest) {
   try {
@@ -75,6 +77,7 @@ Output: Return ONLY the final system prompt text.`
     }
 
     // 3) Try providers sequentially; single-use headers per attempt
+    const errors: Array<{ provider: string; code: string; message?: string; httpStatus?: number }> = []
     for (const service of services) {
       try {
         // ACK (safe, cached)
@@ -106,12 +109,20 @@ Output: Return ONLY the final system prompt text.`
 
         if (!resp.ok) {
           // 4xx/5xx → next provider
+          errors.push({ provider: service.provider, code: `provider_http_${resp.status}`, httpStatus: resp.status })
           continue
         }
 
-        const data = await resp.json()
+        let data: any = null
+        try {
+          data = await resp.json()
+        } catch (e: any) {
+          errors.push({ provider: service.provider, code: 'invalid_json', message: e?.message })
+          continue
+        }
         const generatedPrompt = data?.choices?.[0]?.message?.content
         if (!generatedPrompt || typeof generatedPrompt !== 'string') {
+          errors.push({ provider: service.provider, code: 'invalid_response' })
           continue
         }
 
@@ -123,22 +134,44 @@ Output: Return ONLY the final system prompt text.`
         } catch {}
 
         console.log('generated')
-        return NextResponse.json({ prompt: generatedPrompt })
+
+        // Save prompt for this agent
+        try {
+          const promptsDir = path.join(process.cwd(), 'data', 'prompts')
+          await fs.mkdir(promptsDir, { recursive: true })
+          const tokenIdNum = Number(tokenIdRaw)
+          const filePath = path.join(promptsDir, `${tokenIdNum}.json`)
+          const payload = { prompt: generatedPrompt, updatedAt: Date.now() }
+          await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf-8')
+        } catch (e) {
+          // Non-fatal
+        }
+
+        return NextResponse.json({ ok: true, prompt: generatedPrompt })
       } catch (e: any) {
         const msg = e?.message || ''
         if (msg.includes('ServiceNotExist')) {
           try { await broker.inference.acknowledgeProviderSigner(service.provider) } catch {}
         }
+        // classify error
+        if (msg.includes('headers') && msg.includes('used')) {
+          errors.push({ provider: service.provider, code: 'headers_used', message: msg })
+        } else if (msg.includes('Insufficient') || msg.includes('insufficient')) {
+          errors.push({ provider: service.provider, code: 'ledger_insufficient', message: msg })
+        } else {
+          errors.push({ provider: service.provider, code: 'provider_error', message: msg })
+        }
         // try next
       }
     }
 
-    return NextResponse.json({ error: 'all-providers-failed' }, { status: 502 })
+    const first = errors[0]
+    return NextResponse.json({ error: 'all-providers-failed', reason: first?.code, details: first }, { status: 502 })
     
   } catch (error: any) {
     console.error('Prompt generation error:', error)
     return NextResponse.json(
-      { error: error.message },
+      { error: 'unexpected', message: error.message },
       { status: 500 }
     )
   }

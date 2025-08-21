@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { downloadFromStorage } from '@/lib/storage/client-server'
+import fsSync from 'fs'
 
 export const runtime = 'nodejs'
 
@@ -43,13 +44,16 @@ export async function POST(request: NextRequest) {
       console.error('Storage retrieval error:', error)
 
       // Если не удалось загрузить, пробуем локальное хранилище
-      if (cleanRootHash.startsWith('local://')) {
+      if (cleanRootHash && typeof cleanRootHash === 'string' && cleanRootHash.startsWith('local://')) {
         try {
           const hash = cleanRootHash.replace('local://', '')
-          const fs = require('fs').promises
           const path = require('path')
           const localDir = path.join(process.cwd(), 'data', 'metadata')
           const localPath = path.join(localDir, `${hash}.json`)
+          if (!fsSync.existsSync(localPath)) {
+            return NextResponse.json({ success: true, content: '', rootHash: cleanRootHash, local: true })
+          }
+          const fs = require('fs').promises
           const localContent = await fs.readFile(localPath, 'utf-8')
           return NextResponse.json({ success: true, content: localContent, rootHash: cleanRootHash, local: true })
         } catch {
@@ -57,12 +61,13 @@ export async function POST(request: NextRequest) {
         }
       } else if (cleanRootHash) {
         try {
-          const fs = require('fs').promises
           const path = require('path')
           const localDir = path.join(process.cwd(), 'data', 'metadata')
           const localPath = path.join(localDir, `${cleanRootHash}.json`)
-
-          await fs.access(localPath)
+          if (!fsSync.existsSync(localPath)) {
+            return NextResponse.json({ success: true, content: '', rootHash: cleanRootHash, local: true })
+          }
+          const fs = require('fs').promises
           const localContent = await fs.readFile(localPath, 'utf-8')
 
           return NextResponse.json({

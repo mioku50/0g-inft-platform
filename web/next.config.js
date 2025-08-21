@@ -23,21 +23,14 @@ const nextConfig = {
     config.resolve.alias['@0glabs/0g-serving-broker'] = path.join(path.dirname(brokerEntry), '../lib.commonjs/index.js')
     config.resolve.mainFields = ['main', 'module']
 
-    // В обоих бандлах заглушаем шумные опциональные зависимости pino
+    // В обоих бандлах настраиваем alias для pino и вырезаем опциональные зависимости
     const emptyModule = path.resolve(__dirname, 'temp/empty-module.js')
-    config.resolve.alias['pino'] = emptyModule
+    // Критично: pino → браузерная сборка, чтобы отсечь зависимость от pino-std-serializers
+    config.resolve.alias['pino'] = 'pino/browser'
+    // Эти модули не нужны в браузере/у нас не используются — заглушаем
     config.resolve.alias['pino-pretty'] = emptyModule
     config.resolve.alias['pino-std-serializers'] = emptyModule
     config.resolve.alias['sonic-boom'] = emptyModule
-
-    // Перестраховка: заменить любые вхождения на пустышку и для client, и для server
-    config.plugins = config.plugins || []
-    config.plugins.push(
-      new webpack.NormalModuleReplacementPlugin(
-        /(pino-std-serializers|pino-pretty|sonic-boom|^pino$)/,
-        emptyModule
-      )
-    )
 
     if (!isServer) {
       // В браузере дополнительно вырезаем Node-специфичные модули
@@ -61,26 +54,11 @@ const nextConfig = {
         'sonic-boom': false,
       }
 
-      config.externals = config.externals || []
-      config.externals.push({
-        'unstorage/drivers/fs-lite.cjs': 'commonjs unstorage/drivers/fs-lite.cjs',
-        'pino-pretty': 'commonjs pino-pretty',
-        'pino-std-serializers': 'commonjs pino-std-serializers',
-        'sonic-boom': 'commonjs sonic-boom',
-      })
-
       config.plugins.push(
         new webpack.NormalModuleReplacementPlugin(/^node:/, resource => {
           resource.request = resource.request.replace(/^node:/, '')
         })
       )
-      config.plugins.push(new webpack.IgnorePlugin({ resourceRegExp: /(pino-pretty|pino-std-serializers|sonic-boom)/ }))
-    }
-
-    // И на сервере игнорируем эти модули на этапе сборки
-    if (isServer) {
-      config.plugins = config.plugins || []
-      config.plugins.push(new webpack.IgnorePlugin({ resourceRegExp: /(pino-pretty|pino-std-serializers|sonic-boom)/ }))
     }
 
     return config

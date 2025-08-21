@@ -21,6 +21,7 @@ interface PromptManagerProps {
 export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManagerProps) {
   const [currentPrompt, setCurrentPrompt] = useState(agent?.metadata?.systemPrompt || '')
   const [activeTab, setActiveTab] = useState<'current' | 'generate' | 'analysis'>('current')
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null)
   const [analysis, setAnalysis] = useState<any>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -33,6 +34,23 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
   const { data: walletClient } = useWalletClient()
 
   const tokenId: number | undefined = typeof agent?.tokenId !== 'undefined' ? Number(agent.tokenId) : (typeof agent?.id !== 'undefined' ? Number(agent.id) : undefined)
+  // Load current prompt from server on open
+  useEffect(() => {
+    let cancelled = false
+    async function loadCurrentPrompt() {
+      if (!isOpen || !tokenId) return
+      try {
+        const res = await fetch(`/api/prompt?agentId=${tokenId}`)
+        const data = await res.json()
+        if (!cancelled && data) {
+          if (typeof data.prompt === 'string') setCurrentPrompt(data.prompt)
+          if (typeof data.updatedAt === 'number') setLastUpdated(data.updatedAt)
+        }
+      } catch {}
+    }
+    loadCurrentPrompt()
+    return () => { cancelled = true }
+  }, [isOpen, tokenId])
 
   function randomHex(byteLength: number): string {
     const buf = new Uint8Array(byteLength)
@@ -74,7 +92,8 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
         setActiveTab('analysis')
         toast({ title: 'Analysis ready', description: 'Prompt insights generated.' })
       } else {
-        toast({ title: 'Analysis failed', description: result?.error || 'Please try again later.' })
+        const reason = result?.reason ? ` (${result.reason})` : ''
+        toast({ title: 'Analysis failed', description: (result?.error ? `${result.error}${reason}` : 'Please try again later.') })
       }
     } catch (error) {
       toast({ title: 'Analysis error', description: (error as any)?.message || 'Unknown error' })
@@ -109,12 +128,27 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
       
       const result = await response.json()
       if (response.ok && result?.prompt) {
+        // Save prompt via API
+        if (tokenId) {
+          try {
+            const saveRes = await fetch('/api/prompt', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ agentId: tokenId, tokenId, prompt: result.prompt })
+            })
+            const saveData = await saveRes.json()
+            if (saveRes.ok && saveData?.ok) {
+              setLastUpdated(saveData.updatedAt || Date.now())
+            }
+          } catch {}
+        }
         setCurrentPrompt(result.prompt)
         setAnalysis(null)
         setActiveTab('current')
-        toast({ title: 'Prompt generated ✅', description: 'Inserted into Current Prompt.' })
+        toast({ title: 'Prompt generated and saved', description: 'Current Prompt updated.' })
       } else {
-        toast({ title: 'Generation failed', description: result?.error || 'Please try another provider later.' })
+        const reason = result?.reason ? ` (${result.reason})` : ''
+        toast({ title: 'Generation failed', description: (result?.error ? `${result.error}${reason}` : 'Please try another provider later.') })
       }
     } catch (error) {
       toast({ title: 'Generation error', description: (error as any)?.message || 'Unknown error' })
@@ -179,6 +213,7 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
                   rows={15}
                   className="bg-gray-800 border-gray-700 font-mono text-sm"
                 />
+                <p className="text-xs text-gray-400 mt-2">Last updated: {lastUpdated ? new Date(lastUpdated).toLocaleString() : '—'}</p>
               </div>
               
               <div className="flex gap-2">

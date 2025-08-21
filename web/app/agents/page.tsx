@@ -692,12 +692,27 @@ export default function AgentsPage() {
           setSelectedForPrompt(null)
         }}
         onUpdate={async (newPrompt) => {
-          console.log('Updated prompt for agent:', selectedForPrompt?.tokenId, newPrompt)
-          toast({
-            title: 'Success!',
-            description: 'Agent prompt updated successfully'
-          })
-          setPromptModalOpen(false)
+          try {
+            const tokenId = selectedForPrompt?.tokenId || selectedForPrompt?.id
+            if (tokenId) {
+              const res = await fetch('/api/prompt', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ agentId: tokenId, tokenId, prompt: newPrompt })
+              })
+              const data = await res.json()
+              if (!res.ok || !data?.ok) {
+                throw new Error(data?.error || 'save_failed')
+              }
+            }
+            toast({
+              title: 'Saved',
+              description: 'Agent prompt updated successfully'
+            })
+            setPromptModalOpen(false)
+          } catch (e: any) {
+            toast({ title: 'Save failed', description: e?.message || 'Unknown error', variant: 'destructive' })
+          }
         }}
       />
     </div>

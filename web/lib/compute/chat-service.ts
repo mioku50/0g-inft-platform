@@ -31,23 +31,25 @@ class ChatService {
       console.log(`services=${services.length}`)
 
       // Prefer official providers (best-effort heuristics)
-      services = (services || []).slice().sort((a: any, b: any) => {
-        const aInfo = String(a?.additionalInfo || a?.verifiability || '').toLowerCase()
-        const bInfo = String(b?.additionalInfo || b?.verifiability || '').toLowerCase()
-        const aScore = (aInfo.includes('official') || aInfo.includes('0g') || aInfo.includes('tee')) ? 1 : 0
-        const bScore = (bInfo.includes('official') || bInfo.includes('0g') || bInfo.includes('tee')) ? 1 : 0
-        return bScore - aScore
-      })
+      const providers = Array.from(services || [])
+        .slice()
+        .sort((a: any, b: any) => {
+          const aInfo = String(a?.additionalInfo || a?.verifiability || '').toLowerCase()
+          const bInfo = String(b?.additionalInfo || b?.verifiability || '').toLowerCase()
+          const aScore = (aInfo.includes('official') || aInfo.includes('0g') || aInfo.includes('tee')) ? 1 : 0
+          const bScore = (bInfo.includes('official') || bInfo.includes('0g') || bInfo.includes('tee')) ? 1 : 0
+          return bScore - aScore
+        })
 
       // Check and create/deposit ledger if needed
       await this.ensureLedgerBalance(broker)
 
-      if (services.length === 0) {
+      if (providers.length === 0) {
         return this.createGracefulFallback(request, 'No services available')
       }
 
       // Try each service
-      for (const service of services) {
+      for (const service of providers) {
         try {
           console.log(`try provider=${service.provider}`)
           

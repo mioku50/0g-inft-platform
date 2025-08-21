@@ -1,10 +1,37 @@
 // web/app/api/compute/analyze-prompt/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createBrokerWithEnvPK, ensureLedgerBalance, acknowledgeProviderIfNeeded } from '@/lib/compute/broker'
+import { ethers } from 'ethers'
+import { INFT_ABI } from '@/lib/contracts/abis'
+import { getServerProvider } from '@/lib/server/provider'
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt } = await request.json()
+    const body = await request.json()
+    const { prompt } = body || {}
+    const address: string | undefined = body?.address
+    const signature: string | undefined = body?.signature
+    const message: string | undefined = body?.message
+    const tokenIdRaw: any = body?.tokenId
+
+    if (!address || !signature || !message || tokenIdRaw === undefined) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const recovered = ethers.verifyMessage(message, signature)
+    const recoveredLc = recovered?.toLowerCase?.() || ''
+    const addressLc = address.toLowerCase()
+    if (recoveredLc !== addressLc) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const provider = getServerProvider()
+    const contract = new ethers.Contract(process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS!, INFT_ABI, provider)
+    const onchainOwner: string = await contract.ownerOf(BigInt(Number(tokenIdRaw)))
+    if (!onchainOwner || onchainOwner.toLowerCase() !== addressLc) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    console.log('owner=OK')
     
     const broker = await createBrokerWithEnvPK()
     console.log('rpc=OK')

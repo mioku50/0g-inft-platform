@@ -7,6 +7,7 @@ import '@rainbow-me/rainbowkit/styles.css'
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useMetadataSync } from '@/hooks/useMetadataSync'
+import { Toaster } from '@/components/ui/toaster'
 
 // Определяем 0G Network
 const ogNetwork = {
@@ -153,6 +154,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <div className="relative z-10">
           {children}
         </div>
+        <Toaster />
       </RainbowKitProvider>
     </WagmiConfig>
   )

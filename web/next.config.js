@@ -25,9 +25,19 @@ const nextConfig = {
 
     // В обоих бандлах заглушаем шумные опциональные зависимости pino
     const emptyModule = path.resolve(__dirname, 'temp/empty-module.js')
+    config.resolve.alias['pino'] = emptyModule
     config.resolve.alias['pino-pretty'] = emptyModule
     config.resolve.alias['pino-std-serializers'] = emptyModule
     config.resolve.alias['sonic-boom'] = emptyModule
+
+    // Перестраховка: заменить любые вхождения на пустышку и для client, и для server
+    config.plugins = config.plugins || []
+    config.plugins.push(
+      new webpack.NormalModuleReplacementPlugin(
+        /(pino-std-serializers|pino-pretty|sonic-boom|^pino$)/,
+        emptyModule
+      )
+    )
 
     if (!isServer) {
       // В браузере дополнительно вырезаем Node-специфичные модули
@@ -59,7 +69,6 @@ const nextConfig = {
         'sonic-boom': 'commonjs sonic-boom',
       })
 
-      config.plugins = config.plugins || []
       config.plugins.push(
         new webpack.NormalModuleReplacementPlugin(/^node:/, resource => {
           resource.request = resource.request.replace(/^node:/, '')

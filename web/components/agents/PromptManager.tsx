@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Loader2, Sparkles, BarChart, RefreshCw } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { toast } from '@/components/ui/use-toast'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useAccount, useWalletClient } from 'wagmi'
 
 interface PromptManagerProps {
   agent: any
@@ -27,13 +29,42 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
   const [capabilities, setCapabilities] = useState<string[]>([])
   const [personality, setPersonality] = useState('')
 
+  const { address } = useAccount()
+  const { data: walletClient } = useWalletClient()
+
+  const tokenId: number | undefined = typeof agent?.tokenId !== 'undefined' ? Number(agent.tokenId) : (typeof agent?.id !== 'undefined' ? Number(agent.id) : undefined)
+
+  function randomHex(byteLength: number): string {
+    const buf = new Uint8Array(byteLength)
+    crypto.getRandomValues(buf)
+    return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('')
+  }
+
+  function buildMessage(action: 'generate' | 'analyze'): string {
+    const nonce = randomHex(16)
+    const ts = new Date().toISOString()
+    return `OG INFT — authorize compute action\nAgent: #${tokenId ?? 'unknown'}\nAction: ${action} prompt\nNonce: ${nonce}\nTimestamp: ${ts}`
+  }
+
   const analyzePrompt = async () => {
     setIsAnalyzing(true)
     try {
+      if (!address || !walletClient || !tokenId) {
+        toast({ title: 'Wallet required', description: 'Connect wallet and select valid agent.' })
+        return
+      }
+      const message = buildMessage('analyze')
+      const signature = await walletClient.signMessage({ account: address as `0x${string}`, message })
       const response = await fetch('/api/compute/analyze-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: currentPrompt })
+        body: JSON.stringify({ 
+          prompt: currentPrompt,
+          tokenId,
+          address,
+          message,
+          signature,
+        })
       })
       
       const result = await response.json()
@@ -55,13 +86,24 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
   const generatePrompt = async () => {
     setIsGenerating(true)
     try {
+      if (!address || !walletClient || !tokenId) {
+        toast({ title: 'Wallet required', description: 'Connect wallet and select valid agent.' })
+        return
+      }
+      const message = buildMessage('generate')
+      const signature = await walletClient.signMessage({ account: address as `0x${string}`, message })
       const response = await fetch('/api/compute/generate-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           description,
           capabilities,
-          personality
+          personality,
+          traits: personality,
+          tokenId,
+          address,
+          message,
+          signature,
         })
       })
       
@@ -70,7 +112,7 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
         setCurrentPrompt(result.prompt)
         setAnalysis(null)
         setActiveTab('current')
-        toast({ title: 'Prompt generated', description: 'Inserted into Current Prompt.' })
+        toast({ title: 'Prompt generated ✅', description: 'Inserted into Current Prompt.' })
       } else {
         toast({ title: 'Generation failed', description: result?.error || 'Please try another provider later.' })
       }
@@ -219,7 +261,17 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
 
           {activeTab === 'analysis' && (
             <div className="space-y-4">
-              {analysis ? (
+              {isAnalyzing ? (
+                <div className="grid grid-cols-3 gap-4">
+                  <Skeleton className="h-20 bg-gray-800 rounded-lg" />
+                  <Skeleton className="h-20 bg-gray-800 rounded-lg" />
+                  <Skeleton className="h-20 bg-gray-800 rounded-lg" />
+                  <div className="col-span-3 space-y-2">
+                    <Skeleton className="h-6 bg-gray-800 rounded" />
+                    <Skeleton className="h-24 bg-gray-800 rounded" />
+                  </div>
+                </div>
+              ) : analysis ? (
                 <>
                   <div className="grid grid-cols-3 gap-4">
                     <div className="bg-gray-800 p-4 rounded-lg text-center">

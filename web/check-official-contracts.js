@@ -9,7 +9,7 @@ async function checkOfficialContracts() {
   const contracts = [
     { name: 'LedgerManager', address: '0x1a85Dd32da10c170F4f138d082DDc496ab3E5BAa' },
     { name: 'InferenceServing', address: '0x5299bd255B76305ae08d7F95B270A485c6b95D54' },
-    { name: 'FineTuningServing', address: '0xda478Ccf5d534346A16b1475E4c2DecE0268B176' }
+    // FineTuningServing removed per deprecation
   ];
   
   try {

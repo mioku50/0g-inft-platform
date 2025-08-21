@@ -54,16 +54,7 @@ interface Agent {
   listingInfo?: any
 }
 
-// Оптимизированная карточка агента
-const AgentCard = React.memo(({ 
-  agent, 
-  onTransfer, 
-  onClone, 
-  onList,
-  onCancelListing,
-  onPrompt,
-  cancellingListingId 
-}: {
+interface AgentCardProps {
   agent: Agent
   onTransfer: (agent: Agent) => void
   onClone: (agent: Agent) => void
@@ -71,7 +62,18 @@ const AgentCard = React.memo(({
   onCancelListing: (agent: Agent) => void
   onPrompt: (agent: Agent) => void
   cancellingListingId: number | null
-}) => {
+}
+
+// Оптимизированная карточка агента
+const AgentCard = React.memo(({
+  agent,
+  onTransfer,
+  onClone,
+  onList,
+  onCancelListing,
+  onPrompt,
+  cancellingListingId
+}: AgentCardProps) => {
   return (
     <Card 
       className="bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 shadow-xl rounded-2xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden"
@@ -126,7 +128,6 @@ const AgentCard = React.memo(({
                     <MessageCircle className="h-4 w-4 mr-1" />
                     Chat
                   </Button>
-                </Link>
                 </Link>
               </div>
               

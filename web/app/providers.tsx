@@ -150,7 +150,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <WagmiConfig config={wagmiConfig}>
       <RainbowKitProvider chains={chains}>
         <Navigation />
-        {children}
+        <div className="relative z-10">
+          {children}
+        </div>
       </RainbowKitProvider>
     </WagmiConfig>
   )

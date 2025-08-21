@@ -2,12 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import { useAccount, useNetwork, usePublicClient, useSwitchNetwork } from 'wagmi'
-import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { INFT_ABI } from '@/lib/contracts/abis'
+import { useAccount, useNetwork, usePublicClient } from 'wagmi'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { INFT_ABI } from '@/lib/contracts/abis'
 import { ArrowLeft, Send, Loader2 } from 'lucide-react'
 
 interface Message {
@@ -26,20 +25,17 @@ interface Message {
 export default function ChatPage() {
   const params = useParams()
   const tokenId = params.id as string
-  const { address, isConnected } = useAccount()
+  const { address } = useAccount()
   const { chain } = useNetwork()
-  const { switchNetwork, isLoading: isSwitching } = useSwitchNetwork()
-  const { openConnectModal } = useConnectModal()
   const publicClient = usePublicClient()
-  
+
   const [agent, setAgent] = useState<any>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const [lastResponseMeta, setLastResponseMeta] = useState<any>(null)
-  const [isOwner, setIsOwner] = useState<boolean>(false)
-  const [ownerAddress, setOwnerAddress] = useState<string>('')
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   const contractAddress = process.env.NEXT_PUBLIC_INFT_CONTRACT_ADDRESS as `0x${string}`
 
@@ -48,19 +44,15 @@ export default function ChatPage() {
 
     const loadAgent = async () => {
       try {
-        // ВАЖНО: Используем getEncryptedURI вместо getMetadataHash
         let metadataHash = ''
         try {
-          // Сначала пробуем getEncryptedURI (это правильный метод)
           metadataHash = await publicClient.readContract({
             address: contractAddress,
             abi: INFT_ABI,
             functionName: 'getEncryptedURI',
             args: [BigInt(tokenId)],
           }) as string
-        } catch (e) {
-          console.warn('getEncryptedURI failed, trying getMetadataHash')
-          // Fallback на getMetadataHash если getEncryptedURI не работает
+        } catch {
           try {
             metadataHash = await publicClient.readContract({
               address: contractAddress,
@@ -68,49 +60,28 @@ export default function ChatPage() {
               functionName: 'getMetadataHash',
               args: [BigInt(tokenId)],
             }) as string
-          } catch (e2) {
-            console.error('Both methods failed:', e2)
-          }
+          } catch {}
         }
-
-        console.log('Loading metadata for token', tokenId, 'hash:', metadataHash)
 
         if (metadataHash && metadataHash !== '0x' && metadataHash !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
           try {
             const response = await fetch('/api/storage/retrieve', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                rootHash: metadataHash,
-                tokenId: tokenId // Передаем tokenId для fallback
-              }),
+              body: JSON.stringify({ rootHash: metadataHash, tokenId })
             })
-            
             if (response.ok) {
               const data = await response.json()
               const metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
-              
-              console.log('Loaded metadata:', metadata)
-              
               setAgent({ tokenId, metadata })
-              
-              // Создаем приветственное сообщение
-              const welcomeMessage = metadata.systemPrompt 
-                ? `Hello! ${metadata.systemPrompt.split('.')[0]}.` 
+              const welcomeMessage = metadata.systemPrompt
+                ? `Hello! ${metadata.systemPrompt.split('.')[0]}.`
                 : `Hello! I'm ${metadata.name}. ${metadata.description || 'How can I help you today?'}`
-              
-              setMessages([{
-                id: '1',
-                role: 'assistant',
-                content: welcomeMessage,
-                timestamp: new Date()
-              }])
+              setMessages([{ id: '1', role: 'assistant', content: welcomeMessage, timestamp: new Date() }])
             } else {
               throw new Error('Failed to retrieve metadata')
             }
-          } catch (error) {
-            console.error('Failed to load metadata:', error)
-            // Используем fallback данные
+          } catch {
             const fallbackMetadata = {
               name: `Agent #${tokenId}`,
               description: 'AI Assistant',
@@ -118,15 +89,9 @@ export default function ChatPage() {
               personality: 'friendly'
             }
             setAgent({ tokenId, metadata: fallbackMetadata })
-            setMessages([{
-              id: '1',
-              role: 'assistant',
-              content: `Hello! I'm Agent #${tokenId}. How can I help you today?`,
-              timestamp: new Date()
-            }])
+            setMessages([{ id: '1', role: 'assistant', content: `Hello! I'm Agent #${tokenId}. How can I help you today?`, timestamp: new Date() }])
           }
         } else {
-          // Нет метаданных - используем дефолтные
           const fallbackMetadata = {
             name: `Agent #${tokenId}`,
             description: 'AI Assistant',
@@ -134,29 +99,8 @@ export default function ChatPage() {
             personality: 'friendly'
           }
           setAgent({ tokenId, metadata: fallbackMetadata })
-          setMessages([{
-            id: '1',
-            role: 'assistant',
-            content: `Hello! I'm Agent #${tokenId}. How can I help you today?`,
-            timestamp: new Date()
-          }])
+          setMessages([{ id: '1', role: 'assistant', content: `Hello! I'm Agent #${tokenId}. How can I help you today?`, timestamp: new Date() }])
         }
-      } catch (error) {
-        console.error('Error loading agent:', error)
-        // Даже при ошибке показываем что-то
-        setAgent({ 
-          tokenId, 
-          metadata: { 
-            name: `Agent #${tokenId}`, 
-            model: 'llama-3.3-70b' 
-          } 
-        })
-        setMessages([{
-          id: '1',
-          role: 'assistant',
-          content: `Hello! I'm Agent #${tokenId}. How can I assist you?`,
-          timestamp: new Date()
-        }])
       } finally {
         setInitializing(false)
       }
@@ -165,36 +109,12 @@ export default function ChatPage() {
     loadAgent()
   }, [publicClient, tokenId, contractAddress])
 
-  // Owner check and gating
   useEffect(() => {
-    if (!publicClient || !tokenId) return
-    const checkOwner = async () => {
-      try {
-        const owner = await publicClient.readContract({
-          address: contractAddress,
-          abi: INFT_ABI,
-          functionName: 'ownerOf',
-          args: [BigInt(tokenId)],
-        }) as string
-        setOwnerAddress(owner)
-        if (address) {
-          setIsOwner(owner.toLowerCase() === address.toLowerCase())
-        } else {
-          setIsOwner(false)
-        }
-      } catch (e) {
-        console.warn('ownerOf check failed')
-        setIsOwner(false)
-      }
-    }
-    checkOwner()
-  }, [publicClient, tokenId, address, contractAddress])
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [messages])
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return
-    // Block sending if not owner or wrong network
-    const isCorrectChain = chain?.id === 16601
-    if (!isOwner || !isCorrectChain) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -215,14 +135,14 @@ export default function ChatPage() {
         body: JSON.stringify({
           message: userMessage.content,
           agentMetadata: agent?.metadata,
-          providerAddress: '0xf07240Efa67755B5311bc75784a061eDB47165Dd', // llama-3.3-70b
+          providerAddress: '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
           agentId: Number(tokenId)
         }),
       })
 
       const data = await response.json()
       const ttfb = Date.now() - startTime
-      
+
       if (data.success) {
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
@@ -242,8 +162,6 @@ export default function ChatPage() {
         throw new Error(data.error || 'Failed to get response')
       }
     } catch (error) {
-      console.error('Chat error:', error)
-      
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -266,68 +184,53 @@ export default function ChatPage() {
 
   return (
     <div className="page-hero min-h-screen">
-      <div className="max-w-4xl mx-auto px-4 py-6">
-        {/* Top Frost Panel */}
+      <div className="max-w-4xl mx-auto px-4 py-6 relative z-10">
         <div className="bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 rounded-2xl p-4 mb-4">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {agent?.metadata?.image ? (
+                <img
+                  src={agent.metadata.image}
+                  alt={agent.metadata.name}
+                  className="w-12 h-12 rounded-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.src = `https://api.dicebear.com/7.x/bottts/svg?seed=agent-${tokenId}`
+                  }}
+                />
+              ) : (
+                <span className="text-2xl">🤖</span>
+              )}
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">{agent?.metadata?.name || `Agent #${tokenId}`}</h2>
+            </div>
+            <div className="shrink-0">
+              <span className="text-sm text-gray-700 dark:text-gray-300">Model: {agent?.metadata?.model || 'llama-3.3-70b'}</span>
+            </div>
+          </div>
+          <div className="mt-2">
             <Link href="/agents">
-              <Button variant="ghost" className="">
+              <Button variant="ghost" className="px-2 h-8 text-sm">
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back
               </Button>
             </Link>
-            <div className="text-right">
-              <p className="text-sm text-gray-700 dark:text-gray-300">
-                Model: {agent?.metadata?.model || 'llama-3.3-70b'}
-              </p>
-            </div>
-          </div>
-          <div className="mt-2 flex items-center gap-3">
-            {agent?.metadata?.image ? (
-              <img
-                src={agent.metadata.image}
-                alt={agent.metadata.name}
-                className="w-10 h-10 rounded-full"
-                onError={(e) => {
-                  e.currentTarget.src = `https://api.dicebear.com/7.x/bottts/svg?seed=agent-${tokenId}`
-                }}
-              />
-            ) : (
-              <span className="text-2xl">🤖</span>
-            )}
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Chat with {agent?.metadata?.name || `Agent #${tokenId}`}</h2>
           </div>
         </div>
 
-        {/* Messages Frost Panel */}
-        <div className="bg-white/70 dark:bg-black/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 h-[60vh] overflow-y-auto">
+        <div className="bg-white/70 dark:bg-black/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 h-[60vh] overflow-y-auto" ref={scrollRef}>
           <div className="space-y-4">
             {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`max-w-[80%] px-4 py-3 rounded-2xl ${
-                    message.role === 'user'
-                      ? 'bg-gray-900 text-white'
-                      : 'bg-white/90 dark:bg-black/30 text-gray-900 dark:text-gray-100'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+              <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] px-4 py-3 rounded-2xl ${message.role === 'user' ? 'bg-gray-900 text-white' : 'bg-white/90 dark:bg-black/30 text-gray-900 dark:text-gray-100'}`}>
+                  <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
                   <div className="flex items-center justify-between mt-2 text-xs opacity-70">
                     <span>{message.timestamp.toLocaleTimeString()}</span>
                     {message.metadata && message.role === 'assistant' && (
                       <div className="flex items-center gap-2 text-xs">
                         {message.metadata.model && (
-                          <span className="text-gray-600 dark:text-gray-300">
-                            {message.metadata.model}
-                          </span>
+                          <span className="text-gray-600 dark:text-gray-300">{message.metadata.model}</span>
                         )}
                         {message.metadata.ttfb && (
-                          <span className="text-gray-600 dark:text-gray-300">
-                            {message.metadata.ttfb}ms
-                          </span>
+                          <span className="text-gray-600 dark:text-gray-300">{message.metadata.ttfb}ms</span>
                         )}
                       </div>
                     )}
@@ -345,24 +248,29 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Sticky Input Frost Panel */}
         <div className="bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 rounded-2xl p-3 sticky bottom-4 mt-4">
           <form
             onSubmit={(e) => {
               e.preventDefault()
               sendMessage()
             }}
-            className="flex gap-2"
+            className="flex gap-2 items-end"
           >
-            <Input
+            <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  sendMessage()
+                }
+              }}
               placeholder="Type your message..."
               aria-label="Message input"
-              disabled={loading || !isOwner || chain?.id !== 16601}
-              className="flex-1"
+              disabled={loading}
+              className="flex-1 min-h-[56px]"
             />
-            <Button type="submit" disabled={loading || !input.trim() || !isOwner || chain?.id !== 16601}>
+            <Button type="submit" disabled={loading || !input.trim()}>
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (

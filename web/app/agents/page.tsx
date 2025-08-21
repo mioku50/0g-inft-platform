@@ -517,7 +517,7 @@ export default function AgentsPage() {
   if (!isConnected) {
     return (
       <div className="page-hero min-h-screen flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center relative z-10">
           <div className="p-6 bg-white/70 backdrop-blur rounded-full inline-block mb-6">
             <Bot className="w-24 h-24 text-purple-600" />
           </div>
@@ -531,7 +531,7 @@ export default function AgentsPage() {
   if (loading && agents.length === 0) {
     return (
       <div className="page-hero min-h-screen flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center relative z-10">
           <Loader2 className="h-16 w-16 animate-spin text-purple-600 mx-auto mb-4" />
           <p className="text-gray-700">Loading your AI agents...</p>
         </div>
@@ -541,7 +541,7 @@ export default function AgentsPage() {
 
   return (
     <div className="page-hero min-h-screen">
-      <div className="mx-auto max-w-7xl px-4 py-10">
+      <div className="mx-auto max-w-7xl px-4 py-10 relative z-10">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-4">

@@ -4,9 +4,8 @@ import React from 'react'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
-import {
+import { 
   Button,
-  Card,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -75,10 +74,10 @@ const AgentCard = React.memo(({
   cancellingListingId
 }: AgentCardProps) => {
   return (
-    <Card 
-      className="bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 shadow-xl rounded-2xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden"
+    <div 
+      className="h-full flex flex-col bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 dark:border-white/10 shadow-xl rounded-2xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden"
     >
-      <div className="p-6">
+      <div className="p-6 flex-1 flex flex-col">
         {/* Agent Image */}
         <div className="h-48 bg-gradient-to-br from-purple-100 to-pink-100 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden">
           <AgentAvatar agent={agent} size="large" />
@@ -119,16 +118,25 @@ const AgentCard = React.memo(({
         )}
         
         {/* Actions */}
-        <div className="space-y-2">
+        <div className="space-y-2 mt-auto">
           {agent.status === 'owned' && (
             <>
               <div className="grid grid-cols-2 gap-2">
-                <Link href={`/agent/${agent.tokenId}/chat`}>
+                <Link href={`/agent/${agent.tokenId}`}>
                   <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
                     <MessageCircle className="h-4 w-4 mr-1" />
                     Chat
                   </Button>
                 </Link>
+                <Button 
+                  onClick={() => onPrompt(agent)}
+                  variant="outline"
+                  size="sm"
+                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
+                >
+                  <Settings className="h-4 w-4 mr-1" />
+                  Prompt
+                </Button>
               </div>
               
               <div className="grid grid-cols-2 gap-2">
@@ -151,21 +159,12 @@ const AgentCard = React.memo(({
                   Transfer
                 </Button>
               </div>
-              
-              <div className="grid grid-cols-2 gap-2">
-                <Button 
-                  onClick={() => onPrompt(agent)}
-                  variant="outline"
-                  size="sm"
-                  className="w-full border-purple-200 hover:bg-purple-50 text-gray-700"
-                >
-                  <Settings className="h-4 w-4 mr-1" />
-                  Prompt
-                </Button>
+
+              <div>
                 <Button 
                   onClick={() => onList(agent)}
                   size="sm"
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                  className="w-full justify-center bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
                 >
                   <ShoppingCart className="h-4 w-4 mr-1" />
                   List
@@ -176,7 +175,7 @@ const AgentCard = React.memo(({
           
           {agent.status === 'listed' && (
             <>
-              <Link href={`/agent/${agent.tokenId}/chat`} className="block">
+              <Link href={`/agent/${agent.tokenId}`} className="block">
                 <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
                   <MessageCircle className="h-4 w-4 mr-2" />
                   Chat
@@ -205,7 +204,7 @@ const AgentCard = React.memo(({
           )}
         </div>
       </div>
-    </Card>
+    </div>
   )
 })
 
@@ -579,12 +578,12 @@ export default function AgentsPage() {
         {/* Agents Grid */}
         {agents.length === 0 ? (
           <div className="text-center py-20">
-            <Card className="max-w-md mx-auto bg-white/80 backdrop-blur border-purple-200 p-12">
+            <div className="max-w-md mx-auto bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl shadow-xl p-12">
               <div className="mb-6 inline-block p-4 bg-purple-100 rounded-full">
                 <Sparkles className="w-16 h-16 text-purple-600" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">No agents yet</h2>
-              <p className="text-gray-600 mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">No agents yet</h2>
+              <p className="text-gray-700 dark:text-gray-300 mb-8">
                 Create your first AI agent to get started!
               </p>
               <Link href="/mint">
@@ -593,10 +592,10 @@ export default function AgentsPage() {
                   Create Your First Agent
                 </Button>
               </Link>
-            </Card>
+            </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
             {agentCards}
           </div>
         )}

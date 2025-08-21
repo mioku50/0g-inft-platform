@@ -4,10 +4,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { useAccount, usePublicClient } from 'wagmi'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import Link from 'next/link'
 import { ArrowLeft, Send, Loader2 } from 'lucide-react'
@@ -141,101 +139,111 @@ export default function ChatPage() {
 
   if (initializing) {
     return (
-      <div className="container mx-auto py-10 flex items-center justify-center min-h-[600px]">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="page-hero min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-white" />
       </div>
     )
   }
 
   if (!agent) {
     return (
-      <div className="container mx-auto py-10">
-        <p>Agent not found or access denied</p>
-        <Link href="/agents">
-          <Button className="mt-4">Back to My Agents</Button>
-        </Link>
+      <div className="page-hero min-h-screen">
+        <div className="mx-auto max-w-3xl px-4 py-10">
+          <div className="bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl shadow-xl p-8">
+            <p className="text-gray-900 dark:text-white">Agent not found or access denied</p>
+            <Link href="/agents">
+              <Button className="mt-4">Back to My Agents</Button>
+            </Link>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="container mx-auto py-10 max-w-4xl">
-      <Link href="/agents">
-        <Button variant="ghost" className="mb-4">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to My Agents
-        </Button>
-      </Link>
+    <div className="page-hero min-h-screen">
+      <div className="mx-auto max-w-7xl px-4 py-10">
+        <Link href="/agents">
+          <Button variant="ghost" className="mb-4">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to My Agents
+          </Button>
+        </Link>
 
-      <Card className="h-[600px] flex flex-col">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <span className="text-2xl">🤖</span>
-            Chat with {agent.metadata.name}
-          </CardTitle>
-          <p className="text-sm text-gray-600">
-            Model: {agent.metadata.model || 'llama-3.3-70b'}
-          </p>
-        </CardHeader>
-        
-        <CardContent className="flex-1 flex flex-col p-0">
-          <ScrollArea className="flex-1 p-6" ref={scrollRef}>
-            <div className="space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg p-4 ${
-                      message.role === 'user'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-800'
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                    <p className="text-xs opacity-70 mt-2">
-                      {message.timestamp.toLocaleTimeString()}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  </div>
-                </div>
-              )}
+        <div className="bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl shadow-xl flex flex-col h-[75vh]">
+          <div className="px-6 pt-6">
+            <div className="flex items-center gap-2 text-gray-900 dark:text-white text-2xl font-semibold">
+              <span>🤖</span>
+              <span>Chat with {agent.metadata.name}</span>
             </div>
-          </ScrollArea>
-          
-          <div className="border-t p-4">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                sendMessage()
-              }}
-              className="flex gap-2"
-            >
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Type your message..."
-                disabled={loading}
-                className="flex-1"
-              />
-              <Button type="submit" disabled={loading || !input.trim()}>
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
-            </form>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+              Model: {agent.metadata.model || 'llama-3.3-70b'}
+            </p>
           </div>
-        </CardContent>
-      </Card>
+
+          <div className="flex-1 flex flex-col">
+            <div className="flex-1 overflow-y-auto p-6" ref={scrollRef}>
+              <div className="space-y-4">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-2xl p-4 shadow-sm ${
+                        message.role === 'user'
+                          ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
+                          : 'bg-white/80 dark:bg-gray-900/60 border border-white/20 dark:border-white/10 text-gray-900 dark:text-gray-100'
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                      <p className={`${message.role === 'user' ? 'text-purple-100/80' : 'text-gray-500 dark:text-gray-400'} text-[11px] mt-2`}>
+                        {message.timestamp.toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {loading && (
+                  <div className="flex justify-start">
+                    <div className="bg-white/70 dark:bg-gray-900/60 border border-white/20 dark:border-white/10 rounded-2xl p-3">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-white/30 dark:border-white/10 p-4 mt-auto">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  sendMessage()
+                }}
+                className="flex gap-2"
+              >
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Type your message..."
+                  disabled={loading}
+                  className="flex-1 bg-white/80 dark:bg-gray-900/60 border-white/30 dark:border-white/10 focus:ring-2 focus:ring-purple-500/60 focus:border-purple-500/60"
+                />
+                <Button 
+                  type="submit" 
+                  disabled={loading || !input.trim()}
+                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 focus:ring-2 focus:ring-purple-500/60 focus:ring-offset-2 focus:ring-offset-transparent"
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -231,17 +231,17 @@
 .animation-delay-600 {
   animation-delay: 600ms;
 }
-/* Предотвращение искажений */
+/* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ */
 * {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Плавные градиенты */
+/* пїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ */
 .bg-gradient-to-br {
   background-attachment: fixed;
 }
-/* web/app/globals.css - добавьте в конец файла */
+/* web/app/globals.css - пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ */
 @keyframes blob {
   0% { transform: translate(0px, 0px) scale(1); }
   33% { transform: translate(30px, -50px) scale(1.1); }
@@ -261,12 +261,12 @@
   animation-delay: 4s;
 }
 
-/* Неоновый эффект для текста */
+/* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ */
 .neon-text {
   text-shadow: 0 0 10px currentColor, 0 0 20px currentColor, 0 0 40px currentColor;
 }
 
-/* Градиентный бордер */
+/* пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ */
 .gradient-border {
   background: linear-gradient(to right, #a855f7, #ec4899);
   padding: 2px;
@@ -276,7 +276,7 @@
   background: #1a1a2e;
   border-radius: inherit;
 }
-/* web/app/globals.css - добавьте в конец */
+/* web/app/globals.css - пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅ пїЅпїЅпїЅпїЅпїЅ */
 @keyframes spin-slow {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -300,9 +300,10 @@
 }
 /* Hero page background for Agents and Chat pages */
 .page-hero {
-  background-image: url('/bg/brand-wallpaper.jpg');
+  background-image: url('/assets/bg/og-inft-hero.jpg');
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
   background-attachment: fixed;
 }
 
@@ -310,6 +311,6 @@
   content: '';
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.65);
   pointer-events: none;
 }

@@ -66,7 +66,7 @@ function Navigation() {
   }
   
   return (
-    <nav className="bg-white/90 backdrop-blur-sm shadow-sm sticky top-0 z-50">
+    <nav className="bg-white/90 dark:bg-gray-900/80 backdrop-blur-sm shadow-sm sticky top-0 z-50">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-8">
@@ -80,40 +80,44 @@ function Navigation() {
             <div className="hidden md:flex items-center gap-6">
               <a 
                 href="/" 
-                className={`font-medium transition-colors ${
-                  isActive('/') 
-                    ? 'text-blue-600' 
-                    : 'text-gray-700 hover:text-blue-600'
+                aria-current={isActive('/') ? 'page' : undefined}
+                className={`relative px-3 py-1.5 rounded-lg transition-all font-medium ${
+                  isActive('/')
+                    ? 'font-semibold text-gray-900 dark:text-white bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-purple-500/20 ring-1 ring-purple-400/40 shadow-[0_0_20px_rgba(168,85,247,0.25)]'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-purple-500/10 hover:shadow-[0_0_12px_rgba(168,85,247,0.15)] hover:ring-1 hover:ring-purple-400/30'
                 }`}
               >
                 Home
               </a>
               <a 
                 href="/mint" 
-                className={`font-medium transition-colors ${
-                  isActive('/mint') 
-                    ? 'text-blue-600' 
-                    : 'text-gray-700 hover:text-blue-600'
+                aria-current={isActive('/mint') ? 'page' : undefined}
+                className={`relative px-3 py-1.5 rounded-lg transition-all font-medium ${
+                  isActive('/mint')
+                    ? 'font-semibold text-gray-900 dark:text-white bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-purple-500/20 ring-1 ring-purple-400/40 shadow-[0_0_20px_rgba(168,85,247,0.25)]'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-purple-500/10 hover:shadow-[0_0_12px_rgba(168,85,247,0.15)] hover:ring-1 hover:ring-purple-400/30'
                 }`}
               >
                 Mint Agent
               </a>
               <a 
                 href="/agents" 
-                className={`font-medium transition-colors ${
-                  isActive('/agents') 
-                    ? 'text-blue-600' 
-                    : 'text-gray-700 hover:text-blue-600'
+                aria-current={isActive('/agents') ? 'page' : undefined}
+                className={`relative px-3 py-1.5 rounded-lg transition-all font-medium ${
+                  isActive('/agents')
+                    ? 'font-semibold text-gray-900 dark:text-white bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-purple-500/20 ring-1 ring-purple-400/40 shadow-[0_0_20px_rgba(168,85,247,0.25)]'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-purple-500/10 hover:shadow-[0_0_12px_rgba(168,85,247,0.15)] hover:ring-1 hover:ring-purple-400/30'
                 }`}
               >
                 My Agents
               </a>
               <a 
                 href="/marketplace" 
-                className={`font-medium transition-colors ${
-                  isActive('/marketplace') 
-                    ? 'text-blue-600' 
-                    : 'text-gray-700 hover:text-blue-600'
+                aria-current={isActive('/marketplace') ? 'page' : undefined}
+                className={`relative px-3 py-1.5 rounded-lg transition-all font-medium ${
+                  isActive('/marketplace')
+                    ? 'font-semibold text-gray-900 dark:text-white bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-purple-500/20 ring-1 ring-purple-400/40 shadow-[0_0_20px_rgba(168,85,247,0.25)]'
+                    : 'text-gray-700 dark:text-gray-300 hover:bg-purple-500/10 hover:shadow-[0_0_12px_rgba(168,85,247,0.15)] hover:ring-1 hover:ring-purple-400/30'
                 }`}
               >
                 Marketplace

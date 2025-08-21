@@ -15,11 +15,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const tokenIdParam = searchParams.get('agentId') || searchParams.get('tokenId')
     if (!tokenIdParam) {
-      return NextResponse.json({ prompt: '' })
+      return NextResponse.json({ prompt: '', updatedAt: null })
     }
     const tokenId = Number(tokenIdParam)
     if (!Number.isFinite(tokenId)) {
-      return NextResponse.json({ prompt: '' })
+      return NextResponse.json({ prompt: '', updatedAt: null })
     }
 
     const { file } = getFilePath(tokenId)
@@ -28,13 +28,10 @@ export async function GET(request: NextRequest) {
       const data = JSON.parse(raw)
       return NextResponse.json({ prompt: data?.prompt ?? '', updatedAt: data?.updatedAt ?? null })
     } catch (e: any) {
-      if (e?.code === 'ENOENT') {
-        return NextResponse.json({ prompt: '' })
-      }
-      return NextResponse.json({ prompt: '' })
+      return NextResponse.json({ prompt: '', updatedAt: null })
     }
   } catch (e) {
-    return NextResponse.json({ prompt: '' })
+    return NextResponse.json({ prompt: '', updatedAt: null })
   }
 }
 

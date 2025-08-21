@@ -25,6 +25,8 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
   const [analysis, setAnalysis] = useState<any>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [activeProvider, setActiveProvider] = useState<string | null>(null)
+  const [activeModel, setActiveModel] = useState<string | null>(null)
   
   const [description, setDescription] = useState('')
   const [capabilities, setCapabilities] = useState<string[]>([])
@@ -143,12 +145,19 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
           } catch {}
         }
         setCurrentPrompt(result.prompt)
+        setActiveProvider(result.provider || null)
+        setActiveModel(result.model || null)
         setAnalysis(null)
         setActiveTab('current')
         toast({ title: 'Prompt generated and saved', description: 'Current Prompt updated.' })
       } else {
-        const reason = result?.reason ? ` (${result.reason})` : ''
-        toast({ title: 'Generation failed', description: (result?.error ? `${result.error}${reason}` : 'Please try another provider later.') })
+        let reasonText = result?.reason ? ` (${result.reason})` : ''
+        if (Array.isArray(result?.reasons) && result.reasons.length > 0) {
+          const first = result.reasons[0]
+          const detail = first?.message ? `: ${first.message}` : ''
+          reasonText = ` (${first?.code || 'error'}${detail})`
+        }
+        toast({ title: 'Generation failed', description: (result?.error ? `${result.error}${reasonText}` : 'Please try another provider later.') })
       }
     } catch (error) {
       toast({ title: 'Generation error', description: (error as any)?.message || 'Unknown error' })
@@ -291,6 +300,12 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
                   <><Sparkles className="mr-2 h-4 w-4" /> Generate Prompt</>
                 )}
               </Button>
+
+              {(activeProvider || activeModel) && (
+                <p className="text-xs text-gray-400">
+                  Using {activeModel ? activeModel : 'model'} @ {activeProvider ? activeProvider : 'provider'}
+                </p>
+              )}
             </div>
           )}
 

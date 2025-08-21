@@ -29,3 +29,98 @@ export async function createBrokerWithEnvPK() {
   } catch {}
   return broker
 }
+
+// Общий кеш ACK для процесса: ключом (walletAddress, providerAddress)
+const ackCache = new Set<string>()
+
+export function getAckCacheKey(broker: any, providerAddress: string): string {
+  const walletAddr: string | undefined = (broker as any).__walletAddress
+  return `${walletAddr || 'unknown'}:${providerAddress}`
+}
+
+// Обеспечиваем наличие и баланс леджера. Числа передаем number/BigInt, строки только в логах
+export async function ensureLedgerBalance(broker: any): Promise<void> {
+  try {
+    const info = await broker.ledger.getLedger()
+    const available = info?.availableBalance ?? 0n
+    const total = info?.totalBalance ?? 0n
+
+    console.log(`available=${Number(ethers.formatEther(available)).toFixed(4)} OG`)
+
+    if (available === 0n) {
+      try {
+        await broker.ledger.addLedger(0.05)
+        const after = await broker.ledger.getLedger()
+        console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
+      } catch (e: any) {
+        await broker.ledger.depositFund(0.05)
+        const after = await broker.ledger.getLedger()
+        console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
+      }
+    } else {
+      const availableFloat = Number(ethers.formatEther(available))
+      if (availableFloat < 0.01) {
+        await broker.ledger.depositFund(0.05)
+        const after = await broker.ledger.getLedger()
+        console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
+      }
+    }
+  } catch (error: any) {
+    const msg: string = error?.message || ''
+    if (msg.includes('Account does not exist') || msg.includes('not exist')) {
+      await broker.ledger.addLedger(0.05)
+      const after = await broker.ledger.getLedger().catch(() => null)
+      if (after) {
+        console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
+      }
+      return
+    }
+    console.error('Failed to ensure ledger balance:', msg)
+    throw error
+  }
+}
+
+// Безопасный ACK с ожиданием receipt.status===1 если есть tx; кэшируем факт ACK
+export async function acknowledgeProviderIfNeeded(broker: any, providerAddress: string): Promise<void> {
+  const cacheKey = getAckCacheKey(broker, providerAddress)
+  if (ackCache.has(cacheKey)) return
+
+  let attemptedRecovery = false
+
+  const doAck = async (): Promise<void> => {
+    const tx = await broker.inference.acknowledgeProviderSigner(providerAddress)
+    if (tx && typeof tx.wait === 'function') {
+      const receipt = await tx.wait()
+      const status = Number((receipt as any)?.status ?? 0)
+      if (status === 1) {
+        ackCache.add(cacheKey)
+        console.log('ack=OK', { provider: providerAddress })
+        return
+      }
+      throw new Error(`ack failed, receipt.status=${status}`)
+    }
+    // SDK 0.3.1 может не вернуть tx — считаем OK
+    ackCache.add(cacheKey)
+    console.log('ack=OK', { provider: providerAddress })
+  }
+
+  try {
+    await doAck()
+  } catch (e: any) {
+    const msg: string = e?.message || ''
+    if (msg.includes('already acknowledged')) {
+      ackCache.add(cacheKey)
+      console.log('ack=OK', { provider: providerAddress })
+      return
+    }
+    if (!attemptedRecovery && msg.includes('Account does not exist')) {
+      attemptedRecovery = true
+      await ensureLedgerBalance(broker)
+      await doAck()
+      return
+    }
+    throw e
+  }
+}
+
+export const __ackCache = ackCache

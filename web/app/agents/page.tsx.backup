@@ -30,7 +30,7 @@ import {
   RefreshCw, 
   Send,
   Copy,
-  
+  Brain,
   Settings,
   Ban,
   Sparkles,
@@ -74,7 +74,7 @@ const AgentCard = React.memo(({
 }) => {
   return (
     <Card 
-      className="bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 shadow-xl rounded-2xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 overflow-hidden"
+      className="bg-white/80 backdrop-blur border-purple-200 hover:shadow-xl transition-all duration-300 overflow-hidden"
     >
       <div className="p-6">
         {/* Agent Image */}
@@ -127,6 +127,11 @@ const AgentCard = React.memo(({
                     Chat
                   </Button>
                 </Link>
+                <Link href={`/agents/${agent.tokenId}/fine-tune`}>
+                  <Button variant="outline" size="sm" className="w-full border-purple-200 hover:bg-purple-50 text-gray-700">
+                    <Brain className="h-4 w-4 mr-1" />
+                    Fine-tune
+                  </Button>
                 </Link>
               </div>
               
@@ -516,7 +521,7 @@ export default function AgentsPage() {
 
   if (!isConnected) {
     return (
-      <div className="page-hero min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100 flex items-center justify-center">
         <div className="text-center">
           <div className="p-6 bg-white/70 backdrop-blur rounded-full inline-block mb-6">
             <Bot className="w-24 h-24 text-purple-600" />
@@ -530,7 +535,7 @@ export default function AgentsPage() {
 
   if (loading && agents.length === 0) {
     return (
-      <div className="page-hero min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-16 w-16 animate-spin text-purple-600 mx-auto mb-4" />
           <p className="text-gray-700">Loading your AI agents...</p>
@@ -540,8 +545,8 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="page-hero min-h-screen">
-      <div className="mx-auto max-w-7xl px-4 py-10">
+    <div className="min-h-screen bg-gradient-to-br from-pink-100 via-purple-50 to-blue-100">
+      <div className="container mx-auto py-10 px-4">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div className="flex items-center gap-4">

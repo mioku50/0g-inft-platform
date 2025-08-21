@@ -298,3 +298,18 @@
 .animation-delay-2000 {
   animation-delay: 2s;
 }
+/* Hero page background for Agents and Chat pages */
+.page-hero {
+  background-image: url('/bg/brand-wallpaper.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+.page-hero::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}

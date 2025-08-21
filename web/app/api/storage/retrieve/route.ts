@@ -41,7 +41,13 @@ export async function POST(request: NextRequest) {
         rootHash: cleanRootHash,
       })
     } catch (error: any) {
-      console.error('Storage retrieval error:', error)
+      const msg = error?.message || ''
+      const code = error?.code || ''
+      if (code === 'ENOENT') {
+        console.warn('Storage retrieval ENOENT, returning empty content')
+      } else {
+        console.warn('Storage retrieval error:', msg)
+      }
 
       // Если не удалось загрузить, пробуем локальное хранилище
       if (cleanRootHash && typeof cleanRootHash === 'string' && cleanRootHash.startsWith('local://')) {
@@ -101,7 +107,7 @@ export async function POST(request: NextRequest) {
       })
     }
   } catch (error: any) {
-    console.error('Retrieve route error:', error)
+    console.warn('Retrieve route error:', error?.message || error)
     
     // В случае любой ошибки возвращаем базовые метаданные
     return NextResponse.json({

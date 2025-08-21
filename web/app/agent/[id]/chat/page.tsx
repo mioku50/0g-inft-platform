@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { useAccount, useNetwork, usePublicClient, useSwitchNetwork } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { INFT_ABI } from '@/lib/contracts/abis'
@@ -259,29 +258,36 @@ export default function ChatPage() {
 
   if (initializing) {
     return (
-      <div className="container mx-auto py-10 flex items-center justify-center min-h-[600px]">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="page-hero min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-white" />
       </div>
     )
   }
 
   return (
-    <div className="container mx-auto py-10 max-w-4xl">
-      <Link href="/agents">
-        <Button variant="ghost" className="mb-4">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to My Agents
-        </Button>
-      </Link>
-
-      <Card className="h-[600px] flex flex-col">
-        <CardHeader className="border-b">
-          <CardTitle className="flex items-center gap-2">
+    <div className="page-hero min-h-screen">
+      <div className="max-w-4xl mx-auto px-4 py-6">
+        {/* Top Frost Panel */}
+        <div className="bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 rounded-2xl p-4 mb-4">
+          <div className="flex items-center justify-between gap-2">
+            <Link href="/agents">
+              <Button variant="ghost" className="">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back
+              </Button>
+            </Link>
+            <div className="text-right">
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                Model: {agent?.metadata?.model || 'llama-3.3-70b'}
+              </p>
+            </div>
+          </div>
+          <div className="mt-2 flex items-center gap-3">
             {agent?.metadata?.image ? (
-              <img 
-                src={agent.metadata.image} 
+              <img
+                src={agent.metadata.image}
                 alt={agent.metadata.name}
-                className="w-8 h-8 rounded-full"
+                className="w-10 h-10 rounded-full"
                 onError={(e) => {
                   e.currentTarget.src = `https://api.dicebear.com/7.x/bottts/svg?seed=agent-${tokenId}`
                 }}
@@ -289,134 +295,83 @@ export default function ChatPage() {
             ) : (
               <span className="text-2xl">🤖</span>
             )}
-            Chat with {agent?.metadata?.name || `Agent #${tokenId}`}
-          </CardTitle>
-          <p className="text-sm text-gray-600 flex items-center gap-2">
-            Model: {agent?.metadata?.model || 'llama-3.3-70b'}
-            <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
-              SDK 0.3.1
-            </span>
-            <span className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
-              Galileo v3 (16601)
-            </span>
-          </p>
-        </CardHeader>
-        
-        {/* Status Banner */}
-        {!isOwner && (
-          <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 flex items-center justify-between gap-2">
-            <p className="text-sm text-yellow-800">
-              Подключите кошелёк владельца агента №{tokenId} (сеть Galileo 16601)
-            </p>
-            <div className="flex items-center gap-2">
-              {chain?.id !== 16601 && (
-                <Button size="sm" variant="outline" onClick={() => switchNetwork?.(16601)} disabled={isSwitching}>
-                  {isSwitching ? 'Switching…' : 'Switch network'}
-                </Button>
-              )}
-              {!isConnected && (
-                <Button size="sm" onClick={() => openConnectModal?.()}>Connect</Button>
-              )}
-            </div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Chat with {agent?.metadata?.name || `Agent #${tokenId}`}</h2>
           </div>
-        )}
-        {isOwner && chain?.id !== 16601 && (
-          <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 flex items-center justify-between gap-2">
-            <p className="text-sm text-yellow-800">
-              Переключитесь на сеть Galileo 16601 для работы агента
-            </p>
-            <div>
-              <Button size="sm" variant="outline" onClick={() => switchNetwork?.(16601)} disabled={isSwitching}>
-                {isSwitching ? 'Switching…' : 'Switch network'}
-              </Button>
-            </div>
-          </div>
-        )}
-        {lastResponseMeta && !lastResponseMeta.isRealAI && (
-          <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2">
-            <p className="text-sm text-yellow-800">
-              ⚠️ AI providers temporarily unavailable. Using local intelligence while reconnecting to 0G Compute...
-            </p>
-          </div>
-        )}
-        
-        <CardContent className="flex-1 flex flex-col p-0">
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="space-y-4">
-              {messages.map((message) => (
+        </div>
+
+        {/* Messages Frost Panel */}
+        <div className="bg-white/70 dark:bg-black/30 backdrop-blur-xl border border-white/10 rounded-2xl p-4 h-[60vh] overflow-y-auto">
+          <div className="space-y-4">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
                 <div
-                  key={message.id}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`max-w-[80%] px-4 py-3 rounded-2xl ${
+                    message.role === 'user'
+                      ? 'bg-gray-900 text-white'
+                      : 'bg-white/90 dark:bg-black/30 text-gray-900 dark:text-gray-100'
+                  }`}
                 >
-                  <div
-                    className={`max-w-[80%] rounded-lg p-4 ${
-                      message.role === 'user'
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-100'
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                    <div className="flex items-center justify-between mt-2 text-xs opacity-70">
-                      <span>{message.timestamp.toLocaleTimeString()}</span>
-                      {message.metadata && message.role === 'assistant' && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className={`px-2 py-1 rounded text-white text-xs ${
-                            message.metadata.isRealAI ? 'bg-green-500' : 'bg-yellow-500'
-                          }`}>
-                            {message.metadata.isRealAI ? 'Real AI' : 'Local'}
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  <div className="flex items-center justify-between mt-2 text-xs opacity-70">
+                    <span>{message.timestamp.toLocaleTimeString()}</span>
+                    {message.metadata && message.role === 'assistant' && (
+                      <div className="flex items-center gap-2 text-xs">
+                        {message.metadata.model && (
+                          <span className="text-gray-600 dark:text-gray-300">
+                            {message.metadata.model}
                           </span>
-                          {message.metadata.model && (
-                            <span className="text-gray-600">
-                              {message.metadata.model}
-                            </span>
-                          )}
-                          {message.metadata.ttfb && (
-                            <span className="text-gray-600">
-                              {message.metadata.ttfb}ms
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                        )}
+                        {message.metadata.ttfb && (
+                          <span className="text-gray-600 dark:text-gray-300">
+                            {message.metadata.ttfb}ms
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="bg-gray-100 rounded-lg p-4">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-          
-          <div className="border-t p-4">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                sendMessage()
-              }}
-              className="flex gap-2"
-            >
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Type your message..."
-                disabled={loading || !isOwner || chain?.id !== 16601}
-                className="flex-1"
-              />
-              <Button type="submit" disabled={loading || !input.trim() || !isOwner || chain?.id !== 16601}>
-                {loading ? (
+              </div>
+            ))}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="bg-white/90 dark:bg-black/30 rounded-2xl px-4 py-3">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
-            </form>
+                </div>
+              </div>
+            )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+
+        {/* Sticky Input Frost Panel */}
+        <div className="bg-white/80 dark:bg-black/40 backdrop-blur-xl border border-white/20 rounded-2xl p-3 sticky bottom-4 mt-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              sendMessage()
+            }}
+            className="flex gap-2"
+          >
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type your message..."
+              aria-label="Message input"
+              disabled={loading || !isOwner || chain?.id !== 16601}
+              className="flex-1"
+            />
+            <Button type="submit" disabled={loading || !input.trim() || !isOwner || chain?.id !== 16601}>
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </form>
+        </div>
+      </div>
     </div>
   )
 }

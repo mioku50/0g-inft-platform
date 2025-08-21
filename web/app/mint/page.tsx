@@ -24,7 +24,7 @@ import {
   Wand2,
   GraduationCap,
   BookOpen,
-  Brain,
+  
   Code,
   Palette,
   MessageSquare
@@ -59,7 +59,7 @@ const PERSONALITY_TRAITS = [
 const SKILL_BADGES = [
   { id: 'coding', label: 'Coding', icon: Code },
   { id: 'writing', label: 'Writing', icon: BookOpen },
-  { id: 'analysis', label: 'Analysis', icon: Brain },
+  { id: 'analysis', label: 'Analysis', icon: Code },
   { id: 'design', label: 'Design', icon: Palette },
   { id: 'chat', label: 'Chat', icon: MessageSquare },
 ]

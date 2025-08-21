@@ -20,7 +20,7 @@ import {
   Settings, 
   Share2, 
   ShoppingCart,
-  Brain,
+  
   Zap,
   Copy,
   ExternalLink
@@ -313,7 +313,6 @@ export default function ChatPage() {
         <ScrollArea className="flex-1 p-6" ref={scrollAreaRef}>
           {messages.length === 0 ? (
             <div className="text-center py-20">
-              <Brain className="w-16 h-16 text-gray-600 mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-gray-300 mb-2">
                 Start a conversation
               </h3>

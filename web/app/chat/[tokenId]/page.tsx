@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useAccount, useContractRead } from 'wagmi'
+import { useAccount, useContractRead, useNetwork, useSwitchNetwork } from 'wagmi'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -48,6 +49,9 @@ export default function ChatPage() {
   const params = useParams()
   const router = useRouter()
   const { address, isConnected } = useAccount()
+  const { chain } = useNetwork()
+  const { switchNetwork, isLoading: isSwitching } = useSwitchNetwork()
+  const { openConnectModal } = useConnectModal()
   const { toast } = useToast()
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   
@@ -124,6 +128,8 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
+    const isCorrectChain = chain?.id === 16601
+    if (!isOwner || !isCorrectChain) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -202,6 +208,9 @@ export default function ChatPage() {
       <div className="max-w-4xl mx-auto px-4 py-20 text-center">
         <h1 className="text-3xl font-bold text-white mb-4">Connect Your Wallet</h1>
         <p className="text-gray-400">Please connect your wallet to chat with this agent</p>
+        <div className="mt-4">
+          <Button onClick={() => openConnectModal?.()}>Connect</Button>
+        </div>
       </div>
     )
   }
@@ -375,12 +384,12 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              disabled={isLoading}
+              disabled={isLoading || !isOwner || chain?.id !== 16601}
               className="bg-gray-900/50 border-gray-700"
             />
             <Button
               onClick={handleSend}
-              disabled={isLoading || !input.trim()}
+              disabled={isLoading || !input.trim() || !isOwner || chain?.id !== 16601}
               className="bg-purple-600 hover:bg-purple-700"
             >
               {isLoading ? (
@@ -390,6 +399,19 @@ export default function ChatPage() {
               )}
             </Button>
           </div>
+          {!isOwner && (
+            <div className="text-sm text-yellow-400 mt-2">
+              Подключите кошелёк владельца агента №{tokenId} (сеть Galileo 16601)
+            </div>
+          )}
+          {isOwner && chain?.id !== 16601 && (
+            <div className="flex items-center gap-2 text-sm text-yellow-400 mt-2">
+              <span>Переключитесь на сеть Galileo 16601</span>
+              <Button size="sm" variant="outline" onClick={() => switchNetwork?.(16601)} disabled={isSwitching}>
+                {isSwitching ? 'Switching…' : 'Switch network'}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 

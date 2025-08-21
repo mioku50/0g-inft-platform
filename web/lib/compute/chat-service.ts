@@ -31,7 +31,7 @@ class ChatService {
       console.log(`services=${services.length}`)
 
       // Prefer official providers (best-effort heuristics)
-      const providers = Array.from(services || [])
+      const providers = (Array.from(services || []) as any[])
         .slice()
         .sort((a: any, b: any) => {
           const aInfo = String(a?.additionalInfo || a?.verifiability || '').toLowerCase()
@@ -49,7 +49,7 @@ class ChatService {
       }
 
       // Try each service
-      for (const service of providers) {
+      for (const service of providers as any[]) {
         try {
           console.log(`try provider=${service.provider}`)
           

@@ -1,65 +1,117 @@
 // web/app/api/compute/generate-prompt/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { createBrokerWithEnvPK } from '@/lib/compute/broker'
+import { createBrokerWithEnvPK, ensureLedgerBalance, acknowledgeProviderIfNeeded } from '@/lib/compute/broker'
 
 export async function POST(request: NextRequest) {
   try {
-    const { description, capabilities, personality } = await request.json()
-    
+    const { description, capabilities = [], personality } = await request.json()
+
     const broker = await createBrokerWithEnvPK()
-    
-    // Используем официальный провайдер для генерации
-    const providerAddress = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
-    
-    const prompt = `Generate a detailed system prompt for an AI agent with these characteristics:
-    
-Description: ${description}
-Capabilities: ${capabilities.join(', ')}
-Personality: ${personality}
+    console.log('rpc=OK')
 
-Create a comprehensive system prompt that:
-1. Clearly defines the agent's role and purpose
-2. Sets boundaries and limitations
-3. Establishes the communication style
-4. Includes specific examples of responses
-5. Defines ethical guidelines
+    // Собираем пользовательский инпут
+    const caps = Array.isArray(capabilities) ? capabilities.slice().filter(Boolean) : []
+    const prompt = `You are tasked with writing a production-grade system prompt for an AI agent.
 
-Format: Return only the system prompt text, no explanations.`
+Context:
+- Description: ${String(description || '').trim()}
+- Capabilities: ${caps.join(', ')}
+- Personality: ${String(personality || '').trim()}
 
-    // Ensure correct order: acknowledge → metadata → headers (check receipt.status)
-    const ackTx = await broker.inference.acknowledgeProviderSigner(providerAddress)
-    await ackTx.wait()
-    const { endpoint, model } = await broker.inference.getServiceMetadata(providerAddress)
-    const headers = await broker.inference.getRequestHeaders(providerAddress, prompt)
-    
-    const OpenAI = require('openai')
-    const openai = new OpenAI({ baseURL: endpoint, apiKey: '' })
-    
-    const completion = await openai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-      model: model,
-      temperature: 0.7,
-      max_tokens: 1000
-    }, { headers })
-    
-    const generatedPrompt = completion.choices[0].message.content
-    
-    // Верифицируем ответ
-    await broker.inference.processResponse(
-      providerAddress,
-      generatedPrompt,
-      completion.id
-    )
-    
-    return NextResponse.json({
-      success: true,
-      prompt: generatedPrompt
-    })
+Requirements:
+1) Define the agent's purpose, role, and behavior succinctly
+2) State dos/don'ts and boundaries clearly
+3) Specify response style and formatting rules
+4) Include 3-5 concrete instruction bullets for critical behaviors
+5) Keep it safe and compliant
+
+Output: Return ONLY the final system prompt text.`
+
+    // 1) Discover services and prefer official/TEE
+    let services = await broker.inference.listService()
+    services = Array.from(services || [])
+      .slice()
+      .sort((a: any, b: any) => {
+        const aInfo = String(a?.additionalInfo || a?.verifiability || '').toLowerCase()
+        const bInfo = String(b?.additionalInfo || b?.verifiability || '').toLowerCase()
+        const aScore = (aInfo.includes('official') || aInfo.includes('0g') || aInfo.includes('tee')) ? 1 : 0
+        const bScore = (bInfo.includes('official') || bInfo.includes('0g') || bInfo.includes('tee')) ? 1 : 0
+        return bScore - aScore
+      })
+    console.log(`services=${services.length}`)
+
+    // 2) Ensure ledger (create/deposit) before ACK
+    await ensureLedgerBalance(broker)
+
+    if (services.length === 0) {
+      return NextResponse.json({ error: 'no-services' }, { status: 503 })
+    }
+
+    // 3) Try providers sequentially; single-use headers per attempt
+    for (const service of services) {
+      try {
+        // ACK (safe, cached)
+        await acknowledgeProviderIfNeeded(broker, service.provider)
+
+        // Metadata and headers
+        const { endpoint, model } = await broker.inference.getServiceMetadata(service.provider)
+        const headers = await broker.inference.getRequestHeaders(service.provider, prompt)
+        console.log('headers=OK')
+
+        // 4) Request with 5s timeout
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 5000)
+        let resp: Response
+        try {
+          resp = await fetch(`${endpoint}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...headers },
+            body: JSON.stringify({
+              messages: [{ role: 'user', content: prompt }],
+              model,
+              stream: false
+            }),
+            signal: controller.signal
+          })
+        } finally {
+          clearTimeout(timeout)
+        }
+
+        if (!resp.ok) {
+          // 4xx/5xx → next provider
+          continue
+        }
+
+        const data = await resp.json()
+        const generatedPrompt = data?.choices?.[0]?.message?.content
+        if (!generatedPrompt || typeof generatedPrompt !== 'string') {
+          continue
+        }
+
+        // Optional verification for verifiable services
+        try {
+          if (service?.verifiability) {
+            await broker.inference.processResponse(service.provider, generatedPrompt, data?.id)
+          }
+        } catch {}
+
+        console.log('generated')
+        return NextResponse.json({ prompt: generatedPrompt })
+      } catch (e: any) {
+        const msg = e?.message || ''
+        if (msg.includes('ServiceNotExist')) {
+          try { await broker.inference.acknowledgeProviderSigner(service.provider) } catch {}
+        }
+        // try next
+      }
+    }
+
+    return NextResponse.json({ error: 'all-providers-failed' }, { status: 502 })
     
   } catch (error: any) {
     console.error('Prompt generation error:', error)
     return NextResponse.json(
-      { success: false, error: error.message },
+      { error: error.message },
       { status: 500 }
     )
   }

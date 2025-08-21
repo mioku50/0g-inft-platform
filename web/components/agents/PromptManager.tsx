@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Sparkles, BarChart, RefreshCw } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { toast } from '@/components/ui/use-toast'
 
 interface PromptManagerProps {
   agent: any
@@ -36,12 +37,16 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
       })
       
       const result = await response.json()
-      if (result.success) {
-        setAnalysis(result.analysis)
+      if (response.ok && result && typeof result === 'object') {
+        // Expected shape: { scores: {clarity, constraints, safety}, tips: string[], risks: string[] }
+        setAnalysis(result)
         setActiveTab('analysis')
+        toast({ title: 'Analysis ready', description: 'Prompt insights generated.' })
+      } else {
+        toast({ title: 'Analysis failed', description: result?.error || 'Please try again later.' })
       }
     } catch (error) {
-      console.error('Analysis error:', error)
+      toast({ title: 'Analysis error', description: (error as any)?.message || 'Unknown error' })
     } finally {
       setIsAnalyzing(false)
     }
@@ -61,17 +66,34 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
       })
       
       const result = await response.json()
-      if (result.success) {
+      if (response.ok && result?.prompt) {
         setCurrentPrompt(result.prompt)
         setAnalysis(null)
         setActiveTab('current')
+        toast({ title: 'Prompt generated', description: 'Inserted into Current Prompt.' })
+      } else {
+        toast({ title: 'Generation failed', description: result?.error || 'Please try another provider later.' })
       }
     } catch (error) {
-      console.error('Generation error:', error)
+      toast({ title: 'Generation error', description: (error as any)?.message || 'Unknown error' })
     } finally {
       setIsGenerating(false)
     }
   }
+
+  // Enter key on Generate tab triggers generation
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (activeTab === 'generate' && e.key === 'Enter') {
+        if (!isGenerating && description.trim().length > 0) {
+          e.preventDefault()
+          generatePrompt()
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [activeTab, isGenerating, description])
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -132,7 +154,15 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
                 </Button>
                 
                 <Button
-                  onClick={() => onUpdate(currentPrompt)}
+                  onClick={() => {
+                    try {
+                      onUpdate(currentPrompt)
+                      toast({ title: 'Saved', description: 'Prompt has been updated.' })
+                      onClose()
+                    } catch (e: any) {
+                      toast({ title: 'Save failed', description: e?.message || 'Unknown error' })
+                    }
+                  }}
                   className="bg-gradient-to-r from-purple-500 to-pink-500"
                 >
                   Save Changes
@@ -194,38 +224,43 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
                   <div className="grid grid-cols-3 gap-4">
                     <div className="bg-gray-800 p-4 rounded-lg text-center">
                       <p className="text-sm text-gray-400">Clarity</p>
-                      <p className="text-2xl font-bold">{analysis.scores?.clarity || 0}/10</p>
+                      <p className="text-2xl font-bold">{analysis.scores?.clarity ?? 0}/10</p>
                     </div>
                     <div className="bg-gray-800 p-4 rounded-lg text-center">
-                      <p className="text-sm text-gray-400">Completeness</p>
-                      <p className="text-2xl font-bold">{analysis.scores?.completeness || 0}/10</p>
+                      <p className="text-sm text-gray-400">Constraints</p>
+                      <p className="text-2xl font-bold">{analysis.scores?.constraints ?? 0}/10</p>
                     </div>
                     <div className="bg-gray-800 p-4 rounded-lg text-center">
-                      <p className="text-sm text-gray-400">Effectiveness</p>
-                      <p className="text-2xl font-bold">{analysis.scores?.effectiveness || 0}/10</p>
+                      <p className="text-sm text-gray-400">Safety</p>
+                      <p className="text-2xl font-bold">{analysis.scores?.safety ?? 0}/10</p>
                     </div>
                   </div>
 
-                  {analysis.optimizedPrompt && (
-                    <div>
-                      <h4 className="font-semibold mb-2">Optimized Version</h4>
-                      <Alert className="bg-purple-900/30 border-purple-500/30">
-                        <AlertDescription className="whitespace-pre-wrap">
-                          {analysis.optimizedPrompt}
-                        </AlertDescription>
-                      </Alert>
-                      <Button
-                        onClick={() => {
-                          setCurrentPrompt(analysis.optimizedPrompt)
-                          setActiveTab('current')
-                        }}
-                        className="mt-2"
-                        size="sm"
-                      >
-                        Use This Version
-                      </Button>
-                    </div>
-                  )}
+                  <div>
+                    <h4 className="font-semibold mb-2">Tips</h4>
+                    {Array.isArray(analysis.tips) && analysis.tips.length > 0 ? (
+                      <ul className="list-disc pl-6 text-sm text-gray-300 space-y-1">
+                        {analysis.tips.map((t: string, i: number) => (
+                          <li key={i}>{t}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-gray-400">No tips available</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <h4 className="font-semibold mb-2">Risks</h4>
+                    {Array.isArray(analysis.risks) && analysis.risks.length > 0 ? (
+                      <ul className="list-disc pl-6 text-sm text-gray-300 space-y-1">
+                        {analysis.risks.map((r: string, i: number) => (
+                          <li key={i}>{r}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-gray-400">No risks identified</p>
+                    )}
+                  </div>
                 </>
               ) : (
                 <div className="text-center py-12 text-gray-400">

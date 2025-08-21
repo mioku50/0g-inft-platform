@@ -1,73 +1,127 @@
 // web/app/api/compute/analyze-prompt/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { createBrokerWithEnvPK } from '@/lib/compute/broker'
+import { createBrokerWithEnvPK, ensureLedgerBalance, acknowledgeProviderIfNeeded } from '@/lib/compute/broker'
 
 export async function POST(request: NextRequest) {
   try {
     const { prompt } = await request.json()
     
     const broker = await createBrokerWithEnvPK()
-    
-    const providerAddress = '0xf07240Efa67755B5311bc75784a061eDB47165Dd'
-    
-    const analysisPrompt = `Analyze this AI system prompt and provide suggestions for improvement:
+    console.log('rpc=OK')
 
-"${prompt}"
+    const analysisPrompt = `You are a prompt engineer. Evaluate the following system prompt.
 
-Analyze and provide:
-1. Strengths of the current prompt
-2. Weaknesses or gaps
-3. Specific improvement suggestions
-4. Score from 1-10 for: Clarity, Completeness, Effectiveness
-5. Optimized version of the prompt
+Prompt:
+"""
+${String(prompt || '').trim()}
+"""
 
-Format your response as JSON with these fields:
+Tasks:
+1) Score clarity, constraints, safety (1-10 each)
+2) Provide 3-6 actionable improvement tips
+3) List 2-5 potential risks/misuse
+
+Return ONLY strict JSON with the following shape:
 {
-  "strengths": ["..."],
-  "weaknesses": ["..."],
-  "suggestions": ["..."],
-  "scores": {
-    "clarity": 0,
-    "completeness": 0,
-    "effectiveness": 0
-  },
-  "optimizedPrompt": "..."
+  "scores": { "clarity": number, "constraints": number, "safety": number },
+  "tips": string[],
+  "risks": string[]
 }`
 
-    // Ensure ACK before metadata/headers
-    const ackTx = await broker.inference.acknowledgeProviderSigner(providerAddress)
-    await ackTx.wait()
-    const { endpoint, model } = await broker.inference.getServiceMetadata(providerAddress)
-    const headers = await broker.inference.getRequestHeaders(providerAddress, analysisPrompt)
-    
-    const OpenAI = require('openai')
-    const openai = new OpenAI({ baseURL: endpoint, apiKey: '' })
-    
-    const completion = await openai.chat.completions.create({
-      messages: [{ role: 'user', content: analysisPrompt }],
-      model: model,
-      temperature: 0.3,
-      max_tokens: 2000
-    }, { headers })
-    
-    const analysis = JSON.parse(completion.choices[0].message.content)
-    
-    await broker.inference.processResponse(
-      providerAddress,
-      JSON.stringify(analysis),
-      completion.id
-    )
-    
-    return NextResponse.json({
-      success: true,
-      analysis
-    })
+    // 1) Discover services
+    let services = await broker.inference.listService()
+    services = Array.from(services || [])
+      .slice()
+      .sort((a: any, b: any) => {
+        const aInfo = String(a?.additionalInfo || a?.verifiability || '').toLowerCase()
+        const bInfo = String(b?.additionalInfo || b?.verifiability || '').toLowerCase()
+        const aScore = (aInfo.includes('official') || aInfo.includes('0g') || aInfo.includes('tee')) ? 1 : 0
+        const bScore = (bInfo.includes('official') || bInfo.includes('0g') || bInfo.includes('tee')) ? 1 : 0
+        return bScore - aScore
+      })
+    console.log(`services=${services.length}`)
+
+    // 2) Ensure ledger
+    await ensureLedgerBalance(broker)
+    if (services.length === 0) {
+      return NextResponse.json({ error: 'no-services' }, { status: 503 })
+    }
+
+    for (const service of services) {
+      try {
+        // ACK safe
+        await acknowledgeProviderIfNeeded(broker, service.provider)
+
+        const { endpoint, model } = await broker.inference.getServiceMetadata(service.provider)
+        const headers = await broker.inference.getRequestHeaders(service.provider, analysisPrompt)
+        console.log('headers=OK')
+
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 7000)
+        let resp: Response
+        try {
+          resp = await fetch(`${endpoint}/chat/completions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...headers },
+            body: JSON.stringify({
+              messages: [{ role: 'user', content: analysisPrompt }],
+              model,
+              stream: false
+            }),
+            signal: controller.signal
+          })
+        } finally {
+          clearTimeout(timeout)
+        }
+
+        if (!resp.ok) {
+          continue
+        }
+
+        const data = await resp.json()
+        const text = data?.choices?.[0]?.message?.content
+        if (!text || typeof text !== 'string') {
+          continue
+        }
+
+        let parsed: any
+        try {
+          parsed = JSON.parse(text)
+        } catch {
+          continue
+        }
+
+        // Coerce to required structure
+        const report = {
+          scores: {
+            clarity: Number(parsed?.scores?.clarity ?? 0) || 0,
+            constraints: Number(parsed?.scores?.constraints ?? 0) || 0,
+            safety: Number(parsed?.scores?.safety ?? 0) || 0,
+          },
+          tips: Array.isArray(parsed?.tips) ? parsed.tips.slice(0, 10) : [],
+          risks: Array.isArray(parsed?.risks) ? parsed.risks.slice(0, 10) : [],
+        }
+
+        try {
+          if (service?.verifiability) {
+            await broker.inference.processResponse(service.provider, JSON.stringify(report), data?.id)
+          }
+        } catch {}
+
+        console.log('generated')
+        return NextResponse.json(report)
+      } catch (e: any) {
+        const msg = e?.message || ''
+        if (msg.includes('ServiceNotExist')) {
+          try { await broker.inference.acknowledgeProviderSigner(service.provider) } catch {}
+        }
+      }
+    }
+
+    return NextResponse.json({ error: 'all-providers-failed' }, { status: 502 })
     
   } catch (error: any) {
     console.error('Prompt analysis error:', error)
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

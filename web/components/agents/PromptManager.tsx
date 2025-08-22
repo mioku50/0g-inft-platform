@@ -31,6 +31,7 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
   const [description, setDescription] = useState('')
   const [capabilities, setCapabilities] = useState<string[]>([])
   const [personality, setPersonality] = useState('')
+  const [maxTokens, setMaxTokens] = useState<number>(256)
 
   const { address } = useAccount()
   const { data: walletClient } = useWalletClient()
@@ -50,18 +51,49 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
         }
       } catch {}
       
-      // If empty, fallback to NFT metadata systemPrompt
+      // If empty, fallback to NFT metadata systemPrompt or build one from metadata
       try {
         if (!cancelled && (!currentPrompt || currentPrompt.trim().length === 0)) {
+          const rootHash = agent?.metadataHash
+          if (!rootHash) {
+            // Build from provided agent metadata directly
+            try {
+              const mod = await import('@/lib/prompts/buildSystemPrompt')
+              const metadata = agent?.metadata || {}
+              const sysBuilt = mod.buildSystemPrompt({
+                name: metadata?.name,
+                description: metadata?.description,
+                capabilities: Array.isArray(metadata?.capabilities) ? metadata.capabilities : [],
+                traits: Array.isArray(metadata?.traits) ? metadata.traits : [],
+                skills: Array.isArray(metadata?.skills) ? metadata.skills : [],
+                personality: metadata?.personality,
+              })
+              if (sysBuilt && !cancelled) setCurrentPrompt(sysBuilt)
+            } catch {}
+            return
+          }
           const resp = await fetch('/api/storage/retrieve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tokenId: String(tokenId) })
+            body: JSON.stringify({ rootHash, tokenId: String(tokenId) })
           })
           if (resp.ok) {
             const data = await resp.json()
             const metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
-            const sys = metadata?.systemPrompt || ''
+            let sys = metadata?.systemPrompt || ''
+            if ((!sys || sys.trim().length === 0)) {
+              try {
+                const mod = await import('@/lib/prompts/buildSystemPrompt')
+                sys = mod.buildSystemPrompt({
+                  name: metadata?.name,
+                  description: metadata?.description,
+                  capabilities: Array.isArray(metadata?.capabilities) ? metadata.capabilities : [],
+                  traits: Array.isArray(metadata?.traits) ? metadata.traits : [],
+                  skills: Array.isArray(metadata?.skills) ? metadata.skills : [],
+                  personality: metadata?.personality,
+                })
+              } catch {}
+            }
             if (sys && !cancelled) setCurrentPrompt(sys)
           }
         }
@@ -143,6 +175,7 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
           address,
           message,
           signature,
+          maxTokens,
         })
       })
       
@@ -169,13 +202,22 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
         setActiveTab('current')
         toast({ title: 'Prompt generated and saved', description: 'Current Prompt updated.' })
       } else {
-        let reasonText = result?.reason ? ` (${result.reason})` : ''
-        if (Array.isArray(result?.reasons) && result.reasons.length > 0) {
-          const first = result.reasons[0]
-          const detail = first?.message ? `: ${first.message}` : ''
-          reasonText = ` (${first?.code || 'error'}${detail})`
+        // Insufficient balance UX messages
+        const hasInsufficient = Array.isArray(result?.reasons) && result.reasons.some((r: any) => r?.code === 'provider_http_400_insufficient_balance')
+        if (result?.error === 'insufficient_balance' || hasInsufficient) {
+          if (hasInsufficient) {
+            toast({ title: 'Недостаточно средств, выполняю автопополнение и повтор…' })
+          }
+          toast({ title: 'Generation failed', description: 'insufficient balance. Пополните счёт и повторите.' })
+        } else {
+          let reasonText = result?.reason ? ` (${result.reason})` : ''
+          if (Array.isArray(result?.reasons) && result.reasons.length > 0) {
+            const first = result.reasons[0]
+            const detail = first?.message ? `: ${first.message}` : ''
+            reasonText = ` (${first?.code || 'error'}${detail})`
+          }
+          toast({ title: 'Generation failed', description: (result?.error ? `${result.error}${reasonText}` : 'Please try another provider later.') })
         }
-        toast({ title: 'Generation failed', description: (result?.error ? `${result.error}${reasonText}` : 'Please try another provider later.') })
       }
     } catch (error) {
       toast({ title: 'Generation error', description: (error as any)?.message || 'Unknown error' })
@@ -305,6 +347,17 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
                   onChange={(e) => setPersonality(e.target.value)}
                   className="bg-gray-800 border-gray-700"
                 />
+              </div>
+
+              <div>
+                <Label>Max output tokens</Label>
+                <div className="flex gap-2 mt-1">
+                  {[128, 256, 384].map(v => (
+                    <Button key={v} type="button" variant={maxTokens === v ? 'default' : 'outline'} className="h-8 px-3" onClick={() => setMaxTokens(v)}>
+                      {v}
+                    </Button>
+                  ))}
+                </div>
               </div>
 
               <Button

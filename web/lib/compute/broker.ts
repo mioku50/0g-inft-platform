@@ -38,8 +38,8 @@ export function getAckCacheKey(broker: any, providerAddress: string): string {
   return `${walletAddr || 'unknown'}:${providerAddress}`
 }
 
-// Обеспечиваем наличие и баланс леджера. Числа передаем number/BigInt, строки только в логах
-export async function ensureLedgerBalance(broker: any): Promise<void> {
+// Обеспечиваем наличие и баланс леджера. Если minTopUpOG задан, пополняем минимум на эту сумму.
+export async function ensureLedgerBalance(broker: any, minTopUpOG?: number): Promise<void> {
   try {
     const info = await broker.ledger.getLedger()
     const available = info?.availableBalance ?? 0n
@@ -47,20 +47,24 @@ export async function ensureLedgerBalance(broker: any): Promise<void> {
 
     console.log(`available=${Number(ethers.formatEther(available)).toFixed(4)} OG`)
 
+    // Рассчитываем желаемую сумму пополнения
+    const defaultTopUp = 0.05
+    const desiredTopUp = typeof minTopUpOG === 'number' && isFinite(minTopUpOG) && minTopUpOG > 0 ? minTopUpOG : defaultTopUp
+
     if (available === 0n) {
       try {
-        await broker.ledger.addLedger(0.05)
+        await broker.ledger.addLedger(desiredTopUp)
         const after = await broker.ledger.getLedger()
         console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
       } catch (e: any) {
-        await broker.ledger.depositFund(0.05)
+        await broker.ledger.depositFund(desiredTopUp)
         const after = await broker.ledger.getLedger()
         console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
       }
     } else {
       const availableFloat = Number(ethers.formatEther(available))
       if (availableFloat < 0.01) {
-        await broker.ledger.depositFund(0.05)
+        await broker.ledger.depositFund(desiredTopUp)
         const after = await broker.ledger.getLedger()
         console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
       }
@@ -68,7 +72,9 @@ export async function ensureLedgerBalance(broker: any): Promise<void> {
   } catch (error: any) {
     const msg: string = error?.message || ''
     if (msg.includes('Account does not exist') || msg.includes('not exist')) {
-      await broker.ledger.addLedger(0.05)
+      const defaultTopUp = 0.05
+      const desiredTopUp = typeof minTopUpOG === 'number' && isFinite(minTopUpOG) && minTopUpOG > 0 ? minTopUpOG : defaultTopUp
+      await broker.ledger.addLedger(desiredTopUp)
       const after = await broker.ledger.getLedger().catch(() => null)
       if (after) {
         console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)

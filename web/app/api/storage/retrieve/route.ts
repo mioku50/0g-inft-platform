@@ -7,17 +7,17 @@ export const runtime = 'nodejs'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { rootHash, tokenId } = body
+    // Accept both 'hash' and 'rootHash'
+    let rootHash = body?.hash ?? body?.rootHash
+    const { tokenId } = body
     
-    if (!rootHash && !tokenId) {
-      return NextResponse.json(
-        { error: 'Root hash or token ID is required' },
-        { status: 400 }
-      )
+    // Soft response when missing or invalid
+    if (!rootHash || typeof rootHash !== 'string') {
+      return NextResponse.json({ ok: true, success: true, content: null })
     }
 
     // sanitize rootHash, allow both url and bare hash
-    let cleanRootHash = rootHash
+    let cleanRootHash: any = rootHash
     if (rootHash && typeof rootHash === 'string') {
       if (rootHash.includes('http://') || rootHash.includes('https://')) {
         const parts = rootHash.split('/')
@@ -31,11 +31,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log('Retrieving data for root hash:', cleanRootHash)
+    if (cleanRootHash) {
+      console.log('Retrieving data for root hash:', cleanRootHash)
+    }
 
     try {
       const content = await downloadFromStorage(cleanRootHash)
       return NextResponse.json({
+        ok: true,
         success: true,
         content: typeof content === 'string' ? content : JSON.stringify(content),
         rootHash: cleanRootHash,
@@ -43,10 +46,12 @@ export async function POST(request: NextRequest) {
     } catch (error: any) {
       const msg = error?.message || ''
       const code = error?.code || ''
-      if (code === 'ENOENT') {
-        console.warn('Storage retrieval ENOENT, returning empty content')
-      } else {
-        console.warn('Storage retrieval error:', msg)
+      if (cleanRootHash) {
+        if (code === 'ENOENT') {
+          console.warn('Storage retrieval ENOENT, returning empty content')
+        } else {
+          console.warn('Storage retrieval error:', msg)
+        }
       }
 
       // Если не удалось загрузить, пробуем локальное хранилище
@@ -57,11 +62,11 @@ export async function POST(request: NextRequest) {
           const localDir = path.join(process.cwd(), 'data', 'metadata')
           const localPath = path.join(localDir, `${hash}.json`)
           if (!fsSync.existsSync(localPath)) {
-            return NextResponse.json({ success: true, content: '', rootHash: cleanRootHash, local: true })
+            return NextResponse.json({ ok: true, success: true, content: '', rootHash: cleanRootHash, local: true })
           }
           const fs = require('fs').promises
           const localContent = await fs.readFile(localPath, 'utf-8')
-          return NextResponse.json({ success: true, content: localContent, rootHash: cleanRootHash, local: true })
+          return NextResponse.json({ ok: true, success: true, content: localContent, rootHash: cleanRootHash, local: true })
         } catch {
           // continue to fallback
         }
@@ -71,12 +76,13 @@ export async function POST(request: NextRequest) {
           const localDir = path.join(process.cwd(), 'data', 'metadata')
           const localPath = path.join(localDir, `${cleanRootHash}.json`)
           if (!fsSync.existsSync(localPath)) {
-            return NextResponse.json({ success: true, content: '', rootHash: cleanRootHash, local: true })
+            return NextResponse.json({ ok: true, success: true, content: '', rootHash: cleanRootHash, local: true })
           }
           const fs = require('fs').promises
           const localContent = await fs.readFile(localPath, 'utf-8')
 
           return NextResponse.json({
+            ok: true,
             success: true,
             content: localContent,
             rootHash: cleanRootHash,
@@ -92,6 +98,7 @@ export async function POST(request: NextRequest) {
       const fallbackModel = tokenId && parseInt(tokenId) % 2 === 0 ? 'deepseek-r1-70b' : 'llama-3.3-70b'
 
       return NextResponse.json({
+        ok: true,
         success: true,
         content: JSON.stringify({
           name: fallbackName,
@@ -111,6 +118,7 @@ export async function POST(request: NextRequest) {
     
     // В случае любой ошибки возвращаем базовые метаданные
     return NextResponse.json({
+      ok: true,
       success: true,
       content: JSON.stringify({
         name: 'Unknown Agent',

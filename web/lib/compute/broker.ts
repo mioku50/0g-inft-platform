@@ -38,46 +38,64 @@ export function getAckCacheKey(broker: any, providerAddress: string): string {
   return `${walletAddr || 'unknown'}:${providerAddress}`
 }
 
-// Обеспечиваем наличие и баланс леджера. Если minTopUpOG задан, пополняем минимум на эту сумму.
-export async function ensureLedgerBalance(broker: any, minTopUpOG?: number): Promise<void> {
+// Константа точности леджера (атомарные единицы)
+export const LEDGER_DECIMALS = 15 as const
+
+// пополняет так, чтобы на балансе было не меньше minRequiredOG + reserveOG
+export async function ensureLedgerBalance(
+  broker: any,
+  { minRequiredOG, reserveOG }: { minRequiredOG?: number; reserveOG?: number } = {}
+): Promise<void> {
+  const envReserveDefault = Number(process.env.NEXT_PUBLIC_COMPUTE_RESERVE_OG ?? '0.05')
+  const reserve = Number.isFinite(reserveOG) && (reserveOG as number) > 0 ? (reserveOG as number) : (Number.isFinite(envReserveDefault) && envReserveDefault > 0 ? envReserveDefault : 0.05)
+  const feeRequired = Number.isFinite(minRequiredOG) && (minRequiredOG as number) > 0 ? (minRequiredOG as number) : 0
+
   try {
     const info = await broker.ledger.getLedger()
-    const available = info?.availableBalance ?? 0n
-    const total = info?.totalBalance ?? 0n
+    const availableAtomic: bigint = info?.availableBalance ?? 0n
+    const totalAtomic: bigint = info?.totalBalance ?? 0n
 
-    console.log(`available=${Number(ethers.formatEther(available)).toFixed(4)} OG`)
+    const availableOG = Number(ethers.formatUnits(availableAtomic, LEDGER_DECIMALS))
+    const needOG = feeRequired + reserve
 
-    // Рассчитываем желаемую сумму пополнения
-    const defaultTopUp = 0.05
-    const desiredTopUp = typeof minTopUpOG === 'number' && isFinite(minTopUpOG) && minTopUpOG > 0 ? minTopUpOG : defaultTopUp
+    console.log(
+      `available=${availableOG.toFixed(4)} OG, need>=${needOG.toFixed(4)} OG (fee=${feeRequired.toFixed(4)} OG, reserve=${reserve.toFixed(4)} OG)`
+    )
 
-    if (available === 0n) {
-      try {
-        await broker.ledger.addLedger(desiredTopUp)
-        const after = await broker.ledger.getLedger()
-        console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
-      } catch (e: any) {
-        await broker.ledger.depositFund(desiredTopUp)
-        const after = await broker.ledger.getLedger()
-        console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
+    if (availableOG + 1e-12 < needOG) {
+      const missingOG = Math.max(0, needOG - availableOG)
+
+      if (totalAtomic === 0n) {
+        // Аккаунт существует логически с total=0? Пополняем через addLedger
+        const initAmountOG = missingOG
+        const tx = await broker.ledger.addLedger(initAmountOG)
+        if (tx && typeof tx.wait === 'function') {
+          await tx.wait()
+        }
+      } else {
+        const tx = await broker.ledger.depositFund(missingOG)
+        if (tx && typeof tx.wait === 'function') {
+          await tx.wait()
+        }
       }
-    } else {
-      const availableFloat = Number(ethers.formatEther(available))
-      if (availableFloat < 0.01) {
-        await broker.ledger.depositFund(desiredTopUp)
-        const after = await broker.ledger.getLedger()
-        console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
-      }
+
+      const after = await broker.ledger.getLedger().catch(() => null)
+      const afterAvailableOG = after ? Number(ethers.formatUnits(after?.availableBalance ?? 0n, LEDGER_DECIMALS)) : availableOG
+      console.log(`toppedUp by ${missingOG.toFixed(4)} OG → available=${afterAvailableOG.toFixed(4)} OG`)
     }
   } catch (error: any) {
     const msg: string = error?.message || ''
     if (msg.includes('Account does not exist') || msg.includes('not exist')) {
-      const defaultTopUp = 0.05
-      const desiredTopUp = typeof minTopUpOG === 'number' && isFinite(minTopUpOG) && minTopUpOG > 0 ? minTopUpOG : defaultTopUp
-      await broker.ledger.addLedger(desiredTopUp)
+      const needOG = (Number.isFinite(minRequiredOG) && (minRequiredOG as number) > 0 ? (minRequiredOG as number) : 0) + (Number.isFinite(reserveOG) && (reserveOG as number) > 0 ? (reserveOG as number) : (Number(process.env.NEXT_PUBLIC_COMPUTE_RESERVE_OG ?? '0.05') || 0.05))
+      const initAmountOG = Math.max(needOG, 0.01)
+      const tx = await broker.ledger.addLedger(initAmountOG)
+      if (tx && typeof tx.wait === 'function') {
+        await tx.wait()
+      }
       const after = await broker.ledger.getLedger().catch(() => null)
       if (after) {
-        console.log(`available=${Number(ethers.formatEther(after?.availableBalance ?? 0n)).toFixed(4)} OG`)
+        const afterAvailableOG = Number(ethers.formatUnits(after?.availableBalance ?? 0n, LEDGER_DECIMALS))
+        console.log(`available=${afterAvailableOG.toFixed(4)} OG`)
       }
       return
     }

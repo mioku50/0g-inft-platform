@@ -79,22 +79,24 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
           })
           if (resp.ok) {
             const data = await resp.json()
-            const metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
-            let sys = metadata?.systemPrompt || ''
-            if ((!sys || sys.trim().length === 0)) {
-              try {
-                const mod = await import('@/lib/prompts/buildSystemPrompt')
-                sys = mod.buildSystemPrompt({
-                  name: metadata?.name,
-                  description: metadata?.description,
-                  capabilities: Array.isArray(metadata?.capabilities) ? metadata.capabilities : [],
-                  traits: Array.isArray(metadata?.traits) ? metadata.traits : [],
-                  skills: Array.isArray(metadata?.skills) ? metadata.skills : [],
-                  personality: metadata?.personality,
-                })
-              } catch {}
+            if (data?.content) {
+              const metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
+              let sys = metadata?.systemPrompt || ''
+              if ((!sys || sys.trim().length === 0)) {
+                try {
+                  const mod = await import('@/lib/prompts/buildSystemPrompt')
+                  sys = mod.buildSystemPrompt({
+                    name: metadata?.name,
+                    description: metadata?.description,
+                    capabilities: Array.isArray(metadata?.capabilities) ? metadata.capabilities : [],
+                    traits: Array.isArray(metadata?.traits) ? metadata.traits : [],
+                    skills: Array.isArray(metadata?.skills) ? metadata.skills : [],
+                    personality: metadata?.personality,
+                  })
+                } catch {}
+              }
+              if (sys && !cancelled) setCurrentPrompt(sys)
             }
-            if (sys && !cancelled) setCurrentPrompt(sys)
           }
         }
       } catch {}
@@ -187,32 +189,42 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
             const saveRes = await fetch('/api/prompt', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ agentId: tokenId, tokenId, prompt: result.prompt })
+              body: JSON.stringify({ tokenId, prompt: result.prompt })
             })
             const saveData = await saveRes.json()
             if (saveRes.ok && saveData?.ok) {
               setLastUpdated(saveData.updatedAt || Date.now())
+              toast({ title: 'Saved', description: 'Prompt has been updated.' })
+            } else {
+              toast({ title: 'Save failed', description: saveData?.error || 'Unknown error' })
             }
-          } catch {}
+          } catch (e: any) {
+            toast({ title: 'Save failed', description: e?.message || 'Unknown error' })
+          }
         }
         setCurrentPrompt(result.prompt)
         setActiveProvider(result.provider || null)
         setActiveModel(result.model || null)
         setAnalysis(null)
         setActiveTab('current')
-        toast({ title: 'Prompt generated and saved', description: 'Current Prompt updated.' })
+        toast({ title: 'Prompt generated', description: 'Current Prompt updated.' })
       } else {
         // Insufficient balance UX messages
-        const hasInsufficient = Array.isArray(result?.reasons) && result.reasons.some((r: any) => r?.code === 'provider_http_400_insufficient_balance')
-        if (result?.error === 'insufficient_balance' || hasInsufficient) {
-          if (hasInsufficient) {
-            toast({ title: 'Недостаточно средств, выполняю автопополнение и повтор…' })
+        const reasons = Array.isArray(result?.reasons) ? result.reasons : []
+        const insufficientFirstTry = result?.error === 'insufficient_balance'
+        const retried = reasons.some((r: any) => r?.code === 'insufficient_balance')
+        if (insufficientFirstTry) {
+          // Backend already tried to top up and possibly retried
+          if (retried) {
+            toast({ title: 'Auto top-up & retry…', description: 'Попытка автопополнения и повторного запроса.' })
           }
-          toast({ title: 'Generation failed', description: 'insufficient balance. Пополните счёт и повторите.' })
+          const first = reasons[0]
+          const detail = first?.message ? `: ${first.message}` : ''
+          toast({ title: 'Generation failed', description: `insufficient_balance${detail}` })
         } else {
           let reasonText = result?.reason ? ` (${result.reason})` : ''
-          if (Array.isArray(result?.reasons) && result.reasons.length > 0) {
-            const first = result.reasons[0]
+          if (Array.isArray(reasons) && reasons.length > 0) {
+            const first = reasons[0]
             const detail = first?.message ? `: ${first.message}` : ''
             reasonText = ` (${first?.code || 'error'}${detail})`
           }
@@ -300,11 +312,24 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
                 </Button>
                 
                 <Button
-                  onClick={() => {
+                  onClick={async () => {
+                    if (!tokenId) {
+                      toast({ title: 'Save failed', description: 'Missing tokenId' })
+                      return
+                    }
                     try {
-                      onUpdate(currentPrompt)
-                      toast({ title: 'Saved', description: 'Prompt has been updated.' })
-                      onClose()
+                      const res = await fetch('/api/prompt', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tokenId, prompt: currentPrompt })
+                      })
+                      const data = await res.json()
+                      if (res.ok && data?.ok) {
+                        setLastUpdated(data.updatedAt || Date.now())
+                        toast({ title: 'Saved', description: 'Prompt has been updated.' })
+                      } else {
+                        toast({ title: 'Save failed', description: data?.error || 'Unknown error' })
+                      }
                     } catch (e: any) {
                       toast({ title: 'Save failed', description: e?.message || 'Unknown error' })
                     }

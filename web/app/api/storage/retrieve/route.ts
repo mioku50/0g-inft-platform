@@ -11,9 +11,9 @@ export async function POST(request: NextRequest) {
     let rootHash = body?.hash ?? body?.rootHash
     const { tokenId } = body
     
-    // Soft response when missing or invalid
+    // If neither provided or invalid, return soft empty without logs
     if (!rootHash || typeof rootHash !== 'string') {
-      return NextResponse.json({ ok: true, success: true, content: null })
+      return NextResponse.json({ ok: true, content: null })
     }
 
     // sanitize rootHash, allow both url and bare hash
@@ -31,27 +31,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (cleanRootHash) {
-      console.log('Retrieving data for root hash:', cleanRootHash)
+    if (!cleanRootHash || typeof cleanRootHash !== 'string') {
+      return NextResponse.json({ ok: true, content: null })
     }
 
     try {
       const content = await downloadFromStorage(cleanRootHash)
       return NextResponse.json({
         ok: true,
-        success: true,
         content: typeof content === 'string' ? content : JSON.stringify(content),
         rootHash: cleanRootHash,
       })
     } catch (error: any) {
-      const msg = error?.message || ''
       const code = error?.code || ''
-      if (cleanRootHash) {
-        if (code === 'ENOENT') {
-          console.warn('Storage retrieval ENOENT, returning empty content')
-        } else {
-          console.warn('Storage retrieval error:', msg)
-        }
+      // ENOENT or not found → return soft empty
+      if (code === 'ENOENT') {
+        return NextResponse.json({ ok: true, content: null, rootHash: cleanRootHash })
       }
 
       // Если не удалось загрузить, пробуем локальное хранилище
@@ -62,11 +57,11 @@ export async function POST(request: NextRequest) {
           const localDir = path.join(process.cwd(), 'data', 'metadata')
           const localPath = path.join(localDir, `${hash}.json`)
           if (!fsSync.existsSync(localPath)) {
-            return NextResponse.json({ ok: true, success: true, content: '', rootHash: cleanRootHash, local: true })
+            return NextResponse.json({ ok: true, content: null, rootHash: cleanRootHash })
           }
           const fs = require('fs').promises
           const localContent = await fs.readFile(localPath, 'utf-8')
-          return NextResponse.json({ ok: true, success: true, content: localContent, rootHash: cleanRootHash, local: true })
+          return NextResponse.json({ ok: true, content: localContent, rootHash: cleanRootHash })
         } catch {
           // continue to fallback
         }
@@ -76,60 +71,31 @@ export async function POST(request: NextRequest) {
           const localDir = path.join(process.cwd(), 'data', 'metadata')
           const localPath = path.join(localDir, `${cleanRootHash}.json`)
           if (!fsSync.existsSync(localPath)) {
-            return NextResponse.json({ ok: true, success: true, content: '', rootHash: cleanRootHash, local: true })
+            return NextResponse.json({ ok: true, content: null, rootHash: cleanRootHash })
           }
           const fs = require('fs').promises
           const localContent = await fs.readFile(localPath, 'utf-8')
 
           return NextResponse.json({
             ok: true,
-            success: true,
             content: localContent,
             rootHash: cleanRootHash,
-            local: true,
           })
         } catch {
           // continue to fallback
         }
       }
       
-      // Если у нас есть tokenId, генерируем метаданные на основе него
+      // Если у нас есть tokenId, генерируем минимальные метаданные на основе него
       const fallbackName = tokenId ? `AI Agent #${tokenId}` : 'Unknown Agent'
-      const fallbackModel = tokenId && parseInt(tokenId) % 2 === 0 ? 'deepseek-r1-70b' : 'llama-3.3-70b'
-
       return NextResponse.json({
         ok: true,
-        success: true,
-        content: JSON.stringify({
-          name: fallbackName,
-          description: 'Metadata not available',
-          model: fallbackModel,
-          personality: 'friendly',
-          skills: ['chat'],
-          image: `https://api.dicebear.com/7.x/bottts/svg?seed=${tokenId || 'default'}`,
-          error: 'metadata_not_found',
-          rootHash: cleanRootHash,
-        }),
+        content: JSON.stringify({ name: fallbackName, description: 'Metadata not available', rootHash: cleanRootHash }),
         rootHash: cleanRootHash || 'unknown',
       })
     }
-  } catch (error: any) {
-    console.warn('Retrieve route error:', error?.message || error)
-    
-    // В случае любой ошибки возвращаем базовые метаданные
-    return NextResponse.json({
-      ok: true,
-      success: true,
-      content: JSON.stringify({
-        name: 'Unknown Agent',
-        description: 'Metadata retrieval failed',
-        model: 'llama-3.3-70b',
-        personality: 'friendly',
-        skills: ['chat'],
-        error: 'retrieval_error',
-        errorDetails: error.message
-      }),
-      rootHash: 'error'
-    })
+  } catch {
+    // Any parse/body error → soft empty
+    return NextResponse.json({ ok: true, content: null })
   }
 }

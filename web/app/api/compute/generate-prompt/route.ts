@@ -1,6 +1,6 @@
 // web/app/api/compute/generate-prompt/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { createBrokerWithEnvPK, ensureLedgerBalance, acknowledgeProviderIfNeeded } from '@/lib/compute/broker'
+import { createBrokerWithEnvPK, ensureLedgerBalance, acknowledgeProviderIfNeeded, LEDGER_DECIMALS } from '@/lib/compute/broker'
 import { ethers } from 'ethers'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import { getServerProvider } from '@/lib/server/provider'
@@ -116,26 +116,27 @@ export async function POST(request: NextRequest) {
         console.log(`prov=${service.provider} status=${resp.status} len=${rawText.length} body_snippet=${JSON.stringify(snippet)}`)
 
         // Handle insufficient balance specifically (HTTP 400)
-        if (resp.status === 400) {
-          const txt = rawText
-          if (/insufficient balance/i.test(txt)) {
-            const m = txt.match(/total fee of (\d+) exceeds the available balance of (\d+)/i)
-            if (m) {
-              try {
-                const needed = BigInt(m[1]); const have = BigInt(m[2]);
-                const deficitOG = Number(needed - have) / 1e18;
-                const topUp = Math.max(0.02, deficitOG * 2);
-                // Top-up and retry once with new headers
-                await ensureLedgerBalance(broker, topUp)
-                const headers2 = await broker.inference.getRequestHeaders(service.provider, userDescription || 'generate-system-prompt')
-                resp = await makeRequest(headers2)
-                rawText = await resp.text()
-                snippet = rawText.slice(0, 200)
-                console.log(`prov=${service.provider} retry status=${resp.status} len=${rawText.length} body_snippet=${JSON.stringify(snippet)}`)
-              } catch (topupErr: any) {
-                errors.push({ provider: service.provider, code: 'provider_http_400_insufficient_balance', message: (topupErr?.message || snippet), httpStatus: 400 })
-                continue
-              }
+        if (!resp.ok && /insufficient balance/i.test(rawText)) {
+          const m = rawText.match(/total fee of (\d+) exceeds the available balance of (\d+)/i)
+          if (m) {
+            try {
+              const neededAtomic = BigInt(m[1])
+              const haveAtomic = BigInt(m[2])
+              const requiredOG = Number(ethers.formatUnits(neededAtomic, LEDGER_DECIMALS))
+              const availableOG = Number(ethers.formatUnits(haveAtomic, LEDGER_DECIMALS))
+              const minRequiredOG = requiredOG + 0.01
+              // Log before top-up
+              console.log(`available=${availableOG.toFixed(4)} OG, need>=${minRequiredOG.toFixed(4)} OG (fee=${requiredOG.toFixed(4)} OG, reserve=${(Number(process.env.NEXT_PUBLIC_COMPUTE_RESERVE_OG ?? '0.05') || 0.05).toFixed(4)} OG)`)            
+              await ensureLedgerBalance(broker, { minRequiredOG, reserveOG: Number(process.env.NEXT_PUBLIC_COMPUTE_RESERVE_OG ?? '0.05') || 0.05 })
+              console.log(`retrying provider=${service.provider}`)
+              const headers2 = await broker.inference.getRequestHeaders(service.provider, userDescription || 'generate-system-prompt')
+              resp = await makeRequest(headers2)
+              rawText = await resp.text()
+              snippet = rawText.slice(0, 200)
+              console.log(`prov=${service.provider} retry status=${resp.status} len=${rawText.length} body_snippet=${JSON.stringify(snippet)}`)
+            } catch (topupErr: any) {
+              errors.push({ provider: service.provider, code: 'insufficient_balance', message: (topupErr?.message || snippet), httpStatus: resp.status })
+              continue
             }
           }
         }
@@ -143,8 +144,8 @@ export async function POST(request: NextRequest) {
         if (!resp.ok) {
           if (resp.status === 400 && /headers?\s+.*used/i.test(rawText)) {
             errors.push({ provider: service.provider, code: 'headers_used', message: snippet, httpStatus: 400 })
-          } else if (resp.status === 400 && /insufficient balance/i.test(rawText)) {
-            errors.push({ provider: service.provider, code: 'provider_http_400_insufficient_balance', message: snippet, httpStatus: 400 })
+          } else if (/insufficient balance/i.test(rawText)) {
+            errors.push({ provider: service.provider, code: resp.status >= 500 ? 'http_5xx' : 'insufficient_balance', message: snippet, httpStatus: resp.status })
           } else {
             const code = resp.status >= 500 ? 'http_5xx' : resp.status >= 400 ? `http_${resp.status}` : `http_${resp.status}`
             errors.push({ provider: service.provider, code, httpStatus: resp.status, message: snippet })
@@ -196,7 +197,7 @@ export async function POST(request: NextRequest) {
         if (msg.includes('headers') && msg.includes('used')) {
           errors.push({ provider: service.provider, code: 'headers_used', message: msg })
         } else if (/insufficient/i.test(msg)) {
-          errors.push({ provider: service.provider, code: 'provider_http_400_insufficient_balance', message: msg })
+          errors.push({ provider: service.provider, code: 'insufficient_balance', message: msg })
         } else if (msg.includes('timeout')) {
           errors.push({ provider: service.provider, code: 'timeout', message: msg })
         } else {
@@ -207,8 +208,8 @@ export async function POST(request: NextRequest) {
     }
 
     const first = errors[0]
-    // Map insufficient to top-level error if present
-    const insufficient = errors.find(e => e.code === 'provider_http_400_insufficient_balance')
+    // Determine top-level error and status
+    const insufficient = errors.find(e => e.code === 'insufficient_balance')
     const topLevelError = insufficient ? 'insufficient_balance' : 'all-providers-failed'
     const status = insufficient ? 402 : 502
     return NextResponse.json({ ok: false, error: topLevelError, reasons: errors, reason: first?.code, details: first }, { status })

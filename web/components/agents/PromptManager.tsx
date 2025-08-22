@@ -42,11 +42,28 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
     async function loadCurrentPrompt() {
       if (!isOpen || !tokenId) return
       try {
-        const res = await fetch(`/api/prompt?agentId=${tokenId}`)
+        const res = await fetch(`/api/prompt?tokenId=${tokenId}`)
         const data = await res.json()
         if (!cancelled && data) {
           if (typeof data.prompt === 'string') setCurrentPrompt(data.prompt)
           if (typeof data.updatedAt === 'number') setLastUpdated(data.updatedAt)
+        }
+      } catch {}
+      
+      // If empty, fallback to NFT metadata systemPrompt
+      try {
+        if (!cancelled && (!currentPrompt || currentPrompt.trim().length === 0)) {
+          const resp = await fetch('/api/storage/retrieve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tokenId: String(tokenId) })
+          })
+          if (resp.ok) {
+            const data = await resp.json()
+            const metadata = typeof data.content === 'string' ? JSON.parse(data.content) : data.content
+            const sys = metadata?.systemPrompt || ''
+            if (sys && !cancelled) setCurrentPrompt(sys)
+          }
         }
       } catch {}
     }
@@ -112,6 +129,7 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
         return
       }
       const message = buildMessage('generate')
+      // Awaiting signature UI state reflected by isGenerating + button label
       const signature = await walletClient.signMessage({ account: address as `0x${string}`, message })
       const response = await fetch('/api/compute/generate-prompt', {
         method: 'POST',
@@ -295,7 +313,7 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
                 className="w-full bg-gradient-to-r from-purple-500 to-pink-500"
               >
                 {isGenerating ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...</>
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Awaiting signature / Generating...</>
                 ) : (
                   <><Sparkles className="mr-2 h-4 w-4" /> Generate Prompt</>
                 )}

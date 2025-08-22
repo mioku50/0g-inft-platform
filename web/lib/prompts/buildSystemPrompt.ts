@@ -5,6 +5,7 @@ export interface BuildSystemPromptParams {
   personality?: string
   expertise?: string
   skills?: string[]
+  traits?: string[]
   customInstructions?: string
 }
 
@@ -37,6 +38,7 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   const expertise = (params.expertise || '').trim()
   const skills = normalizeList(params.skills)
   const capabilities = normalizeList(params.capabilities)
+  const traits = normalizeList(params.traits)
   const personality = (params.personality || '').trim()
   const customInstructions = (params.customInstructions || '').trim()
 
@@ -49,6 +51,10 @@ export function buildSystemPrompt(params: BuildSystemPromptParams): string {
   const personalityBlock = describePersonality(personality)
   if (personalityBlock) {
     prompt += `\n\n${personalityBlock}`
+  }
+
+  if (traits.length > 0) {
+    prompt += `\n\nCore traits: ${traits.join(', ')}.`
   }
 
   if (expertise) {

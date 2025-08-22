@@ -165,6 +165,7 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
       const message = buildMessage('generate')
       // Awaiting signature UI state reflected by isGenerating + button label
       const signature = await walletClient.signMessage({ account: address as `0x${string}`, message })
+      toast({ title: 'Generating…', description: 'Calling 0G provider…' })
       const response = await fetch('/api/compute/generate-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -183,7 +184,10 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
       
       const result = await response.json()
       if (response.ok && result?.prompt) {
-        // Save prompt via API
+        if (result?.autoTopUp) {
+          toast({ title: 'Автодозаправка и повтор…', description: 'Попытка автопополнения и повторного запроса.' })
+        }
+        // Save prompt via API (keep current behavior)
         if (tokenId) {
           try {
             const saveRes = await fetch('/api/prompt', {
@@ -194,41 +198,44 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
             const saveData = await saveRes.json()
             if (saveRes.ok && saveData?.ok) {
               setLastUpdated(saveData.updatedAt || Date.now())
-              toast({ title: 'Saved', description: 'Prompt has been updated.' })
-            } else {
-              toast({ title: 'Save failed', description: saveData?.error || 'Unknown error' })
             }
-          } catch (e: any) {
-            toast({ title: 'Save failed', description: e?.message || 'Unknown error' })
-          }
+          } catch {}
         }
         setCurrentPrompt(result.prompt)
         setActiveProvider(result.provider || null)
         setActiveModel(result.model || null)
         setAnalysis(null)
         setActiveTab('current')
-        toast({ title: 'Prompt generated', description: 'Current Prompt updated.' })
+        toast({ title: 'Prompt generated and saved', description: 'Current Prompt updated.' })
       } else {
-        // Insufficient balance UX messages
-        const reasons = Array.isArray(result?.reasons) ? result.reasons : []
-        const insufficientFirstTry = result?.error === 'insufficient_balance'
-        const retried = reasons.some((r: any) => r?.code === 'insufficient_balance')
-        if (insufficientFirstTry) {
-          // Backend already tried to top up and possibly retried
-          if (retried) {
-            toast({ title: 'Auto top-up & retry…', description: 'Попытка автопополнения и повторного запроса.' })
+        // Handle insufficient balance mapping from backend
+        if (result?.ok === false && result?.error === 'insufficient_balance') {
+          const short = (addr?: string) => {
+            if (!addr || addr.length < 10) return addr || ''
+            return `${addr.slice(0, 6)}…${addr.slice(-4)}`
           }
-          const first = reasons[0]
-          const detail = first?.message ? `: ${first.message}` : ''
-          toast({ title: 'Generation failed', description: `insufficient_balance${detail}` })
+          if (result?.reason === 'payee_unsupported') {
+            toast({
+              title: 'Недостаточно средств',
+              description: `SDK не позволяет пополнить леджер плательщика из кода. Пополните вручную: ${result?.payee || 'unknown'}`,
+              variant: 'destructive'
+            })
+          } else if (result?.reason === 'provider_fee_exceeds_balance') {
+            const need = typeof result?.need === 'number' ? result.need : undefined
+            toast({
+              title: 'Недостаточно средств',
+              description: `Недостаточно средств на леджере плательщика ${short(result?.payee)}. Требуется ≈ ${need !== undefined ? need : '—'} OG`,
+              variant: 'destructive'
+            })
+          } else {
+            toast({ title: 'Generation failed', description: 'insufficient_balance', variant: 'destructive' })
+          }
         } else {
-          let reasonText = result?.reason ? ` (${result.reason})` : ''
-          if (Array.isArray(reasons) && reasons.length > 0) {
-            const first = reasons[0]
-            const detail = first?.message ? `: ${first.message}` : ''
-            reasonText = ` (${first?.code || 'error'}${detail})`
+          if (result?.autoTopUp) {
+            toast({ title: 'Автодозаправка и повтор…', description: 'Попытка автопополнения и повторного запроса.' })
           }
-          toast({ title: 'Generation failed', description: (result?.error ? `${result.error}${reasonText}` : 'Please try another provider later.') })
+          const code = result?.error || 'provider_error'
+          toast({ title: 'Generation failed', description: String(code) })
         }
       }
     } catch (error) {

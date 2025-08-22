@@ -39,62 +39,152 @@ export function getAckCacheKey(broker: any, providerAddress: string): string {
 }
 
 // Константа точности леджера (атомарные единицы)
-export const LEDGER_DECIMALS = 15 as const
+export const LEDGER_DECIMALS = 15n as const
 
 // пополняет так, чтобы на балансе было не меньше minRequiredOG + reserveOG
 export async function ensureLedgerBalance(
   broker: any,
-  { minRequiredOG, reserveOG }: { minRequiredOG?: number; reserveOG?: number } = {}
-): Promise<void> {
+  { minRequiredOG, reserveOG, payee }: { minRequiredOG?: number; reserveOG?: number; payee?: string } = {}
+): Promise<void | 'payee_unsupported'> {
+  const decimals = Number(LEDGER_DECIMALS)
   const envReserveDefault = Number(process.env.NEXT_PUBLIC_COMPUTE_RESERVE_OG ?? '0.05')
   const reserve = Number.isFinite(reserveOG) && (reserveOG as number) > 0 ? (reserveOG as number) : (Number.isFinite(envReserveDefault) && envReserveDefault > 0 ? envReserveDefault : 0.05)
   const feeRequired = Number.isFinite(minRequiredOG) && (minRequiredOG as number) > 0 ? (minRequiredOG as number) : 0
 
+  const needOG = feeRequired + reserve
+
+  // Helper for shortening address in logs
+  const short = (addr?: string) => {
+    if (!addr || addr.length < 10) return addr || ''
+    return `${addr.slice(0, 4)}…${addr.slice(-3)}`
+  }
+
   try {
-    const info = await broker.ledger.getLedger()
+    let info: any
+    const wantPayee = typeof payee === 'string' && payee.length > 0
+
+    // Чтение баланса (с попыткой передать payee, если задан)
+    if (wantPayee) {
+      try {
+        // Попробуем вызвать с адресом. Если SDK не поддерживает — вернём специальную ошибку.
+        if (typeof broker?.ledger?.getLedger === 'function' && broker.ledger.getLedger.length >= 1) {
+          info = await broker.ledger.getLedger(payee)
+        } else {
+          console.warn('[ledger] WARN: SDK does not support getLedger(payee)')
+          return 'payee_unsupported'
+        }
+      } catch (e: any) {
+        console.warn('[ledger] WARN: getLedger(payee) failed:', e?.message || String(e))
+        return 'payee_unsupported'
+      }
+    } else {
+      info = await broker.ledger.getLedger()
+    }
+
     const availableAtomic: bigint = info?.availableBalance ?? 0n
     const totalAtomic: bigint = info?.totalBalance ?? 0n
 
-    const availableOG = Number(ethers.formatUnits(availableAtomic, LEDGER_DECIMALS))
-    const needOG = feeRequired + reserve
+    const availableOG = Number(ethers.formatUnits(availableAtomic, decimals))
 
     console.log(
-      `available=${availableOG.toFixed(4)} OG, need>=${needOG.toFixed(4)} OG (fee=${feeRequired.toFixed(4)} OG, reserve=${reserve.toFixed(4)} OG)`
+      `[ledger]${wantPayee ? ` payee=${short(payee)}` : ''} available=${availableOG.toFixed(4)} OG, need>=${needOG.toFixed(4)} OG (fee=${feeRequired.toFixed(4)} OG, reserve=${reserve.toFixed(4)} OG)`
     )
 
     if (availableOG + 1e-12 < needOG) {
       const missingOG = Math.max(0, needOG - availableOG)
+      const missingAtomic = ethers.parseUnits(missingOG.toFixed(decimals), decimals)
 
+      // Если аккаунт не создан → addLedger, иначе → depositFund
       if (totalAtomic === 0n) {
-        // Аккаунт существует логически с total=0? Пополняем через addLedger
-        const initAmountOG = missingOG
-        const tx = await broker.ledger.addLedger(initAmountOG)
-        if (tx && typeof tx.wait === 'function') {
-          await tx.wait()
+        try {
+          let tx: any
+          if (wantPayee) {
+            if (typeof broker?.ledger?.addLedger === 'function' && broker.ledger.addLedger.length >= 2) {
+              tx = await broker.ledger.addLedger(missingAtomic, payee)
+            } else {
+              console.warn('[ledger] WARN: SDK does not support addLedger(amount, payee)')
+              return 'payee_unsupported'
+            }
+          } else {
+            tx = await broker.ledger.addLedger(missingAtomic)
+          }
+          if (tx && typeof tx.wait === 'function') {
+            const receipt = await tx.wait()
+            const hash = (tx as any)?.hash || (receipt as any)?.transactionHash
+            console.log(`[ledger] addLedger OK: hash=${hash || 'unknown'}`)
+          }
+        } catch (e: any) {
+          const msg: string = e?.message || ''
+          if (msg.includes('Account does not exist')) {
+            // Повторим через addLedger без проверки totalAtomic
+            let tx: any
+            if (wantPayee) {
+              if (typeof broker?.ledger?.addLedger === 'function' && broker.ledger.addLedger.length >= 2) {
+                tx = await broker.ledger.addLedger(missingAtomic, payee)
+              } else {
+                console.warn('[ledger] WARN: SDK does not support addLedger(amount, payee)')
+                return 'payee_unsupported'
+              }
+            } else {
+              tx = await broker.ledger.addLedger(missingAtomic)
+            }
+            if (tx && typeof tx.wait === 'function') {
+              const receipt = await tx.wait()
+              const hash = (tx as any)?.hash || (receipt as any)?.transactionHash
+              console.log(`[ledger] addLedger OK: hash=${hash || 'unknown'}`)
+            }
+          } else {
+            console.error('Failed to addLedger:', msg)
+            throw e
+          }
         }
       } else {
-        const tx = await broker.ledger.depositFund(missingOG)
-        if (tx && typeof tx.wait === 'function') {
-          await tx.wait()
+        let tx: any
+        if (wantPayee) {
+          if (typeof broker?.ledger?.depositFund === 'function' && broker.ledger.depositFund.length >= 2) {
+            tx = await broker.ledger.depositFund(missingAtomic, payee)
+          } else {
+            console.warn('[ledger] WARN: SDK does not support depositFund(amount, payee)')
+            return 'payee_unsupported'
+          }
+        } else {
+          tx = await broker.ledger.depositFund(missingAtomic)
         }
-      }
+        if (tx && typeof tx.wait === 'function') {
+          const receipt = await tx.wait()
+          const hash = (tx as any)?.hash || (receipt as any)?.transactionHash
+          console.log(`[ledger] deposit OK: hash=${hash || 'unknown'}`)
+        }
 
-      const after = await broker.ledger.getLedger().catch(() => null)
-      const afterAvailableOG = after ? Number(ethers.formatUnits(after?.availableBalance ?? 0n, LEDGER_DECIMALS)) : availableOG
-      console.log(`toppedUp by ${missingOG.toFixed(4)} OG → available=${afterAvailableOG.toFixed(4)} OG`)
+        const after = wantPayee
+          ? await (async () => {
+              try {
+                return await broker.ledger.getLedger(payee)
+              } catch {
+                return null
+              }
+            })()
+          : await broker.ledger.getLedger().catch(() => null)
+        const afterAvailableOG = after ? Number(ethers.formatUnits(after?.availableBalance ?? 0n, decimals)) : availableOG
+        console.log(`toppedUp by ${missingOG.toFixed(4)} OG → available=${afterAvailableOG.toFixed(4)} OG`)
+      }
     }
   } catch (error: any) {
     const msg: string = error?.message || ''
     if (msg.includes('Account does not exist') || msg.includes('not exist')) {
-      const needOG = (Number.isFinite(minRequiredOG) && (minRequiredOG as number) > 0 ? (minRequiredOG as number) : 0) + (Number.isFinite(reserveOG) && (reserveOG as number) > 0 ? (reserveOG as number) : (Number(process.env.NEXT_PUBLIC_COMPUTE_RESERVE_OG ?? '0.05') || 0.05))
-      const initAmountOG = Math.max(needOG, 0.01)
-      const tx = await broker.ledger.addLedger(initAmountOG)
+      const reserveResolved = Number.isFinite(reserveOG) && (reserveOG as number) > 0 ? (reserveOG as number) : (Number(process.env.NEXT_PUBLIC_COMPUTE_RESERVE_OG ?? '0.05') || 0.05)
+      const needResolved = (Number.isFinite(minRequiredOG) && (minRequiredOG as number) > 0 ? (minRequiredOG as number) : 0) + reserveResolved
+      const initAmountOG = Math.max(needResolved, 0.01)
+      const initAtomic = ethers.parseUnits(initAmountOG.toFixed(Number(LEDGER_DECIMALS)), Number(LEDGER_DECIMALS))
+      const tx = await broker.ledger.addLedger(initAtomic)
       if (tx && typeof tx.wait === 'function') {
-        await tx.wait()
+        const receipt = await tx.wait()
+        const hash = (tx as any)?.hash || (receipt as any)?.transactionHash
+        console.log(`[ledger] addLedger OK: hash=${hash || 'unknown'}`)
       }
       const after = await broker.ledger.getLedger().catch(() => null)
       if (after) {
-        const afterAvailableOG = Number(ethers.formatUnits(after?.availableBalance ?? 0n, LEDGER_DECIMALS))
+        const afterAvailableOG = Number(ethers.formatUnits(after?.availableBalance ?? 0n, Number(LEDGER_DECIMALS)))
         console.log(`available=${afterAvailableOG.toFixed(4)} OG`)
       }
       return

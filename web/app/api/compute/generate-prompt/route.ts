@@ -62,22 +62,26 @@ export async function POST(request: NextRequest) {
       })
     console.log(`services=${services.length}`)
 
-    // 2) Ensure ledger (create/deposit) before ACK
-    await ensureLedgerBalance(broker)
-
     if (services.length === 0) {
       return NextResponse.json({ error: 'no-services' }, { status: 503 })
     }
 
-    // 3) Try providers sequentially; single-use headers per attempt
-    const errors: Array<{ provider: string; code: string; message?: string; httpStatus?: number }> = []
+    const short = (addr?: string) => {
+      if (!addr || addr.length < 10) return addr || ''
+      return `${addr.slice(0, 4)}…${addr.slice(-3)}`
+    }
+
+    // 2) Try providers sequentially; single-use headers per attempt
     for (const service of services) {
+      let autoTopUp = false
       try {
         // ACK (safe, cached)
         await acknowledgeProviderIfNeeded(broker, service.provider)
 
-        // Metadata and headers
+        // Metadata (for logs)
         const { endpoint, model } = await broker.inference.getServiceMetadata(service.provider)
+
+        // Build request body factory
         const buildBody = () => ({
           model,
           messages: [
@@ -90,7 +94,6 @@ export async function POST(request: NextRequest) {
         })
 
         const makeRequest = async (headers: Record<string, string>) => {
-          // 35s timeout
           const controller = new AbortController()
           const timeout = setTimeout(() => controller.abort(), 35000)
           try {
@@ -105,65 +108,99 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // First attempt
+        // Generate headers (first time) to extract payee
         let headers = await broker.inference.getRequestHeaders(service.provider, userDescription || 'generate-system-prompt')
-        console.log('headers=OK')
-        let resp = await makeRequest(headers)
+        console.log('headers=OK', { provider: service.provider })
+        try { console.debug('headers_debug', headers) } catch {}
 
-        // Read raw text first
+        // Extract payee from headers
+        const headerKeys = Object.keys(headers || {}).reduce((acc: Record<string, string>, k) => {
+          acc[k.toLowerCase()] = headers[k]
+          return acc
+        }, {})
+        let payee: string | undefined = headerKeys['x-og-ledger-owner'] || headerKeys['x-og-account'] || headerKeys['x-0g-user']
+        if (!payee) {
+          payee = (broker as any)?.__walletAddress
+          console.warn('WARN: payee not found in headers; falling back to owner', { owner: short(payee) })
+        }
+        console.log(`headers=OK payee=${short(payee)}`)
+
+        // Ensure min balance before first request
+        const ensure1 = await ensureLedgerBalance(broker, { payee, minRequiredOG: 0.05, reserveOG: 0.05 })
+        if (ensure1 === 'payee_unsupported') {
+          return NextResponse.json({ ok: false, error: 'insufficient_balance', reason: 'payee_unsupported', payee }, { status: 402 })
+        }
+
+        // First attempt
+        let resp = await makeRequest(headers)
         let rawText = await resp.text()
         let snippet = rawText.slice(0, 200)
         console.log(`prov=${service.provider} status=${resp.status} len=${rawText.length} body_snippet=${JSON.stringify(snippet)}`)
 
-        // Handle insufficient balance specifically (HTTP 400)
-        if (!resp.ok && /insufficient balance/i.test(rawText)) {
-          const m = rawText.match(/total fee of (\d+) exceeds the available balance of (\d+)/i)
-          if (m) {
-            try {
+        // If 400 insufficient balance → parse JSON, top up, re-fetch headers (force) and retry once
+        if (resp.status === 400) {
+          let feeOG = 0
+          let haveOG = 0
+          try {
+            const j = JSON.parse(rawText)
+            const errStr: string = String(j?.error || '')
+            const m = errStr.match(/total fee of (\d+) exceeds the available balance of (\d+)/i)
+            if (m) {
               const neededAtomic = BigInt(m[1])
               const haveAtomic = BigInt(m[2])
-              const requiredOG = Number(ethers.formatUnits(neededAtomic, LEDGER_DECIMALS))
-              const availableOG = Number(ethers.formatUnits(haveAtomic, LEDGER_DECIMALS))
-              const minRequiredOG = requiredOG + 0.01
-              // Log before top-up
-              console.log(`available=${availableOG.toFixed(4)} OG, need>=${minRequiredOG.toFixed(4)} OG (fee=${requiredOG.toFixed(4)} OG, reserve=${(Number(process.env.NEXT_PUBLIC_COMPUTE_RESERVE_OG ?? '0.05') || 0.05).toFixed(4)} OG)`)            
-              await ensureLedgerBalance(broker, { minRequiredOG, reserveOG: Number(process.env.NEXT_PUBLIC_COMPUTE_RESERVE_OG ?? '0.05') || 0.05 })
-              console.log(`retrying provider=${service.provider}`)
-              const headers2 = await broker.inference.getRequestHeaders(service.provider, userDescription || 'generate-system-prompt')
-              resp = await makeRequest(headers2)
-              rawText = await resp.text()
-              snippet = rawText.slice(0, 200)
-              console.log(`prov=${service.provider} retry status=${resp.status} len=${rawText.length} body_snippet=${JSON.stringify(snippet)}`)
-            } catch (topupErr: any) {
-              errors.push({ provider: service.provider, code: 'insufficient_balance', message: (topupErr?.message || snippet), httpStatus: resp.status })
-              continue
+              feeOG = Number(ethers.formatUnits(neededAtomic, Number(LEDGER_DECIMALS)))
+              haveOG = Number(ethers.formatUnits(haveAtomic, Number(LEDGER_DECIMALS)))
+            }
+          } catch {}
+
+          if (/insufficient balance/i.test(rawText) && feeOG > 0) {
+            const reserve = Number(process.env.NEXT_PUBLIC_COMPUTE_RESERVE_OG ?? '0.05') || 0.05
+            const needOG = feeOG + reserve
+            console.log(`available=${haveOG.toFixed(4)} OG, need>=${needOG.toFixed(4)} OG (fee=${feeOG.toFixed(4)} OG, reserve=${reserve.toFixed(4)} OG)`)            
+            const ensure2 = await ensureLedgerBalance(broker, { payee, minRequiredOG: feeOG, reserveOG: reserve })
+            if (ensure2 === 'payee_unsupported') {
+              return NextResponse.json({ ok: false, error: 'insufficient_balance', reason: 'payee_unsupported', payee }, { status: 402 })
+            }
+            autoTopUp = true
+            console.log(`retrying provider=${service.provider}`)
+            // Re-generate headers for retry (force new headers)
+            try {
+              const maybeHeaders: any = (broker as any)?.inference?.getRequestHeaders
+              if (typeof maybeHeaders === 'function' && maybeHeaders.length >= 3) {
+                headers = await (broker as any).inference.getRequestHeaders(service.provider, userDescription || 'generate-system-prompt', { force: true })
+              } else {
+                headers = await broker.inference.getRequestHeaders(service.provider, userDescription || 'generate-system-prompt')
+              }
+            } catch {
+              headers = await broker.inference.getRequestHeaders(service.provider, userDescription || 'generate-system-prompt')
+            }
+
+            // Second attempt (only once)
+            resp = await makeRequest(headers)
+            rawText = await resp.text()
+            snippet = rawText.slice(0, 200)
+            console.log(`prov=${service.provider} status=${resp.status} len=${rawText.length} body_snippet=${JSON.stringify(snippet)}`)
+
+            if (resp.status === 400 && /insufficient balance/i.test(rawText)) {
+              return NextResponse.json({ ok: false, error: 'insufficient_balance', reason: 'provider_fee_exceeds_balance', need: Number(feeOG.toFixed(4)), payee, autoTopUp: true }, { status: 402 })
             }
           }
         }
 
         if (!resp.ok) {
-          if (resp.status === 400 && /headers?\s+.*used/i.test(rawText)) {
-            errors.push({ provider: service.provider, code: 'headers_used', message: snippet, httpStatus: 400 })
-          } else if (/insufficient balance/i.test(rawText)) {
-            errors.push({ provider: service.provider, code: resp.status >= 500 ? 'http_5xx' : 'insufficient_balance', message: snippet, httpStatus: resp.status })
-          } else {
-            const code = resp.status >= 500 ? 'http_5xx' : resp.status >= 400 ? `http_${resp.status}` : `http_${resp.status}`
-            errors.push({ provider: service.provider, code, httpStatus: resp.status, message: snippet })
-          }
-          continue
+          const code = `provider_http_${resp.status}`
+          return NextResponse.json({ ok: false, error: code }, { status: resp.status })
         }
 
         let data: any = null
         try {
           data = JSON.parse(rawText)
         } catch (e: any) {
-          errors.push({ provider: service.provider, code: 'invalid_json', message: e?.message })
-          continue
+          return NextResponse.json({ ok: false, error: 'invalid_json', details: e?.message }, { status: 502 })
         }
         const generatedPrompt = data?.choices?.[0]?.message?.content
         if (!generatedPrompt || typeof generatedPrompt !== 'string') {
-          errors.push({ provider: service.provider, code: 'invalid_response', message: snippet })
-          continue
+          return NextResponse.json({ ok: false, error: 'invalid_response' }, { status: 502 })
         }
 
         // Optional verification for verifiable services
@@ -173,7 +210,7 @@ export async function POST(request: NextRequest) {
           }
         } catch {}
 
-        console.log('generated')
+        console.log('isRealAI:true', { provider: service.provider, model })
 
         // Save prompt for this agent
         try {
@@ -187,32 +224,19 @@ export async function POST(request: NextRequest) {
           // Non-fatal
         }
 
-        return NextResponse.json({ ok: true, prompt: generatedPrompt, provider: service.provider, model })
+        return NextResponse.json({ ok: true, prompt: generatedPrompt, provider: service.provider, model, autoTopUp })
       } catch (e: any) {
         const msg = e?.message || ''
         if (msg.includes('ServiceNotExist')) {
           try { await broker.inference.acknowledgeProviderSigner(service.provider) } catch {}
         }
-        // classify error
-        if (msg.includes('headers') && msg.includes('used')) {
-          errors.push({ provider: service.provider, code: 'headers_used', message: msg })
-        } else if (/insufficient/i.test(msg)) {
-          errors.push({ provider: service.provider, code: 'insufficient_balance', message: msg })
-        } else if (msg.includes('timeout')) {
-          errors.push({ provider: service.provider, code: 'timeout', message: msg })
-        } else {
-          errors.push({ provider: service.provider, code: 'provider_error', message: msg })
-        }
-        // try next
+        // For unexpected errors on this provider, try next
+        console.log('provider_error', { provider: service.provider, message: msg })
+        continue
       }
     }
 
-    const first = errors[0]
-    // Determine top-level error and status
-    const insufficient = errors.find(e => e.code === 'insufficient_balance')
-    const topLevelError = insufficient ? 'insufficient_balance' : 'all-providers-failed'
-    const status = insufficient ? 402 : 502
-    return NextResponse.json({ ok: false, error: topLevelError, reasons: errors, reason: first?.code, details: first }, { status })
+    return NextResponse.json({ ok: false, error: 'all-providers-failed' }, { status: 502 })
     
   } catch (error: any) {
     console.error('Prompt generation error:', error)

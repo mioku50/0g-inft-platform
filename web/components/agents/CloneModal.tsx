@@ -61,6 +61,21 @@ export function CloneModal({ agent, isOpen, onClose, onSuccess }: CloneModalProp
         creator: address // Обновляем создателя
       }
 
+      // Пересобираем systemPrompt из общих правил, если возможно
+      try {
+        const { buildSystemPrompt } = await import('@/lib/prompts/buildSystemPrompt')
+        const regenerated = buildSystemPrompt({
+          name: cloneMetadata.name,
+          description: cloneMetadata.description,
+          personality: originalMetadata.personality,
+          expertise: originalMetadata.expertise,
+          skills: Array.isArray(originalMetadata.skills) ? originalMetadata.skills : [],
+          capabilities: Array.isArray(originalMetadata.capabilities) ? originalMetadata.capabilities : [],
+          customInstructions: originalMetadata.systemPrompt,
+        })
+        ;(cloneMetadata as any).systemPrompt = regenerated
+      } catch {}
+
       // Шаг 3: Загружаем новые метаданные в 0G Storage
       const uploadResponse = await fetch('/api/storage/upload', {
         method: 'POST',

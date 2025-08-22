@@ -75,9 +75,9 @@ export async function POST(request: NextRequest) {
         const headers = await broker.inference.getRequestHeaders(service.provider, userDescription || 'generate-system-prompt')
         console.log('headers=OK')
 
-        // 4) Request with 5s timeout
+        // 4) Request with 35s timeout
         const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 5000)
+        const timeout = setTimeout(() => controller.abort(), 35000)
         let resp: Response
         try {
           resp = await fetch(`${endpoint}/chat/completions`, {
@@ -95,6 +95,12 @@ export async function POST(request: NextRequest) {
             }),
             signal: controller.signal
           })
+        } catch (e: any) {
+          if (e?.name === 'AbortError') {
+            errors.push({ provider: service.provider, code: 'timeout', message: 'timeout' })
+            continue
+          }
+          throw e
         } finally {
           clearTimeout(timeout)
         }
@@ -105,8 +111,8 @@ export async function POST(request: NextRequest) {
         console.log(`prov=${service.provider} status=${resp.status} len=${rawText.length} body_snippet=${JSON.stringify(snippet)}`)
 
         if (!resp.ok) {
-          // 4xx/5xx → next provider
-          errors.push({ provider: service.provider, code: `provider_http_${resp.status}`, httpStatus: resp.status, message: snippet })
+          const code = resp.status >= 500 ? 'http_5xx' : resp.status >= 400 ? 'http_4xx' : `http_${resp.status}`
+          errors.push({ provider: service.provider, code, httpStatus: resp.status, message: snippet })
           continue
         }
 
@@ -155,6 +161,8 @@ export async function POST(request: NextRequest) {
           errors.push({ provider: service.provider, code: 'headers_used', message: msg })
         } else if (msg.includes('Insufficient') || msg.includes('insufficient')) {
           errors.push({ provider: service.provider, code: 'ledger_insufficient', message: msg })
+        } else if (msg.includes('timeout')) {
+          errors.push({ provider: service.provider, code: 'timeout', message: msg })
         } else {
           errors.push({ provider: service.provider, code: 'provider_error', message: msg })
         }

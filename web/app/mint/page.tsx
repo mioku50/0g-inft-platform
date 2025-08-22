@@ -114,70 +114,16 @@ export default function MintPage() {
   }
 
   const generateSystemPrompt = () => {
-    const personalityEmoji = PERSONALITY_TRAITS.find(p => p.value === personality)?.emoji || ''
-    const personalityLabel = PERSONALITY_TRAITS.find(p => p.value === personality)?.label || personality
-    
-    // Базовый промпт
-    let prompt = `You are ${name}, an AI agent with a ${personalityLabel} personality ${personalityEmoji}.`
-    
-    // Добавляем описание личности
-    switch (personality) {
-      case 'friendly':
-        prompt += '\n\nYou are warm, approachable, and always eager to help with a positive attitude.'
-        break
-      case 'professional':
-        prompt += '\n\nYou maintain a professional demeanor, providing clear and concise information.'
-        break
-      case 'creative':
-        prompt += '\n\nYou think outside the box and approach problems with innovative solutions.'
-        break
-      case 'analytical':
-        prompt += '\n\nYou excel at breaking down complex problems and providing data-driven insights.'
-        break
-      case 'humorous':
-        prompt += '\n\nYou have a great sense of humor and enjoy making interactions fun and engaging.'
-        break
-    }
-    
-    // Добавляем экспертизу
-    if (expertise) {
-      prompt += `\n\nYour areas of expertise include: ${expertise}.`
-    }
-    
-    // Добавляем навыки
-    if (selectedSkills.length > 0) {
-      const skillDescriptions = selectedSkills.map(skill => {
-        switch(skill) {
-          case 'coding': return 'programming and software development'
-          case 'writing': return 'creative and technical writing'
-          case 'analysis': return 'data analysis and problem solving'
-          case 'design': return 'visual and UX/UI design'
-          case 'chat': return 'conversational AI and dialogue'
-          default: return skill
-        }
-      })
-      prompt += `\n\nYour specialized skills include: ${skillDescriptions.join(', ')}.`
-    }
-    
-    // Добавляем кастомные инструкции ТОЛЬКО если это обычный текст
-    if (systemPrompt) {
-      // Очищаем от JSON и странных символов
-      const cleanedPrompt = systemPrompt
-        .replace(/[{}\[\]"]/g, '') // Удаляем JSON символы
-        .replace(/\\n/g, '\n')      // Заменяем экранированные переносы
-        .replace(/\s+/g, ' ')       // Нормализуем пробелы
-        .trim()
-      
-      // Добавляем только если это выглядит как обычный текст
-      if (cleanedPrompt && !cleanedPrompt.includes('"role"') && !cleanedPrompt.includes('"personality"')) {
-        prompt += `\n\n${cleanedPrompt}`
-      }
-    }
-    
-    // Добавляем стандартные инструкции
-    prompt += '\n\nAlways be helpful, truthful, and respectful in your responses. Engage naturally in conversation while leveraging your unique personality and skills.'
-    
-    return prompt
+    const { buildSystemPrompt } = require('@/lib/prompts/buildSystemPrompt')
+    return buildSystemPrompt({
+      name,
+      description,
+      personality,
+      expertise,
+      skills: selectedSkills,
+      capabilities: selectedSkills,
+      customInstructions: systemPrompt,
+    })
   }
 
   const handleMint = async () => {

@@ -133,7 +133,7 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json', ...(address ? { 'x-address': address } : {}) },
         body: JSON.stringify({
           message: userMessage.content,
-          agentMetadata: agent?.metadata,
+          agentMetadata: { ...(agent?.metadata || {}), tokenId: Number(tokenId) },
           providerAddress: '0xf07240Efa67755B5311bc75784a061eDB47165Dd',
           agentId: Number(tokenId)
         }),

@@ -227,12 +227,30 @@ class ChatService {
   }): Promise<{ success: boolean; content: string; id?: string }> {
     const agentName = params.agentMetadata?.name || 'Agent'
     const agentDesc = params.agentMetadata?.description || ''
+    const tokenId: number | undefined = Number(params.agentMetadata?.tokenId || params.agentMetadata?.id)
+
+    // Try to load off-chain override
+    let overridePrompt: string | null = null
+    if (Number.isFinite(tokenId)) {
+      try {
+        const fs = await import('fs/promises')
+        const path = await import('path')
+        const file = path.join(process.cwd(), 'data', 'prompts', `${Number(tokenId)}.json`)
+        const raw = await fs.readFile(file, 'utf-8').catch(() => null)
+        if (raw) {
+          const data = JSON.parse(raw)
+          if (typeof data?.prompt === 'string' && data.prompt.trim().length > 0) {
+            overridePrompt = data.prompt
+          }
+        }
+      } catch {}
+    }
+
     const requestBody = {
       messages: [
-        { 
-          role: 'system', 
-          content: `You are ${agentName}. ${agentDesc}` 
-        },
+        overridePrompt && overridePrompt.trim().length > 0
+          ? { role: 'system', content: overridePrompt }
+          : { role: 'system', content: `You are ${agentName}. ${agentDesc}` },
         { role: 'user', content: params.message }
       ],
       model: params.model,

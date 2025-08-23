@@ -10,6 +10,7 @@ import { chatService } from '@/lib/compute/chat-service'
 import { ethers } from 'ethers'
 import { INFT_ABI } from '@/lib/contracts/abis'
 import { getServerProvider } from '@/lib/server/provider'
+import { fetchWithRetry } from '@/lib/net/fetchWithRetry'
 
 export async function POST(request: NextRequest) {
   try {

@@ -13,6 +13,7 @@
     "health-check": "ts-node --project tsconfig.scripts.json scripts/health-check.ts",
     "init-compute": "ts-node --project tsconfig.scripts.json scripts/health-check.ts init-compute",
     "check-inference": "ts-node --project tsconfig.scripts.json scripts/check-inference.ts",
+    "ping-providers": "ts-node --project tsconfig.scripts.json scripts/ping-providers.ts",
     "check-metadata": "ts-node --project tsconfig.scripts.json scripts/check-metadata.ts",
     "debug-metadata": "ts-node --project tsconfig.scripts.json scripts/debug-token-metadata.ts",
     "fix-metadata": "ts-node --project tsconfig.scripts.json scripts/fix-metadata-urls.ts",

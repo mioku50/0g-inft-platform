@@ -4,3 +4,41 @@ web/.next
 **/.next
 web/.cache
 **/.cache
+# --- Docs ---
+*.md
+
+# --- Env & secrets ---
+.env
+.env.*
+*.env
+web/.env
+web/.env.local
+*.pem
+*.key
+*.keystore
+*.p12
+*.pfx
+*.der
+*.gpg
+*.asc
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+.ssh/
+.aws/
+*.credentials
+credentials*.json
+service-account*.json
+firebase-*.json
+*keystore*.json
+*wallet*.json
+secrets/
+**/*secret*
+**/*private*
+
+# --- Node/Build (на всякий случай) ---
+node_modules/
+dist/
+.next/
+.turbo/

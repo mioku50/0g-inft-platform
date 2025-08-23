@@ -235,7 +235,15 @@ export function PromptManager({ agent, isOpen, onClose, onUpdate }: PromptManage
             toast({ title: 'Автодозаправка и повтор…', description: 'Попытка автопополнения и повторного запроса.' })
           }
           const code = result?.error || 'provider_error'
-          toast({ title: 'Generation failed', description: String(code) })
+          if (code === 'network_unreachable') {
+            toast({ title: 'Провайдеры недоступны', description: 'Провайдеры недоступны (сеть/таймаут). Попробуйте ещё раз через минуту.', variant: 'destructive' })
+          } else if (code === 'provider_http_5xx') {
+            toast({ title: 'Провайдер вернул 5xx', description: 'Провайдер вернул 5xx. Повторите позже.', variant: 'destructive' })
+          } else if (code === 'provider_http_429') {
+            toast({ title: 'Слишком много запросов', description: 'Провайдер вернул 429 (rate limit). Попробуйте позже.', variant: 'destructive' })
+          } else {
+            toast({ title: 'Generation failed', description: String(code) })
+          }
         }
       }
     } catch (error) {

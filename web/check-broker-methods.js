@@ -1,9 +1,15 @@
 const { ethers } = require('ethers');
 const { createZGComputeNetworkBroker } = require('@0glabs/0g-serving-broker');
+require('dotenv').config();
 
 async function checkMethods() {
-  const provider = new ethers.JsonRpcProvider('https://evmrpc-testnet.0g.ai');
-  const privateKey = '0x60d6657135c7a050f5a326a93f39ded3a0295b6f70b28ce75f1e5d69f95bfe65';
+  const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_0G_RPC_URL || 'https://evmrpc-testnet.0g.ai');
+  const privateKey = process.env.OG_COMPUTE_PRIVATE_KEY;
+
+  if (!privateKey) {
+    throw new Error('Missing OG_COMPUTE_PRIVATE_KEY');
+  }
+
   const wallet = new ethers.Wallet(privateKey, provider);
   
   const broker = await createZGComputeNetworkBroker(

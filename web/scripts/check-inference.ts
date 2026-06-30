@@ -7,8 +7,10 @@ import { createBrokerWithEnvPK } from '../lib/compute/broker'
 async function main() {
   // Ensure env
   process.env.NEXT_PUBLIC_0G_RPC_URL ||= process.env.NEXT_PUBLIC_RPC_URL || 'https://evmrpc-testnet.0g.ai'
-  // Fallback valid test key if .env.local is broken by line wraps
-  process.env.OG_COMPUTE_PRIVATE_KEY ||= '0x60d6657135c7a050f5a326a93f39ded3a0295b6f70b28ce75f1e5d69f95bfe65'
+
+  if (!process.env.OG_COMPUTE_PRIVATE_KEY) {
+    throw new Error('Missing OG_COMPUTE_PRIVATE_KEY')
+  }
 
   const broker = await createBrokerWithEnvPK()
 
@@ -95,4 +97,3 @@ main().catch(err => {
   console.error('check-inference failed:', err?.message)
   process.exit(1)
 })
-
